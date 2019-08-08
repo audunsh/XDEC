@@ -1,0 +1,1 @@
+c++ -O3 -Wall -shared -std=c++11 -undefined dynamic_lookup `python3 -m pybind11 --includes` lwrap.cpp -o lwrap`python3-config --extension-suffix` -I/usr/local/libint/2.5.0-beta.2/include/ -L/usr/local/libint/2.5.0-beta.2/lib -I/anaconda3/include/eigen3/ -L/usr/local/lib -I/usr/local/include -lm -lgmpxx -lgmp -lint2 

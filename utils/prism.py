@@ -24,8 +24,8 @@ import sympy as syp
 import numpy as np
 import subprocess as sp
 
-import crystal_interface as ci
-import sympy_basis as sb
+import utils.crystal_interface as ci
+import utils.sympy_basis as sb
 
 
 from ast import literal_eval

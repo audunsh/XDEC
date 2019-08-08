@@ -843,6 +843,27 @@ class tmat():
             
         assert(np.all(self.delim == other.delim)), "domain mismatch"
     
+    def inv(self):
+        # BT inversion through FFT - blockwise inversion - IFFT
+        # Mathematical details may be found in notes
+        n_points = 2*np.array(n_lattice(self))
+        JKk = transform(JK, np.fft.fftn, n_points = n_points)
+        JKk_inv = JKk*1.0
+
+        #for k in JKk.coords:
+        #    JKk_k = np.linalg.inv(JKk.cget(k))
+        #    
+        #    JKk_inv.cset(k, JKk_k)
+        JK_inv.blocks[:-1] = np.linalg.inv(JKk.blocks)
+        JK_inv_direct = transform(JKk_inv, np.fft.ifftn, n_points = n_points, complx = False)
+
+        return JK_inv_direct 
+        
+
+
+
+
+    
     def __pow__(self, other):
         ret = deepcopy(self)
         ret.blocks = ret.blocks**other
@@ -1192,6 +1213,22 @@ class tmat():
                 ret.blocks[ ret.mapping[ ret._c2i(c1+c2) ] ]+= bb
                 
         return ret
+
+    def circulantdot(self, other):
+        n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
+        self_k = transform(self, np.fft.fftn, n_points = n_points)
+        other_k = transform(other, np.fft.fftn, n_points = n_points)
+        ret = self_k*1.0
+        ret.blocks*=0.0
+
+        for i in np.arange(len(self_k.blocks)-1):
+            ret.blocks[i] = np.dot(self_k.blocks[i],other_k.blocks[i])
+
+        ret = transform(ret, np.fft.ifftn, n_points = n_points)
+        return ret
+
+
+
     
     def remove(self, slices, dimension):
         '''
