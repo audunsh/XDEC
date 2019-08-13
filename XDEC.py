@@ -18,6 +18,102 @@ import PRI
 
 import time
 
+def mapgen(vex1, vex2):
+    # vex1 - vex2
+    # returns a matrix where vex1[ ret_indx[i,j] ] = vex1[i] - vex2[j]
+    D = vex1[:, None] - vex2[None, :]
+    ret_indx = -1*np.ones((vex1.shape[0], vex2.shape[0]), dtype = int)
+    for i in np.arange(vex1.shape[0]):
+        for j in np.arange(vex2.shape[0]):
+            try:
+                ret_indx[i,j] = np.argwhere(np.all(np.equal(vex1, D[i,j]), axis = 1))
+            except:
+                pass
+    return ret_indx
+
+def advance_amplitudes(pair_extent, virtual_extent, t2,G,E):
+    t2_new = np.zeros_like(t2)
+    for M in np.arange(len(pair_extent)):
+        for dL in np.arange(len(virtual_extent)):
+            for dM in np.arange(len(virtual_extent)):
+                #for L in np.arange(len(pair_extent)):
+                #cL = pair_extent[L]
+                #t2[:, dL, :, M, :, dM, :]
+
+
+                # t2[i, K, a, L, j, M, b]
+                # Contract each term using einsum
+                # + left(0i \Delta L a |Mj \Delta M b \right) 
+                tnew  = -G[:,dL,:,M,:,dM,:] 
+                
+                # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{0i,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
+                Fac = Fmo_aa.cget(virtual_extent - virtual_extent[dL])
+                tnew -= np.einsum("iKcjb,Kac->iajb", t2[:, :-1, :, M, :, dM, :], Fac)
+
+                # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
+                Fbc = Fmo_aa.cget(virtual_extent - virtual_extent[dM])
+                tnew -= np.einsum("iajKb,Kbc->iajb", t2[:, dL, :, M, :, :-1, :], Fbc)
+                
+                # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
+                Fki = Fmo_ii.cget(-1*pair_extent)
+                tnew += np.einsum("Kkajb,Kki->iajb",t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
+                
+                # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
+                Fkj = Fmo_ii.cget(-1*pair_extent + pair_extent[M])
+                tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
+
+                #tnew *= E[:,dL,:,M,:,dM,:]
+
+
+                # + \left(t^{\Delta L a, \Delta Mb}_{L'k,Mj}\right)_{n}\varepsilon^{\Delta L a, \Delta Mb}_{0i,Mj},
+                #tnew += t2[:, dL, :, M, :, dM, :] #*E[:,dL,:,M,:,dM,:]**-1
+
+                t2_new[:, dL, :, M, :, dM, :] = tnew #*E[:,dL,:,M,:,dM,:]
+    #t2_new[:,:-1,:,:-1,:,:-1,:] *= E
+    t2_new[:,:-1,:,:-1,:,:-1,:] = t2_new[:,:-1,:,:-1,:,:-1,:] + t2[:,:-1,:,:-1,:,:-1,:]
+    return t2_new
+
+def advance_amplitudes_(pair_extent, virtual_extent, t2,G,E):
+    t2_new = np.zeros_like(t2)
+    for M in np.arange(len(pair_extent)):
+        for dL in np.arange(len(virtual_extent)):
+            for dM in np.arange(len(virtual_extent)):
+                #for L in np.arange(len(pair_extent)):
+                #cL = pair_extent[L]
+                #t2[:, dL, :, M, :, dM, :]
+
+
+                # t2[i, K, a, L, j, M, b]
+                # Contract each term using einsum
+                # + left(0i \Delta L a |Mj \Delta M b \right) 
+                tnew  = -G[:,dL,:,M,:,dM,:] 
+                
+                # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{0i,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
+                Fac = Fmo_aa.cget(virtual_extent - virtual_extent[dL])
+                tnew = np.einsum("iKcjb,Kac->iajb", t2[:, :-1, :, M, :, dM, :], Fac)
+
+                # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
+                Fbc = Fmo_aa.cget(virtual_extent - virtual_extent[dM])
+                tnew += np.einsum("iajKb,Kbc->iajb", t2[:, dL, :, M, :, :-1, :], Fbc)
+                
+                # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
+                Fki = Fmo_ii.cget(-1*pair_extent)
+                tnew -= np.einsum("Kkajb,Kki->iajb",t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
+                
+                # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
+                Fkj = Fmo_ii.cget(-1*pair_extent + pair_extent[M])
+                tnew -= np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
+
+                #tnew *= E[:,dL,:,M,:,dM,:]
+
+
+                # + \left(t^{\Delta L a, \Delta Mb}_{L'k,Mj}\right)_{n}\varepsilon^{\Delta L a, \Delta Mb}_{0i,Mj},
+                #tnew += t2[:, dL, :, M, :, dM, :] #*E[:,dL,:,M,:,dM,:]**-1
+
+                t2_new[:, dL, :, M, :, dM, :] = tnew #*E[:,dL,:,M,:,dM,:]
+    #t2_new[:,:-1,:,:-1,:,:-1,:] *= E
+    t2_new[:,:-1,:,:-1,:,:-1,:] = t2_new[:,:-1,:,:-1,:,:-1,:]*E + t2[:,:-1,:,:-1,:,:-1,:]
+    return t2_new
 
 if __name__ == "__main__":
     os.environ["LIBINT_DATA_PATH"] = os.getcwd() 
@@ -66,13 +162,31 @@ if __name__ == "__main__":
 
     F = tp.tmat()
     F.load(args.fock_matrix)
+
+    Fmo = C.tT().cdot(F.cdot(C), coords = C.coords)
+
+    Ni = 11
+    Na = 11
+
+    Ni = p.get_nocc()
+    Na = p.get_nvirt()
+    Nmo = p.get_n_ao()
+
+    virtual_extent = tp.lattice_coords((0,0,0))
+
+    pair_extent    = tp.lattice_coords((0,0,0))
+
+    
+
+    Fmo.cget( F.coords - np.array([0,0,0]))
+
     
     print(coulomb_extent)
     # Compute coulomb matrix
     #JK = PRI.compute_JK(p, s, auxname = "ri-fitbasis")
 
     JK = PRI.compute_JK(p,s, coulomb=True, auxname = "ri-fitbasis") 
-
+    JK.tolerance = 10e-12
     print("JK.max:", JK.blocks.max())
     print("JK(1,0,0).max:", np.abs(JK.cget([1,0,0])).max())
     print(JK.cget([1,0,0])[:3,:3])
@@ -81,17 +195,21 @@ if __name__ == "__main__":
     #construct EOS and AOS for cell fragment
     JKX = np.zeros_like(Xreg)
 
+    
     for i in np.arange(len(Xreg)):
         for j in np.arange(len(Xreg[i])):
             for k in np.arange(len(Xreg[i,j])):
                 try:
                     JKX[i,j,k] = JK.cdot(Xreg[i,j,k])
+                    print(i,j,k,"partially computed.")
                 except:
+                    print(i,j,k,"skipped.")
                     pass
-                print(i,j,k,"partially computed")
+    
     
 
     # for instance
+    """
     print(Xreg[0,0,0].blocks.max())
     t0 = time.process_time()
 
@@ -107,24 +225,21 @@ if __name__ == "__main__":
 
     print("timing:", t1-t0)
 
-    Fmo = C.tT().cdot(F.cdot(C), coords = C.coords)
+    
 
     print(x000.cget([0,0,0])[0])
+    """
+
+    
 
 
-
-
-    Ni = 11
-    Na = 11
-    virtual_extent = tp.lattice_coords((1,1,1))
-
-    pair_extent    = tp.lattice_coords((0,0,0))
 
     Nv = len(virtual_extent)
     Np = len(pair_extent)
 
-    t2 = np.zeros((Ni, Nv, Na, Np, Ni, Nv, Na), dtype = float)
+    t2 = np.zeros((Ni, Nv+1, Na, Np+1, Ni, Nv+1, Na), dtype = float) #pad one extra blocks of zeros in each coordinate direction for negative indexing to zero block
     G = np.zeros((Ni, Nv, Na, Np, Ni, Nv, Na), dtype = float)
+    E = np.zeros((Ni, Nv, Na, Np, Ni, Nv, Na), dtype = float)
     
     print("Computing the g-tensor")
 
@@ -140,14 +255,30 @@ if __name__ == "__main__":
     
     f_aa = Fmo.cget([0,0,0])[np.arange(2,11), np.arange(2,11)]
     f_ii = Fmo.cget([0,0,0])[np.arange(2), np.arange(2)]
+
+    # split Fmo in Fmo_aa and Fmo_ii (virtual + occupied)
+    Fmo_aa = tp.tmat()
+    Fmo_aa.load_nparray(Fmo.blocks[:,p.get_nocc():,p.get_nocc():], Fmo.coords[:])
+
+    Fmo_ii = tp.tmat()
+    Fmo_ii.load_nparray(Fmo.blocks[:,:p.get_nocc(),:p.get_nocc()], Fmo.coords[:])
+
     
     #f_iajb = np.einsum("i,a,j,b->iajb", f_ii,-1*f_aa, f_ii, -1*f_aa)
     e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
 
     # two body interaction elements
+    
+
+
+    
+
+
+
+    
     iterations_total = len(pair_extent)*len(virtual_extent)**2
     i_count = 0
-
+    
     e0 = 0
     for M in np.arange(len(pair_extent)):
         cM = pair_extent[M]
@@ -156,58 +287,84 @@ if __name__ == "__main__":
             for dM in np.arange(len(virtual_extent)):
                 cdM = virtual_extent[dM]
                 v_ = Xreg[cdL[0],cdL[1],cdL[2]].tT().cdot(JKX[cdM[0],cdM[1],cdM[2]], coords = [[cM[0],cM[1],cM[2]]]).cget([cM[0],cM[1],cM[2]])
-                g_ = v_.reshape((Ni,Na,Ni,Na))[:2,2:,:2,2:]
+                g_ = v_.reshape((Nmo,Nmo,Nmo,Nmo))[:Ni,Ni:,:Ni,Ni:]
                 print(g_.max())
-                #v_anti = Xreg[cdL[0],cdL[1],cdL[2]].tT().cdot(JKX[cdM[0],cdM[1],cdM[2]], coords = [[cM[0],cM[1],cM[2]]]).cget([cM[0],cM[1],cM[2]])
-                #e_ = 
-                #print(t2[:2,:,:,:,:,:,:].shape)
-                t2[:2, dL, 2:, M, :2, dM, 2:] = g_*e_iajb**-1
-                #print((g_*e_iajb**-1).shape, t2[:2, dL, 2:, M, :2, dM, 2:].shape)
-                #print(t2.shape)
+
+                t2[:, dL, :, M, :, dM, :] = g_*e_iajb**-1
+                G[:, dL, :, M, :, dM, :]=g_
+                E[:, dL, :, M, :, dM, :]=e_iajb**-1
+
+
                 i_count += 1
 
                 print(cdL, cM, cdM, " computed (%.2f  complete)." % (i_count/iterations_total))
                 print()
 
-                e0 += 2*np.einsum("iajb,iajb",t2[:2, dL, 2:, M, :2, dM, 2:],g_, optimize = True)  - np.einsum("iajb,ibja",t2[:2, dL, 2:, M, :2, dM, 2:],g_, optimize = True)
+                #e0 += 2*np.einsum("iajb,iajb",t2[:2, dL, 2:, M, :2, dM, 2:],g_, optimize = True)  - np.einsum("iajb,ibja",t2[:2, dL, 2:, M, :2, dM, 2:],g_, optimize = True)
+                e0 += 2*np.einsum("iajb,iajb",t2[:, dL, :, M, :, dM, :],g_, optimize = True)  - np.einsum("iajb,ibja",t2[:, dL, :, M, :, dM, :],g_, optimize = True)
+    
 
+    print("Initial (guess) energy:", e0)
+    
+    
+
+
+
+    print("Energy:", 2*np.einsum("iKaLjMb,iKaLjMb",t2[:,:-1,:,:-1,:,:-1,:],G, optimize = True)  - np.einsum("iKaLjMb,iMbLjKa",t2[:,:-1,:,:-1,:,:-1,:],G, optimize = True))
+    
+    # debug option
+
+    #np.save("t2amplitudes.npy", t2)
+    #np.save("gtens.npy",         G)
+    #np.save("energy_denom.npy",  E)
+
+
+
+
+
+
+
+
+
+
+
+    #t2 = np.load("t2amplitudes.npy")
+    #G = np.load("gtens.npy")
+    #E = np.load("energy_denom.npy")
+    print("Energy:", 2*np.einsum("iKaLjMb,iKaLjMb",t2[:,:-1,:,:-1,:,:-1,:],G, optimize = True)  - np.einsum("iKaLjMb,iMbLjKa",t2[:,:-1,:,:-1,:,:-1,:],G, optimize = True))
+
+    # map indices
+
+    vp_indx = mapgen(virtual_extent, pair_extent)
+    pp_indx = mapgen(pair_extent, pair_extent)
+ 
     # Solving the MP2-equations for the non-canonical reference state
+    for i in np.arange(200):
+        t2_new = advance_amplitudes(pair_extent, virtual_extent, t2,G,E)
+        print(np.linalg.norm(t2_new[:,:-1,:,:-1,:,:-1,:]-t2[:,:-1,:,:-1,:,:-1,:]))
+        t2 = t2_new
 
-    print("Initial energy:", e0)
-    # Calculate energy
-    # 2*np.einsum("iajb,iajb",,g, optimize = True) - np.einsum("iajb,ibja",t,g, optimize = True)
-
-
-
-
+        print("Energy:", 2*np.einsum("iKaLjMb,iKaLjMb",t2[:,:-1,:,:-1,:,:-1,:],G, optimize = True)  - np.einsum("iKaLjMb,iMbLjKa",t2[:,:-1,:,:-1,:,:-1,:],G, optimize = True))
 
 
-    """
-    # Hardcoding first run
-    Ni = 2
-    Na = 9
-    Nj = 2
-    Nb = 9
-    NdLx = 3
-    NdLy = 3
-    NdLz = 3
-    NMx = 3
-    NMy = 3
-    NMz = 3
-    NdMx = 3
-    NdMy = 3
-    NdMz = 3
+    #print("Gradient norm:", np.linalg.norm(t2-t2_new))
+    #return t2_new
+
+                
 
 
 
 
-    t2 = np.zeros((Ni, NdLx, NdLy, NdLz,Na, NMx, NMy, NMz, Nj, NdMx, NdMy, Ndmz, Nb), dtype = float) #periodic t2 amplitudes
-    for c_pair_M in pair_extent:
-        Mx, My, Mz = c_pair_M
-        for c_virt_L in virtual_extent:
-            dLx, dLy, dLz = c_virt_L
-            for c_virt_M in virtual_extent:
-                dMx, dMy, dMz = c_virt_M
-                t2[:,dLx,dLy,dLz,:,Mx,My,Mz,:,dMx,dMy,dMz] = Xreg[dLx,dLy,dLz].tT().cdot(JKX[dMx, dMy, dMz], coords = [[Mx,My,Mz]])
-    """
 
+
+
+
+    
+
+#def advance_amplitudes(g0, t,fab,fij, f_iajb):
+#    # Advance MP2 amplitudes one iteration
+#    d1 =   np.einsum("icjb,ac->iajb", t,fab, optimize = True)
+#    d2 =   np.einsum("iajc,bc->iajb", t,fab, optimize = True)
+#    d3 =   np.einsum("kajb,ki->iajb", t,fij, optimize = True)
+#    d4 =   np.einsum("iakb,kj->iajb", t,fij, optimize = True)
+#    return (g0 + d1 + d2 -d3-d4)*f_iajb**-1 + t #*f_iajb/f_iajb
