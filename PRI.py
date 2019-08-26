@@ -771,7 +771,7 @@ def test_matrix_kspace_condition(M, n_fourier):
 
 
 class integral_builder():
-    def __init__(self, c,p, attenuation = 0.1, auxname = "cc-pvdz-ri"):
+    def __init__(self, c,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1]):
         self.c = c
         self.p = p
         self.attenuation = attenuation
@@ -811,7 +811,7 @@ class integral_builder():
         self.VXreg = np.zeros((15,15,15), dtype = tp.tmat) # RI - matrices with V contracted
 
         # initial coeffs computed in single layer around center cell
-        coord_q =  tp.lattice_coords([1,1,1]) #initial virtual domain
+        coord_q =  tp.lattice_coords(initial_virtual_dom) #initial virtual domain
         Xreg = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv])
         
         for i in np.arange(coord_q.shape[0]):
@@ -845,7 +845,7 @@ class integral_builder():
 
 
 
-    def _getcell(self, dL, M, dM):
+    def getcell(self, dL, M, dM):
         for d in [dL, dM]:
             if self.XregT[d[0], d[1], d[2]] is 0:
 
@@ -934,10 +934,10 @@ if __name__ == "__main__":
         print("Testing integral builder")
         ib = integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis")
         # generating integrals
-        print(ib._getcell([0,0,0],[0,0,0],[0,0,0]).shape)
-        print(ib._getcell([0,0,0],[0,0,1],[0,0,0]).shape)
-        print(ib._getcell([0,0,0],[0,0,2],[0,0,0]).shape)
-        print(ib._getcell([0,0,0],[0,0,3],[0,0,0]).shape)
+        print(ib.getcell([0,0,0],[0,0,0],[0,0,0]).shape)
+        print(ib.getcell([0,0,0],[0,0,1],[0,0,0]).shape)
+        print(ib.getcell([0,0,0],[0,0,2],[0,0,0]).shape)
+        print(ib.getcell([0,0,0],[0,0,3],[0,0,0]).shape)
 
 
     X = compute_fitting_coeffs(c,p, attenuation = args.attenuation, auxname = "ri-fitbasis", coord_q=virtual_region)

@@ -14,6 +14,8 @@ import lwrap.lwrap as li
 
 import utils.prism as pr
 
+import domdef as dd
+
 import PRI 
 
 import time
@@ -138,16 +140,114 @@ if __name__ == "__main__":
     parser.add_argument("fock_matrix", type= str,help = "AO-Fock matrix from Crystal")
     parser.add_argument("fitted_coeffs", type= str,help="Array of coefficient matrices from RI-fitting")
     parser.add_argument("auxbasis", type = str, help="Auxiliary fitting basis.")
-    
+    parser.add_argument("wcenters", type = str, help="Wannier centers")
+    parser.add_argument("attenuation", type = float, default = 1.2, help = "Attenuation paramter for RI")
     args = parser.parse_args()
 
+
+    # Load system
+
     p = pr.prism(args.project_file)
+
+
+
+    # Fitting basis
     auxbasis = PRI.basis_trimmer(p, args.auxbasis)
     f = open("ri-fitbasis.g94", "w")
     f.write(auxbasis)
     f.close()
     
 
+    # Wannier coefficients
+    c = tp.tmat()
+    c.load(args.coefficients)
+    
+    # AO Fock matrix
+    f_ao = tp.tmat()
+    f_ao.load(args.fock_matrix)
+
+    # Compute MO Fock matrix
+    f_mo = c.tT().cdot(f_ao*c, coords = c.coords)
+
+    # Compute energy denominator
+    f_aa = f_mo.cget([0,0,0])[np.arange(p.get_nocc(),p.get_n_ao()), np.arange(p.get_nocc(),p.get_n_ao())]
+    f_ii = f_mo.cget([0,0,0])[np.arange(p.get_nocc()),np.arange(p.get_nocc()) ]
+    
+    e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
+
+
+    # Wannier centers
+    wcenters = np.load(args.wcenters)
+
+    # Initialize integrals 
+    ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[1,0,0])
+
+    # Initialize domain definitions
+
+
+
+    d = dd.build_distance_matrix(p, c.coords, wcenters, wcenters)
+    center_fragments = dd.atomic_fragmentation(p, d, 3.0)
+
+    
+
+    # Converge atomic fragment energies
+
+    for fragment in center_fragments:
+        print("Fragment:", fragment)
+        
+        # Expand virtual space
+        di = dd.build_local_domain_index_matrix(fragment, d, 5.0)
+
+        # Set up initial guess for amplitudes
+        t = np.zeros((15,15,15), dtype = tp.tmat) #cluster amplitudes
+
+        params = []
+
+        for ddL in np.arange(di.coords.shape[0]):
+            for ddM in np.arange(di.coords.shape[0]):
+                dL, dM = di.coords[ddL], di.coords[ddM]
+
+                
+                g_direct = ib.getcell(dL, [0,0,0], dM)
+                g_exchange = ib.getcell(dM, [0,0,0], dL)
+                t = g_direct*e_iajb**-1
+                params.append([dL, dM, t, g_direct, g_exchange])
+
+
+
+
+        e0 = 0
+        # Perform (initial guess) energy calculation for fragment
+        for dL in di.coords:
+            for dM in di.coords:
+                
+                g_direct = ib.getcell(dL, [0,0,0], dM)
+                g_exchange = ib.getcell(dM, [0,0,0], dL)
+
+                t = g_direct*e_iajb**-1
+
+
+
+
+                e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+                print(dL, dM, e0)
+        print("e0", e0)
+
+
+
+
+
+
+
+
+
+    #ib.getcell()
+
+
+
+
+    """
     Xreg = np.load(args.fitted_coeffs)
 
     coulomb_extent = np.max(np.abs(Xreg[0,0,0].coords), axis = 0)
@@ -210,6 +310,10 @@ if __name__ == "__main__":
 
     # for instance
     """
+
+
+
+    """
     print(Xreg[0,0,0].blocks.max())
     t0 = time.process_time()
 
@@ -233,6 +337,7 @@ if __name__ == "__main__":
     
 
 
+    """
 
     Nv = len(virtual_extent)
     Np = len(pair_extent)
@@ -349,6 +454,7 @@ if __name__ == "__main__":
 
     #print("Gradient norm:", np.linalg.norm(t2-t2_new))
     #return t2_new
+    """
 
                 
 
