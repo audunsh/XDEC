@@ -2,6 +2,8 @@
 
 import numpy as np
 
+import numba
+
 import os
 
 import subprocess as sp
@@ -31,11 +33,25 @@ def basis_trimmer(p, auxbasis):
     trimmed_basis_list = []
     for line in basis:
         try: 
-            if literal_eval(line.split()[0]) >= 0.1:
+            if literal_eval(line.split()[0]) >= 0.9:
                 trimmed_basis_list.append(line)
             else:
-                print("Basis trimmer removed function from basis:")
-                print(line)
+                #print("Bsis trimmer removed function from basis:")
+                
+                
+                #print(trimmed_basis_list[-1])
+                #print(line)
+                #print("New lline:")
+                
+                #l1 = 10*literal_eval(line.split()[0])
+                #line_new = "      %.6f    1.00\n" % l1
+                #trimmed_basis_list.append(line_new)
+                
+                #print(line_new)
+                
+                #print("New line:", line_new)
+                
+                
                 trimmed_basis_list = trimmed_basis_list[:-1]
                 pass
 
@@ -75,7 +91,7 @@ def get_xyz(p, t = np.array([[0,0,0]])):
     pos, charge = p.get_atoms(t)
     ptable = [None, "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne"]
     sret = "%i\n\n" % len(charge)
-    conversion_factor = 0.52917721092**-1
+    conversion_factor = 0.52917721092 #**-1
     for i in range(len(charge)):
         sret += "%s %.15f %.15f %.15f\n" % (ptable[int(charge[i])],conversion_factor*pos[i][0], conversion_factor*pos[i][1], conversion_factor*pos[i][2])
     sret = sret[:-2]
@@ -610,7 +626,7 @@ def invert_JK(JK):
 #def kspace_contraction(JK_att, Jmn):
 #    Jmn_ret = Jmn*0.0
 
-def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 10e-10, auxname = "cc-pvdz-ri"):
+def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 10e-12, auxname = "cc-pvdz-ri"):
     
     for i in np.arange(1,100):
         cube = tp.lattice_coords([i,0,0]) #assumed max twobody AO-extent (subst. C-S Screening)
@@ -631,36 +647,42 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
     
 
 
-#s2 = s.cdot(s)
-def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1, auxname = "cc-pvdz-ri"):
-    cube = tp.lattice_coords([1,1,1]) #assumed max twobody AO-extent (subst. C-S Screening)
-
-    big_tmat = estimate_attenuation_distance(p, attenuation = attenuation, thresh = 10e-12, auxname = auxname)
-    cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
-
-
-    JK = compute_JK(p,big_tmat, attenuation = attenuation, auxname = auxname)
-
+def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1, auxname = "cc-pvdz-ri", JKmats = None):
+    cube = tp.lattice_coords([0,0,0]) #assumed max twobody AO-extent (subst. C-S Screening)
     
-    
-    print("JK outer max (should be small):", cmax, np.max(np.abs(JK.cget(cmax))))
-    JKinv = invert_JK(JK)
-    print("Condition:", np.abs(JK.blocks).max(), np.abs(JKinv.blocks).max())
-    # test inversion
-    tcoords = np.zeros((np.max(JK.coords),3), dtype = int)
-    tcoords[:,0] = np.arange(JK.coords.max(), dtype = int)
-    I = JKinv.cdot(JK, coords = tcoords )
-    #I = JKinv.circulantdot(JK)
-    print("Inversion test (0,0,0):", np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
-    for cc in tcoords[1:]:
-        print("Inversion test (%i,0,0):" % cc[0], np.max(np.abs(I.cget(cc))))
-    print("---")
-    
-    I = JKinv.circulantdot(JK)
-    print("Circulant inversion test (0,0,0):", np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
-    for cc in tcoords[1:]:
-        print("Circulant inversion test (%i,0,0):" % cc[0], np.max(np.abs(I.cget(cc))))
-    print("---")
+    if JKmats is None:
+        # build JK and inverse
+        big_tmat = estimate_attenuation_distance(p, attenuation = .5*attenuation, thresh = 10e-14, auxname = auxname)
+        cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
+
+        print(cmax,c.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))])
+        #print(big_tmat.coords)
+        #JK = compute_JK(p,big_tmat, attenuation = attenuation, auxname = auxname)
+        JK = compute_JK(p,big_tmat, attenuation = attenuation, auxname = auxname)
+
+        
+        
+        print("JK outer max (should be small):", cmax, np.max(np.abs(JK.cget(cmax))))
+        JKinv = invert_JK(JK)
+        print("Condition:", np.abs(JK.blocks).max(), np.abs(JKinv.blocks).max())
+        # test inversion
+        tcoords = np.zeros((np.max(JK.coords),3), dtype = int)
+        tcoords[:,0] = np.arange(JK.coords.max(), dtype = int)
+        I = JKinv.cdot(JK, coords = tcoords )
+        #I = JKinv.circulantdot(JK)
+        print("Direct space inversion test (0,0,0):", np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
+        for cc in tcoords[1:]:
+            print("Direct space inversion test (%i,0,0):" % cc[0], np.max(np.abs(I.cget(cc))))
+        print("---")
+        
+        I = JKinv.circulantdot(JK)
+        print("Circulant inversion test (0,0,0):", np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
+        for cc in tcoords[1:]:
+            print("Circulant inversion test (%i,0,0):" % cc[0], np.max(np.abs(I.cget(cc))))
+        print("---")
+    else:
+        JK, JKinv = JKmats
+    ## -> Perform inversion product in reciprocal space OR oversample the attenuated matrix
 
     
     
@@ -672,8 +694,10 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
     #print(Jmn.cget([0,0,0]).shape)
     
     c_occ, c_virt = occ_virt_split(c,p)
-    c_occ = c
-    c_virt = c
+    print(c_occ.blockshape)
+    print(c_virt.blockshape)
+    #c_occ = c
+    #c_virt = c
 
     Jpq_c = []
     for i in np.arange(coord_q.shape[0]):
@@ -682,7 +706,7 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
         Jpq_c[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
         Jpq_c[-1].blocks *= 0
     #print(Jpq.blocks.shape)
-
+    
     for c2 in cube:
         # Compute JMN with nsep =  c2
         #print(c2)
@@ -697,7 +721,7 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
         #print("Jmnc2")
         
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
-        #print("Max element in shifted matrix ", c2, " is ", np.max(np.abs(Jmnc2.blocks)))
+        
         #print("Jmnc2 outer max (should be small):", cmax, np.max(np.abs(Jmnc2.cget(cmax))))
         
         #print(get_xyz(p, [c2]))
@@ -707,11 +731,18 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
         if np.max(np.abs(Jmnc2.blocks))>1e-12:
             
             for c1 in c.coords:
+                #@numba.autojit(nopython= True)
                 for i in np.arange(coord_q.shape[0]):
+                    
                     #Jpqc = Jpq.cget(c1) + np.einsum("jmn,mk,nl->jkl", Jmnc2.cget(c1).reshape((70,11,11)), c.cget(c1), c.cget(c2), optimize = True).reshape((70,11**2))
-                    Jpqc = Jpq_c[i].cget(c1) + np.einsum("jmn,mk,nl->jkl", Jmnc2.cget(c1).reshape((JK.blockshape[0],c_occ.blockshape[0],c_virt.blockshape[0])), c_occ.cget(c1), c_virt.cget(c1 - c2 - coord_q[i]), optimize = True).reshape((JK.blockshape[0],c_occ.blockshape[1]*c_virt.blockshape[1]))
+                    Jpqc = Jpq_c[i].cget(c1) + np.einsum("jmn,mk,nl->jkl", Jmnc2.cget(c1).reshape((JK.blockshape[0],c_occ.blockshape[0],c_virt.blockshape[0])), c_occ.cget(c1), c_virt.cget(c1 + c2 + coord_q[i]), optimize = True).reshape((JK.blockshape[0],c_occ.blockshape[1]*c_virt.blockshape[1]))
 
                     Jpq_c[i].cset(c1, Jpqc)
+                    #nrm = np.linalg.norm(Jpq_c[i].cget(c1))
+                    #if nrm>10e-10:
+                    #    print(c1 - c2 + coord_q[i], c1, c2, coord_q[i])
+                    #    print(np.linalg.norm(Jpqc))
+                    #    print("Max element in shifted matrix ", c2, " is ", np.max(np.abs(Jmnc2.blocks)))
         #print(c2, " done.")
     
 
@@ -738,6 +769,118 @@ def test_matrix_kspace_condition(M, n_fourier):
         print(k, np.abs(Mk_e).max()/np.abs(Mk_e).min(),np.linalg.det(Mk.cget(k)), np.max(np.abs(Mk.cget(k).real)))
         print()
 
+
+class integral_builder():
+    def __init__(self, c,p, attenuation = 0.1, auxname = "cc-pvdz-ri"):
+        self.c = c
+        self.p = p
+        self.attenuation = attenuation
+        self.auxname = auxname
+
+        # Oneshot calculations:
+        # build attenuated JK matrix and inverse
+        big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 10e-14, auxname = auxname)
+        cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
+
+        self.JKa = compute_JK(self.p,self.c, attenuation = attenuation, auxname = auxname)
+
+
+        print("Attenuated coulomb matrix computed")
+        print("JK_attenuated outer max (should be small):", cmax, np.max(np.abs(self.JKa.cget(cmax))))
+        self.JKinv = invert_JK(self.JKa)
+        print("Reciprocal space inversion complete.")
+        # print("Condition:", np.abs(JK.blocks).max(), np.abs(JKinv.blocks).max())
+        # test inversion
+        tcoords = np.zeros((np.max(self.JKa.coords),3), dtype = int)
+        tcoords[:,0] = np.arange(self.JKa.coords.max(), dtype = int)
+        I = self.JKinv.cdot(self.JKa, coords = tcoords )
+        #I = JKinv.circulantdot(JK)
+        print("Direct space inversion test (0,0,0):", np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
+        for cc in tcoords[1:]:
+            print("Direct space inversion test (%i,0,0):" % cc[0], np.max(np.abs(I.cget(cc))))
+        print("---")
+
+        I = self.JKinv.circulantdot(self.JKa)
+        print("Circulant inversion test (0,0,0):", np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
+        for cc in tcoords[1:]:
+            print("Circulant inversion test (%i,0,0):" % cc[0], np.max(np.abs(I.cget(cc))))
+        print("---")
+
+        
+        self.XregT = np.zeros((15,15,15), dtype = tp.tmat)  # RI - coefficient matrices ^T
+        self.VXreg = np.zeros((15,15,15), dtype = tp.tmat) # RI - matrices with V contracted
+
+        # initial coeffs computed in single layer around center cell
+        coord_q =  tp.lattice_coords([1,1,1]) #initial virtual domain
+        Xreg = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv])
+        
+        for i in np.arange(coord_q.shape[0]):
+            print("Transpose of coordinate", coord_q[i])
+            self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i].tT()
+
+
+
+
+        # Compute JK_coulomb
+        coulomb_extent = np.max(np.abs(self.XregT[0,0,0].coords), axis = 0)
+        print("Extent of Coulomb matrix:", coulomb_extent)
+
+        s = tp.tmat()
+        scoords = tp.lattice_coords(coulomb_extent)
+        s.load_nparray(np.ones((scoords.shape[0],2,2), dtype = float), scoords)
+        print("Computing JK (Coulomb) matrix....",)
+        self.JK = compute_JK(p,s, coulomb=True, auxname = self.auxname) 
+        self.JK.tolerance = 10e-12
+        print(" done.")
+
+
+        for i in np.arange(coord_q.shape[0]):
+            print("JK dot X for cell ", coord_q[i])
+            self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.cdot(Xreg[i])
+
+
+
+        
+
+
+
+
+    def _getcell(self, dL, M, dM):
+        for d in [dL, dM]:
+            if self.XregT[d[0], d[1], d[2]] is 0:
+
+                #coords_q = tp.lattice_coords()
+
+
+                # Should compute all within range
+                Xreg = compute_fitting_coeffs(self.c,self.p,coord_q = np.array([d]), attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv])
+                self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
+                self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
+                print(d, "computed.")
+                #self.Xreg[d[0], d[1], d[2]] =  self.XregT[d[0], d[1], d[2]].tT() #transpose matrix
+        
+        return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+
+    
+
+
+
+
+        # array for integral storage
+
+        #max_virtual_extent = tp.lattice_coords([3,3,3])
+
+        #self.v = np.zeros(())
+
+        # compute center cell 
+        
+
+
+
+
+
+
+
 if __name__ == "__main__":
     os.environ["LIBINT_DATA_PATH"] = os.getcwd() 
     print("""#####################################################
@@ -760,6 +903,8 @@ if __name__ == "__main__":
     parser.add_argument("coefficient_matrix", type= str,help="Block Toeplitz matrix with coefficients")
     parser.add_argument("auxbasis", type = str, help="Auxiliary fitting basis.")
     parser.add_argument("-attenuation", type = float, default = 0.2)
+    parser.add_argument("-test_ao", default = False, action = "store_true", help="Run test for AO-basis")
+    parser.add_argument("-test_ibuild", default = False, action = "store_true", help="Test integral builder")
     
     args = parser.parse_args()
 
@@ -776,10 +921,24 @@ if __name__ == "__main__":
 
     #print(p.get_libint_basis())
     #print(c.cget([0,0,0]))
-    #c.blocks *= 0
-    #c.cset([0,0,0], np.eye(11))
-
     virtual_region = tp.lattice_coords([1,1,1])
+    if args.test_ao:
+        #c.blocks *= 0
+        #c.cset([0,0,0], np.eye(11))
+        #c.cset([1,0,0], .5*np.eye(11))
+
+        virtual_region = tp.lattice_coords([0,0,0])
+
+
+    if args.test_ibuild:
+        print("Testing integral builder")
+        ib = integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis")
+        # generating integrals
+        print(ib._getcell([0,0,0],[0,0,0],[0,0,0]).shape)
+        print(ib._getcell([0,0,0],[0,0,1],[0,0,0]).shape)
+        print(ib._getcell([0,0,0],[0,0,2],[0,0,0]).shape)
+        print(ib._getcell([0,0,0],[0,0,3],[0,0,0]).shape)
+
 
     X = compute_fitting_coeffs(c,p, attenuation = args.attenuation, auxname = "ri-fitbasis", coord_q=virtual_region)
     print(X)
@@ -789,6 +948,66 @@ if __name__ == "__main__":
     for cc in np.arange(virtual_region.shape[0]):
         i,j,k = virtual_region[cc]
         Xreg[i,j,k] = X[cc]
+        
+    if args.test_ao:
+        # calculate some regions and compare to ao-integrals
+        coulomb_extent = np.max(np.abs(Xreg[0,0,0].coords), axis = 0)
+        #print(coulomb_extent)
 
-    np.save("fitted_coeffs", Xreg)
-    print("Fitting complete, stored to file.")
+        s = tp.tmat()
+        scoords = tp.lattice_coords(coulomb_extent)
+        s.load_nparray(np.ones((scoords.shape[0],2,2), dtype = float), scoords)
+
+        JK = compute_JK(p,s, coulomb=True, auxname = "ri-fitbasis") 
+        JK.tolerance = 10e-12
+
+        JKX = np.zeros_like(Xreg)
+
+        #print(JK.circulantdot(Xreg[0,0,0]))
+        for i in np.arange(len(Xreg)):
+            for j in np.arange(len(Xreg[i])):
+                for k in np.arange(len(Xreg[i,j])):
+                    try:
+                        JKX[i,j,k] = JK.cdot(Xreg[i,j,k])
+                        #JKX[i,j,k] = JK.circulantdot(Xreg[i,j,k])
+                        print(i,j,k,"partially computed.")
+                    except:
+                        print(i,j,k,"skipped.")
+                        pass
+        for i in np.arange(10):
+            print(p.get_nocc(), p.get_nvirt())
+
+            #try:
+            xjkx = Xreg[0,0,0].tT().cdot(JKX[0,0,0], coords = [[i,0,0]]).cget([i,0,0]).reshape((p.get_nocc(),p.get_nvirt(),p.get_nocc(),p.get_nvirt()))
+            #xjkx = Xreg[0,0,0].tT().circulantdot(JKX[0,0,0]).cget([i,0,0]).reshape((p.get_nocc(),p.get_nvirt(),p.get_nocc(),p.get_nvirt()))
+
+            #pqrs = compute_pqrs(p, t = [[i,0,0]]).reshape([p.get_nocc(),p.get_nvirt(),p.get_nocc(),p.get_nvirt()])
+            pqrs = compute_pqrs(p, t = [[i,0,0]]).reshape((p.get_n_ao(), p.get_n_ao(),p.get_n_ao(),p.get_n_ao()))[:p.get_nocc(),p.get_nocc():,:p.get_nocc(),p.get_nocc():]
+
+            for pp in np.arange(p.get_nocc()):
+                for qq in np.arange(p.get_nvirt()):
+                    print("  " , pp,qq,pp,qq, "   %.6e   %.6e   %.6e" % (xjkx[pp,qq,pp,qq], pqrs[pp,qq,pp,qq], np.abs(xjkx[pp,qq,pp,qq] - pqrs[pp,qq,pp,qq])))
+                    #for rr in np.arange(p.get_nocc()):
+                    #    for ss in np.arange(p.get_nvirt()):
+                    #        print("  " , pp,qq,rr,ss, "   %.4e   %.4e   %.4e" % (xjkx[pp,qq,rr,ss], pqrs[pp,qq,rr,ss], np.abs(xjkx[pp,qq,rr,ss] - pqrs[pp,qq,rr,ss])))
+            print("Max deviation:" , np.abs(xjkx - pqrs).max())
+
+
+
+                #print(xjkx[:2,np.arange(2, 11),:2, np.arange(2,11)])  # = (000i000a|100j100b)
+                #print(pqrs[:2,np.arange(2, 11),:2, np.arange(2,11)])
+                #print(np.linalg.norm(xjkx - pqrs))
+
+            print("   ", )
+            #except:
+            #    print(i,0,0,"outside region (try except).")
+
+
+    else:
+        np.save("fitted_coeffs", Xreg)
+        print("Fitting complete, stored to file.")
+
+
+
+
+# Plan: 2. PAO adaption (periodic cluster operator, nonorthonormal orbitals) - 1. Robust fitting
