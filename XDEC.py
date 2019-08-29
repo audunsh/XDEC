@@ -221,7 +221,7 @@ if __name__ == "__main__":
         virtual_extent = di.coords
         pair_extent = tp.lattice_coords([1,0,0])
 
-        pdom = pair_extents.shape[0]
+        pdom = pair_extent.shape[0]
 
         vp_indx = mapgen(virtual_extent, pair_extent)
         pp_indx = mapgen(pair_extent, pair_extent)
