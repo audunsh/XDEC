@@ -33,7 +33,7 @@ def mapgen(vex1, vex2):
                 pass
     return ret_indx
 
-def advance_amplitudes(pair_extent, virtual_extent, t2,G,E):
+def advance_amplitudes__(pair_extent, virtual_extent, t2,G,E):
     t2_new = np.zeros_like(t2)
     for M in np.arange(len(pair_extent)):
         for dL in np.arange(len(virtual_extent)):
@@ -117,6 +117,9 @@ def advance_amplitudes_(pair_extent, virtual_extent, t2,G,E):
     t2_new[:,:-1,:,:-1,:,:-1,:] = t2_new[:,:-1,:,:-1,:,:-1,:]*E + t2[:,:-1,:,:-1,:,:-1,:]
     return t2_new
 
+#def advance_amplitudes(t,g,f):
+
+
 if __name__ == "__main__":
     os.environ["LIBINT_DATA_PATH"] = os.getcwd() 
     print("""#####################################################
@@ -138,10 +141,10 @@ if __name__ == "__main__":
     parser.add_argument("project_file", type = str, help ="input file for project (.d12 file)")
     parser.add_argument("coefficients", type= str,help = "Coefficient matrix from Crystal")
     parser.add_argument("fock_matrix", type= str,help = "AO-Fock matrix from Crystal")
-    parser.add_argument("fitted_coeffs", type= str,help="Array of coefficient matrices from RI-fitting")
+    parser.add_argument("-fitted_coeffs", type= str,help="Array of coefficient matrices from RI-fitting")
     parser.add_argument("auxbasis", type = str, help="Auxiliary fitting basis.")
     parser.add_argument("wcenters", type = str, help="Wannier centers")
-    parser.add_argument("attenuation", type = float, default = 1.2, help = "Attenuation paramter for RI")
+    parser.add_argument("-attenuation", type = float, default = 1.2, help = "Attenuation paramter for RI")
     args = parser.parse_args()
 
 
@@ -161,6 +164,8 @@ if __name__ == "__main__":
     # Wannier coefficients
     c = tp.tmat()
     c.load(args.coefficients)
+
+    c_occ, c_virt = PRI.occ_virt_split(c,p)
     
     # AO Fock matrix
     f_ao = tp.tmat()
@@ -168,6 +173,11 @@ if __name__ == "__main__":
 
     # Compute MO Fock matrix
     f_mo = c.tT().cdot(f_ao*c, coords = c.coords)
+
+    f_mo_aa = c_virt.tT().cdot(f_ao*c_virt, coords = c.coords)
+    f_mo_ii = c_occ.tT().cdot(f_ao*c_occ, coords = c.coords)
+
+
 
     # Compute energy denominator
     f_aa = f_mo.cget([0,0,0])[np.arange(p.get_nocc(),p.get_n_ao()), np.arange(p.get_nocc(),p.get_n_ao())]
@@ -188,6 +198,8 @@ if __name__ == "__main__":
 
     d = dd.build_distance_matrix(p, c.coords, wcenters, wcenters)
     center_fragments = dd.atomic_fragmentation(p, d, 3.0)
+    
+
 
     
 
@@ -199,10 +211,26 @@ if __name__ == "__main__":
         # Expand virtual space
         di = dd.build_local_domain_index_matrix(fragment, d, 5.0)
 
-        # Set up initial guess for amplitudes
-        t = np.zeros((15,15,15), dtype = tp.tmat) #cluster amplitudes
+        # Set up initial guess for amplitudes, integrals and domains
 
-        params = []
+        nocc = p.get_nocc()
+        nvirt = p.get_nvirt()
+
+        ndom = di.coords.shape[0]
+
+        virtual_extent = di.coords
+        pair_extent = tp.lattice_coords([1,0,0])
+
+        pdom = pair_extents.shape[0]
+
+        vp_indx = mapgen(virtual_extent, pair_extent)
+        pp_indx = mapgen(pair_extent, pair_extent)
+
+        t2 = np.zeros((nocc, ndom,  nvirt, 1, nocc, ndom, nvirt), dtype = float)
+        G_direct = np.zeros((nocc, ndom,  nvirt, 1, nocc, ndom, nvirt), dtype = float)
+        G_exchange = np.zeros((nocc, ndom,  nvirt, 1, nocc, ndom, nvirt), dtype = float)
+        #T = np.zeros((p.get_nocc()))
+
 
         for ddL in np.arange(di.coords.shape[0]):
             for ddM in np.arange(di.coords.shape[0]):
@@ -212,11 +240,15 @@ if __name__ == "__main__":
                 g_direct = ib.getcell(dL, [0,0,0], dM)
                 g_exchange = ib.getcell(dM, [0,0,0], dL)
                 t = g_direct*e_iajb**-1
-                params.append([dL, dM, t, g_direct, g_exchange])
+                t2[:, ddL, :, 0, :, ddM, :] = g_direct*e_iajb**-1
+                G_direct[:, ddL, :, 0, :, ddM, :] = g_direct
+                G_exchange[:, ddL, :, 0, :, ddM, :] = g_exchange
 
 
 
-
+                #lattice.append([dL, dM])
+                #tensors.append([t, g_direct, g_exchange])
+                #domains.append([di.cget(dL)[fragment, :], np.arange(2), di.cget(dM)[fragment, :]])
         e0 = 0
         # Perform (initial guess) energy calculation for fragment
         for dL in di.coords:
@@ -231,8 +263,81 @@ if __name__ == "__main__":
 
 
                 e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-                print(dL, dM, e0)
-        print("e0", e0)
+                #print(dL, dM, e0)
+        print("pre-optimized energy:", e0)
+
+
+
+
+        # solve MP2 equations
+        
+
+        for ti in np.arange(20):
+            t2_new = np.zeros((nocc, ndom,  nvirt, 1, nocc, ndom, nvirt), dtype = float)
+            M = 0
+            for dL in np.arange(di.coords.shape[0]):
+                for dM in np.arange(di.coords.shape[0]): 
+                    for M in np.arange(1):
+                        tnew = -G_direct[:, dL, :, M, :, dM, :]
+                        Fac = f_mo_aa.cget(virtual_extent - virtual_extent[dL])
+                        tnew -= np.einsum("iKcjb,Kac->iajb", t2[:, :, :, M, :, dM, :], Fac)
+
+                        # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
+                        Fbc = f_mo_aa.cget(virtual_extent - virtual_extent[dM])
+                        tnew -= np.einsum("iajKb,Kbc->iajb", t2[:, dL, :, M, :, :, :], Fbc)
+                        
+                        # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
+                        
+                        Fki = f_mo_ii.cget(-1*pair_extent)
+                        tnew += np.einsum("Kkajb,Kki->iajb",t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
+                        
+                        # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
+                        
+                        Fkj = f_mo_ii.cget(-1*pair_extent + pair_extent[0])
+                        tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
+
+                        
+                        # + \left(t^{\Delta L a, \Delta Mb}_{L'k,Mj}\right)_{n}\varepsilon^{\Delta L a, \Delta Mb}_{0i,Mj},
+                        #tnew += t2[:, dL, :, M, :, dM, :] #*E[:,dL,:,M,:,dM,:]**-1
+
+                        t2_new[:, dL, :, M, :, dM, :] = tnew*e_iajb**-1
+            #print("Residual norm: ")
+            t2 -= t2_new
+            print("Iteration:",ti, "Amplitude gradient norm:",  np.linalg.norm(t2_new))
+            #print("Residual norm: ", )
+
+
+
+
+            #for i in np.arange(len(domains)):
+                #dL, dM = lattice[i]
+                #t, g_direct, g_exchange = tensors[i]
+                #dLi, Mi, dMi = domains[i]
+                 
+
+
+
+
+
+        e0 = 0
+        # Perform (initial guess) energy calculation for fragment
+        for ddL in np.arange(di.coords.shape[0]):
+            for ddM in np.arange(di.coords.shape[0]):
+                dL = di.coords[ddL]
+                dM = di.coords[ddM]
+
+                g_direct = ib.getcell(dL, [0,0,0], dM)
+                g_exchange = ib.getcell(dM, [0,0,0], dL)
+
+                t = t2[:,ddL,:,0,:,ddM,:] #*e_iajb**-1
+                #print(t.shape, g_direct.shape)
+
+
+
+
+                e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+                #print(dL, dM, e0)
+        print("optimized fragment energy:", e0)
 
 
 

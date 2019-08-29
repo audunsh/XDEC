@@ -637,7 +637,7 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
         #print("Largest element in %i th layer:" % i, np.max(np.abs(JK.cget(cmax))))
         if (np.max(np.abs(Jmnc.cget(cmax))))<thresh:
-            print("Converged to %i layers for shifted coordinate:" % i, c2)
+            #print("Converged to %i layers for shifted coordinate:" % i, c2)
             break
     cube = tp.lattice_coords([i,i,i]) #assumed max twobody AO-extent (subst. C-S Screening)
     cube = cube[np.sqrt(np.sum(cube**2, axis = 1))<=i]
@@ -694,8 +694,8 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
     #print(Jmn.cget([0,0,0]).shape)
     
     c_occ, c_virt = occ_virt_split(c,p)
-    print(c_occ.blockshape)
-    print(c_virt.blockshape)
+    #print(c_occ.blockshape)
+    #print(c_virt.blockshape)
     #c_occ = c
     #c_virt = c
 
@@ -755,10 +755,10 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
 
     X = []
     for i in np.arange(len(Jpq_c)):
-        print("Compute coeffs for shifted coordinate", coord_q[i])
+        #print("Compute coeffs for shifted coordinate", coord_q[i])
         X.append(JKinv.cdot(Jpq_c[i]))
     #X = JKinv.cdot(Jpq, coords = Jpq.coords) #compute coefficients
-    print("done")
+    #print("done")
     return X
 
 def test_matrix_kspace_condition(M, n_fourier):
