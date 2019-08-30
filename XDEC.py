@@ -209,7 +209,7 @@ if __name__ == "__main__":
         print("Fragment:", fragment)
         
         # Expand virtual space
-        di = dd.build_local_domain_index_matrix(fragment, d, 5.0)
+        di = dd.build_local_domain_index_matrix(fragment, d, 7.0)
 
         # Set up initial guess for amplitudes, integrals and domains
 
@@ -220,29 +220,32 @@ if __name__ == "__main__":
 
         virtual_extent = di.coords
         pair_extent = tp.lattice_coords([1,0,0])
+        print("p:", pair_extent)
 
         pdom = pair_extent.shape[0]
 
         vp_indx = mapgen(virtual_extent, pair_extent)
         pp_indx = mapgen(pair_extent, pair_extent)
 
-        t2 = np.zeros((nocc, ndom,  nvirt, 1, nocc, ndom, nvirt), dtype = float)
-        G_direct = np.zeros((nocc, ndom,  nvirt, 1, nocc, ndom, nvirt), dtype = float)
-        G_exchange = np.zeros((nocc, ndom,  nvirt, 1, nocc, ndom, nvirt), dtype = float)
+        t2 = np.zeros((nocc, ndom,  nvirt, pdom, nocc, ndom, nvirt), dtype = float)
+        G_direct = np.zeros((nocc, ndom,  nvirt, pdom, nocc, ndom, nvirt), dtype = float)
+        G_exchange = np.zeros((nocc, ndom,  nvirt, pdom, nocc, ndom, nvirt), dtype = float)
         #T = np.zeros((p.get_nocc()))
 
 
         for ddL in np.arange(di.coords.shape[0]):
             for ddM in np.arange(di.coords.shape[0]):
                 dL, dM = di.coords[ddL], di.coords[ddM]
+                for mM in np.arange(pair_extent.shape[0]):
+                    M = pair_extent[mM]
 
                 
-                g_direct = ib.getcell(dL, [0,0,0], dM)
-                g_exchange = ib.getcell(dM, [0,0,0], dL)
-                t = g_direct*e_iajb**-1
-                t2[:, ddL, :, 0, :, ddM, :] = g_direct*e_iajb**-1
-                G_direct[:, ddL, :, 0, :, ddM, :] = g_direct
-                G_exchange[:, ddL, :, 0, :, ddM, :] = g_exchange
+                    g_direct = ib.getcell(dL, M, dM)
+                    g_exchange = ib.getcell(dM+M, M, dL-M) #this one ::-/ is it correct?
+                    t = g_direct*e_iajb**-1
+                    t2[:, ddL, :, mM, :, ddM, :] = g_direct*e_iajb**-1
+                    G_direct[:, ddL, :, mM, :, ddM, :] = g_direct
+                    G_exchange[:, ddL, :, mM, :, ddM, :] = g_exchange
 
 
 
@@ -251,19 +254,26 @@ if __name__ == "__main__":
                 #domains.append([di.cget(dL)[fragment, :], np.arange(2), di.cget(dM)[fragment, :]])
         e0 = 0
         # Perform (initial guess) energy calculation for fragment
-        for dL in di.coords:
-            for dM in di.coords:
-                
-                g_direct = ib.getcell(dL, [0,0,0], dM)
-                g_exchange = ib.getcell(dM, [0,0,0], dL)
+        for ddL in np.arange(di.coords.shape[0]):
+            for ddM in np.arange(di.coords.shape[0]):
+                for mM in [1]: #np.arange(pdom):
+                    dM, dL = di.coords[ddL], di.coords[ddM]
+                    M = pair_extent[mM]
+                    
+                    #g_direct = ib.getcell(dL, [0,0,0], dM)
+                    #g_exchange = ib.getcell(dM, [0,0,0], dL)
 
-                t = g_direct*e_iajb**-1
+                    g_direct   =  G_direct[:, ddL, :,  mM, :, ddM, :]
+                    g_exchange =  G_exchange[:, ddL, :, mM, :, ddM, :]
+                    
+
+                    t = g_direct*e_iajb**-1
 
 
 
 
-                e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-                #print(dL, dM, e0)
+                    e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+                    #print(dL, dM, e0)
         print("pre-optimized energy:", e0)
 
 
@@ -273,12 +283,14 @@ if __name__ == "__main__":
         
 
         for ti in np.arange(20):
-            t2_new = np.zeros((nocc, ndom,  nvirt, 1, nocc, ndom, nvirt), dtype = float)
+            t2_new = np.zeros((nocc, ndom,  nvirt, pdom, nocc, ndom, nvirt), dtype = float)
             M = 0
             for dL in np.arange(di.coords.shape[0]):
                 for dM in np.arange(di.coords.shape[0]): 
-                    for M in np.arange(1):
+                    for M in np.arange(pair_extent.shape[0]):
                         tnew = -G_direct[:, dL, :, M, :, dM, :]
+
+
                         Fac = f_mo_aa.cget(virtual_extent - virtual_extent[dL])
                         tnew -= np.einsum("iKcjb,Kac->iajb", t2[:, :, :, M, :, dM, :], Fac)
 
@@ -293,7 +305,7 @@ if __name__ == "__main__":
                         
                         # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
                         
-                        Fkj = f_mo_ii.cget(-1*pair_extent + pair_extent[0])
+                        Fkj = f_mo_ii.cget(-1*pair_extent + pair_extent[M])
                         tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
 
                         
@@ -316,9 +328,30 @@ if __name__ == "__main__":
                  
 
 
+        e0 = 0
+        for ddL in np.arange(di.coords.shape[0]):
+            for ddM in np.arange(di.coords.shape[0]):
+                for mM in [1]: #np.arange(pdom):
+                    dM, dL = di.coords[ddL], di.coords[ddM]
+                    M = pair_extent[mM]
+                    
+                    #g_direct = ib.getcell(dL, [0,0,0], dM)
+                    #g_exchange = ib.getcell(dM, [0,0,0], dL)
+
+                    g_direct   =  G_direct[:, ddL, :,  mM, :, ddM, :]
+                    g_exchange =  G_exchange[:, ddL, :, mM, :, ddM, :]
+                    
+
+                    t = t2[:, ddL, :,  mM, :, ddM, :] #g_direct*e_iajb**-1
 
 
 
+
+                    e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+                    #print(dL, dM, e0)
+        print("optimized fragment energy:", e0)
+        
+        """
         e0 = 0
         # Perform (initial guess) energy calculation for fragment
         for ddL in np.arange(di.coords.shape[0]):
@@ -327,6 +360,7 @@ if __name__ == "__main__":
                 dM = di.coords[ddM]
 
                 g_direct = ib.getcell(dL, [0,0,0], dM)
+                #g_exchange = ib.getcell(dM, [0,0,0], dL)
                 g_exchange = ib.getcell(dM, [0,0,0], dL)
 
                 t = t2[:,ddL,:,0,:,ddM,:] #*e_iajb**-1
@@ -338,6 +372,7 @@ if __name__ == "__main__":
                 e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
                 #print(dL, dM, e0)
         print("optimized fragment energy:", e0)
+        """
 
 
 
