@@ -119,6 +119,298 @@ def advance_amplitudes_(pair_extent, virtual_extent, t2,G,E):
 
 #def advance_amplitudes(t,g,f):
 
+class fragment_amplitudes():
+    """
+    Class that handles t2 amplitudes with dynamically increasing size
+    """
+    def __init__(self, p, wannier_centers, coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0):
+        self.p = p #prism object
+        self.d = dd.build_distance_matrix(p, coords, wcenters, wcenters) # distance matrix
+        
+        self.d_ii = dd.build_distance_matrix(p, coords, wcenters[:p.get_nocc()], wcenters[:p.get_nocc()])
+        self.d_ia = dd.build_distance_matrix(p, coords, wcenters[:p.get_nocc()], wcenters[p.get_nocc():])
+        
+        self.ib = ib #integral builder
+        self.virtual_cutoff = virtual_cutoff
+        self.occupied_cutoff = occupied_cutoff
+        self.min_elm = np.min(self.d.blocks[:-1], axis = (1,2)) #array for matrix-size calc
+        
+        self.min_elm_ii = np.min(self.d_ii.blocks[:-1], axis = (1,2))
+        self.min_elm_ia = np.min(self.d_ia.blocks[:-1], axis = (1,2))
+        
+        self.f_mo_ii = f_mo_ii
+        self.f_mo_aa = f_mo_aa
+
+        #d_order1 = np.argsort(np.min(self.d.blocks[:-1, :p.get_nocc(), :p.get_nocc()],axis=(1,2)))
+        #d_order2 = np.argsort(np.min(self.d.blocks[:-1, :p.get_nocc(), p.get_nocc():],axis=(1,2)))
+        #for i in np.arange(len(d_order1)):
+        #    if d_order1[i]!=d_order2[i]:
+        #        print("Inconsistent sorting:", i, d_order1[i], d_order2[i])
+
+
+
+
+        self.init_amplitudes()
+
+
+    def init_amplitudes(self):
+        self.n_virtual_cells = np.sum(self.min_elm_ia<=self.virtual_cutoff)
+        self.n_occupied_cells = np.sum(self.min_elm_ii<=self.occupied_cutoff)
+
+        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1]<=self.virtual_cutoff)
+        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1]<=self.occupied_cutoff)
+        
+        n_occ = self.p.get_nocc()     # Number of occupied orbitals per cell
+        N_occ = self.n_occupied_cells # Number of occupied cells
+        n_virt = self.p.get_nvirt()   # Number of virtual orbitals per cell
+        N_virt = self.n_virtual_cells # Number of virtual cells
+        
+
+        self.t2 = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = float)
+
+        self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = float)
+
+        self.g_x = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = float)
+
+        # Fill in tensors, initial guess, calculate initial energy
+
+        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
+        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
+    
+        self.e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
+
+
+        self.e0 = 0
+
+        for ddL in np.arange(N_virt):
+            for ddM in np.arange(N_virt):
+                dL, dM = self.d_ia.coords[ddL], self.d_ia.coords[ddM]
+                for mM in np.arange(N_occ):
+                    M = self.d_ii.coords[mM]
+
+                
+                    g_direct = self.ib.getcell(dL, M, dM)
+                    g_exchange = self.ib.getcell(dM+M, M, dL-M) 
+                    t = g_direct*self.e_iajb**-1
+                    self.t2[:, ddL, :, mM, :, ddM, :] = g_direct*self.e_iajb**-1
+                    self.g_d[:, ddL, :, mM, :, ddM, :] = g_direct
+                    self.g_x[:, ddL, :, mM, :, ddM, :] = g_exchange
+                    self.e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+        print("Initial energy from dynamic amplitudes:", self.e0)
+
+    def compute_energy(self):
+        e_mp2 = 0
+        N_virt = self.n_virtual_cells
+        N_occ = self.n_occupied_cells
+
+        for ddL in np.arange(N_virt):
+            for ddM in np.arange(N_virt):
+                dL, dM = self.d_ia.coords[ddL], self.d_ia.coords[ddM]
+                for mM in np.arange(N_occ):
+                    M = self.d_ii.coords[mM]
+
+                
+                    g_direct = self.g_d[:,ddL,:,mM, :, ddM, :]
+                    g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :]
+                    t = g_direct*self.e_iajb**-1
+                    e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+        return e_mp2
+
+
+
+    def init_cell(self, ddL, mmM, ddM):
+        dL, dM = self.d_ia.coords[ddL], self.d_ia.coords[ddM]
+        M = self.d_ii.coords[mmM]
+
+        g_direct = self.ib.getcell(dL, M, dM)
+        g_exchange = self.ib.getcell(dM+M, M, dL-M)
+
+        self.t2[:, ddL, :, mmM, :, ddM, :]  = g_direct*self.e_iajb**-1
+        self.g_d[:, ddL, :, mmM, :, ddM, :] = g_direct
+        self.g_x[:, ddL, :, mmM, :, ddM, :] = g_exchange
+
+    
+    def set_extent(self, virtual_cutoff, occupied_cutoff):
+        self.virtual_cutoff = virtual_cutoff
+        self.occupied_cutoff = occupied_cutoff
+
+        Nv = np.sum(self.min_elm_ia<=self.virtual_cutoff)
+        No = np.sum(self.min_elm_ii<=self.occupied_cutoff)
+
+        n_occ = self.p.get_nocc()
+        n_virt = self.p.get_nvirt()
+
+        # Note: forking is due to future implementation of block-specialized initialization
+        if Nv > self.n_virtual_cells:
+            if No > self.n_occupied_cells:
+                # Extend tensors in both occupied and virtual direction
+                t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                t2new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.t2
+                self.t2 = t2new
+
+                g_d_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                g_d_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_d
+                self.g_d = g_d_new
+
+                g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
+                self.g_x = g_x_new
+
+                # Initialize empty blocks
+                for ddL in np.arange(Nv):
+                    for ddM in np.arange(Nv):
+                        for mmM in np.arange(No):
+                            if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12:
+                                self.init_cell(ddL, mmM, ddM)
+                            
+
+
+
+
+
+
+            else:
+                # Extend tensors in the virtual direction
+                
+                t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                t2new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.t2
+                self.t2 = t2new
+
+                g_d_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                g_d_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_d
+                self.g_d = g_d_new
+
+                g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
+                self.g_x = g_x_new
+
+                # Initialize empty blocks
+                for ddL in np.arange(Nv):
+                    for ddM in np.arange(Nv):
+                        for mmM in np.arange(No):
+                            if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12:
+                                self.init_cell(ddL, mmM, ddM)
+
+        else:
+            if No > self.n_occupied_cells:
+                # Extend tensors in the occupied dimension
+                t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                t2new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.t2
+                self.t2 = t2new
+
+                g_d_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                g_d_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_d
+                self.g_d = g_d_new
+
+                g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
+                self.g_x = g_x_new
+
+                # Initialize empty blocks
+                for ddL in np.arange(Nv):
+                    for ddM in np.arange(Nv):
+                        for mmM in np.arange(No):
+                            if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12:
+                                self.init_cell(ddL, mmM, ddM)
+            else:
+                
+
+                
+                self.t2 = self.t2[:, :Nv, :, :No, :, :Nv, :]
+                self.g_d = self.g_d[:, :Nv, :, :No, :, :Nv, :]
+                self.g_x = self.g_x[:, :Nv, :, :No, :, :Nv, :]
+        
+        # Update domain measures
+        self.n_virtual_cells = Nv
+        self.n_occupied_cells = No
+
+        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1]<=self.virtual_cutoff)
+        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1]<=self.occupied_cutoff)
+
+    
+
+    def solve(self):
+        # Converge
+        pass
+
+
+
+
+
+
+
+
+def converge_fragment_amplitudes(t2, G_direct, f_mo_ii, f_mo_aa, di_virt, di_occ, fragment,p):
+    """
+    Solve MP2 equations for the given fragment, return amplitudes
+    
+    Input parameters
+
+     t2     - array containing initial guess amplitudes
+
+    """
+
+    nocc = p.get_nocc()
+
+
+    virtual_extent = di_virt.coords
+    pair_extent = di_occ.coords
+
+    vp_indx = mapgen(virtual_extent, pair_extent)
+    pp_indx = mapgen(pair_extent, pair_extent)
+
+    for ti in np.arange(100):
+        #t2_new = np.zeros((nocc, ndom,  nvirt, pdom, nocc, ndom, nvirt), dtype = float)
+        t2_new = np.zeros_like(t2)
+        for dL in np.arange(di_virt.coords.shape[0]):
+            for dM in np.arange(di_virt.coords.shape[0]): 
+                for M in np.arange(di_occ.coords.shape[0]):
+                    tnew = -G_direct[:, dL, :, M, :, dM, :]
+
+                    #L_indx = np.array(di_occ.cget([0,0,0]])[fragment[0],:], dtype = bool)
+                    #M_indx = np.array(di_occ.cget(di_occ.coords[M])[fragment[0],:], dtype = bool)
+                    #dL_indx = np.array(di_occ.cget([0,0,0]])[fragment[0],:], dtype = bool)
+
+                    
+                    
+                    #print(np.array(di_occ.cget(di_occ.coords[M]), dtype = bool))
+
+
+
+                    # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{Li,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
+                    Fac = f_mo_aa.cget(virtual_extent - virtual_extent[dL])
+                    #tb = t2[:, :, :, M, :, dM, :][di_occ.cget(di_occ.coords[M])[:,0]]
+                    tnew -= np.einsum("iKcjb,Kac->iajb", t2[:, :, :, M, :, dM, :], Fac)
+
+                    # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
+                    Fbc = f_mo_aa.cget(virtual_extent - virtual_extent[dM])
+                    tnew -= np.einsum("iajKb,Kbc->iajb", t2[:, dL, :, M, :, :, :], Fbc)
+                    
+                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
+                    
+                    Fki = f_mo_ii.cget(-1*pair_extent)
+                    tnew += np.einsum("Kkajb,Kki->iajb",t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
+                    
+                    # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
+                    
+                    Fkj = f_mo_ii.cget(-1*pair_extent + pair_extent[M])
+                    tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
+
+                    
+                    # + \left(t^{\Delta L a, \Delta Mb}_{L'k,Mj}\right)_{n}\varepsilon^{\Delta L a, \Delta Mb}_{0i,Mj},
+                    #tnew += t2[:, dL, :, M, :, dM, :] #*E[:,dL,:,M,:,dM,:]**-1
+
+                    t2_new[:, dL, :, M, :, dM, :] = tnew*e_iajb**-1
+        #print("Residual norm: ")
+        t2 -= t2_new
+        rnorm = np.linalg.norm(t2_new)
+        if rnorm<1e-10:
+
+            print("Iteration:",ti, "Amplitude gradient norm:",  np.linalg.norm(t2_new))
+            break
+    return t2
+
+
 
 if __name__ == "__main__":
     os.environ["LIBINT_DATA_PATH"] = os.getcwd() 
@@ -197,6 +489,9 @@ if __name__ == "__main__":
 
 
     d = dd.build_distance_matrix(p, c.coords, wcenters, wcenters)
+
+
+
     center_fragments = dd.atomic_fragmentation(p, d, 3.0)
     
 
@@ -204,25 +499,45 @@ if __name__ == "__main__":
     
 
     # Converge atomic fragment energies
+    
+    # Initial fragment extents
+    virt_cut = 3.0
+    occ_cut = 1.0
 
     for fragment in center_fragments:
         print("Fragment:", fragment)
         
-        # Expand virtual space
-        di = dd.build_local_domain_index_matrix(fragment, d, 7.0)
+        a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0)
+        a_frag.set_extent(6.0, 1.0)
+        print("Recalc energy:", a_frag.compute_energy())
+
+
+        # Screen virtual space
+        di_v = dd.build_local_domain_index_matrix(fragment, d, virt_cut)
+        #di_v.blocks = di_v_blocks[:, :, p.get_nocc():]
+
+        di_o = dd.build_local_domain_index_matrix(fragment, d, occ_cut)
+        #di_o.blocks = di_o_blocks[:, :, :p.get_nocc()]
 
         # Set up initial guess for amplitudes, integrals and domains
 
         nocc = p.get_nocc()
         nvirt = p.get_nvirt()
 
-        ndom = di.coords.shape[0]
+        ndom = di_v.coords.shape[0]
 
-        virtual_extent = di.coords
+        virtual_extent = di_v.coords
         pair_extent = tp.lattice_coords([1,0,0])
-        print("p:", pair_extent)
+        pair_extent = di_o.coords
+
+        pair_center = di_o.mapping[di_o._c2i([0,0,0])]
+
+
+        #print("p:", pair_extent)
 
         pdom = pair_extent.shape[0]
+
+
 
         vp_indx = mapgen(virtual_extent, pair_extent)
         pp_indx = mapgen(pair_extent, pair_extent)
@@ -233,9 +548,11 @@ if __name__ == "__main__":
         #T = np.zeros((p.get_nocc()))
 
 
-        for ddL in np.arange(di.coords.shape[0]):
-            for ddM in np.arange(di.coords.shape[0]):
-                dL, dM = di.coords[ddL], di.coords[ddM]
+
+
+        for ddL in np.arange(di_v.coords.shape[0]):
+            for ddM in np.arange(di_v.coords.shape[0]):
+                dL, dM = di_v.coords[ddL], di_v.coords[ddM]
                 for mM in np.arange(pair_extent.shape[0]):
                     M = pair_extent[mM]
 
@@ -254,10 +571,14 @@ if __name__ == "__main__":
                 #domains.append([di.cget(dL)[fragment, :], np.arange(2), di.cget(dM)[fragment, :]])
         e0 = 0
         # Perform (initial guess) energy calculation for fragment
-        for ddL in np.arange(di.coords.shape[0]):
-            for ddM in np.arange(di.coords.shape[0]):
-                for mM in [1]: #np.arange(pdom):
-                    dM, dL = di.coords[ddL], di.coords[ddM]
+
+        
+
+
+        for ddL in np.arange(di_v.coords.shape[0]):
+            for ddM in np.arange(di_v.coords.shape[0]):
+                for mM in [pair_center]: #np.arange(pdom):
+                    dM, dL = di_v.coords[ddL], di_v.coords[ddM]
                     M = pair_extent[mM]
                     
                     #g_direct = ib.getcell(dL, [0,0,0], dM)
@@ -268,6 +589,10 @@ if __name__ == "__main__":
                     
 
                     t = g_direct*e_iajb**-1
+
+                    #di.blocks[:-1][:, fragment[0], None,:]
+                    #di.blocks[:-1][:, fragment[0],:, None]
+
 
 
 
@@ -280,13 +605,16 @@ if __name__ == "__main__":
 
 
         # solve MP2 equations
-        
 
+        t2 = converge_fragment_amplitudes(t2, G_direct, f_mo_ii, f_mo_aa, di_v, di_o, fragment,p)
+        
+        """
+        # This part is put in external function, will be called twice later
         for ti in np.arange(20):
             t2_new = np.zeros((nocc, ndom,  nvirt, pdom, nocc, ndom, nvirt), dtype = float)
             M = 0
-            for dL in np.arange(di.coords.shape[0]):
-                for dM in np.arange(di.coords.shape[0]): 
+            for dL in np.arange(di_v.coords.shape[0]):
+                for dM in np.arange(di_v.coords.shape[0]): 
                     for M in np.arange(pair_extent.shape[0]):
                         tnew = -G_direct[:, dL, :, M, :, dM, :]
 
@@ -325,14 +653,14 @@ if __name__ == "__main__":
                 #dL, dM = lattice[i]
                 #t, g_direct, g_exchange = tensors[i]
                 #dLi, Mi, dMi = domains[i]
-                 
+        """
 
 
         e0 = 0
-        for ddL in np.arange(di.coords.shape[0]):
-            for ddM in np.arange(di.coords.shape[0]):
-                for mM in [1]: #np.arange(pdom):
-                    dM, dL = di.coords[ddL], di.coords[ddM]
+        for ddL in np.arange(di_v.coords.shape[0]):
+            for ddM in np.arange(di_v.coords.shape[0]):
+                for mM in [pair_center]: #np.arange(pdom):
+                    dM, dL = di_v.coords[ddL], di_v.coords[ddM]
                     M = pair_extent[mM]
                     
                     #g_direct = ib.getcell(dL, [0,0,0], dM)
@@ -351,28 +679,7 @@ if __name__ == "__main__":
                     #print(dL, dM, e0)
         print("optimized fragment energy:", e0)
         
-        """
-        e0 = 0
-        # Perform (initial guess) energy calculation for fragment
-        for ddL in np.arange(di.coords.shape[0]):
-            for ddM in np.arange(di.coords.shape[0]):
-                dL = di.coords[ddL]
-                dM = di.coords[ddM]
 
-                g_direct = ib.getcell(dL, [0,0,0], dM)
-                #g_exchange = ib.getcell(dM, [0,0,0], dL)
-                g_exchange = ib.getcell(dM, [0,0,0], dL)
-
-                t = t2[:,ddL,:,0,:,ddM,:] #*e_iajb**-1
-                #print(t.shape, g_direct.shape)
-
-
-
-
-                e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-                #print(dL, dM, e0)
-        print("optimized fragment energy:", e0)
-        """
 
 
 
