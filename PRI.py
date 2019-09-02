@@ -648,7 +648,7 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
 
 
 def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1, auxname = "cc-pvdz-ri", JKmats = None):
-    cube = tp.lattice_coords([0,0,0]) #assumed max twobody AO-extent (subst. C-S Screening)
+    cube = tp.lattice_coords([2,2,2]) #assumed max twobody AO-extent (subst. C-S Screening)
     
     if JKmats is None:
         # build JK and inverse
@@ -782,7 +782,8 @@ class integral_builder():
         big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 10e-14, auxname = auxname)
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
 
-        self.JKa = compute_JK(self.p,self.c, attenuation = attenuation, auxname = auxname)
+        #self.JKa = compute_JK(self.p,self.c, attenuation = attenuation, auxname = auxname)
+        self.JKa = compute_JK(self.p,big_tmat, attenuation = attenuation, auxname = auxname)
 
 
         print("Attenuated coulomb matrix computed")

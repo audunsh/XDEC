@@ -265,14 +265,17 @@ class fragment_amplitudes():
         self.g_d[:, ddL, :, mmM, :, ddM, :] = g_direct
         self.g_x[:, ddL, :, mmM, :, ddM, :] = g_exchange
 
-    def autoexpand_virtual_space(self, shellwidth = .2):
-        new_cut = np.min(self.d_ia.blocks[:-1][self.d_ia.blocks[:-1]>self.virtual_cutoff] + shellwidth)
+    def autoexpand_virtual_space(self, n_orbs = 10):
+        #new_cut = np.min(self.d_ia.blocks[:-1][self.d_ia.blocks[:-1]>self.virtual_cutoff] + shellwidth)
+        # Include 10 more orbs
+        new_cut = np.sort(self.d_ia.blocks[:-1][self.d_ia.blocks[:-1]>self.virtual_cutoff])[n_orbs -1] 
         print("Increasing virtual cutoff:", self.virtual_cutoff, "->", new_cut)
         self.set_extent(new_cut, self.occupied_cutoff)
     
 
-    def autoexpand_occupied_space(self, shellwidth = .2):
-        new_cut = np.min(self.d_ii.blocks[:-1][self.d_ii.blocks[:-1]>self.occupied_cutoff] + shellwidth)
+    def autoexpand_occupied_space(self, n_orbs = 10):
+        #new_cut = np.min(self.d_ii.blocks[:-1][self.d_ii.blocks[:-1]>self.occupied_cutoff] + shellwidth)
+        new_cut = np.sort(self.d_ii.blocks[:-1][self.d_ii.blocks[:-1]>self.occupied_cutoff])[n_orbs-1] 
         print("Increasing occupied cutoff:", self.occupied_cutoff, "->", new_cut)
         self.set_extent(self.virtual_cutoff, new_cut)
         
@@ -726,7 +729,7 @@ if __name__ == "__main__":
             while dE>args.fot:
 
                 print("--- virtual")
-                a_frag.autoexpand_virtual_space()
+                a_frag.autoexpand_virtual_space(n_orbs=4)
                 a_frag.solve()
                 E_new = a_frag.compute_fragment_energy()
                 
@@ -735,11 +738,22 @@ if __name__ == "__main__":
                 print("E(fragment):", E_new, " DE(fragment):", dE)
                 E_prev = E_new
                 print("---")
-            dE = 10
+            #dE = 10
+            print("--- occupied")
+            a_frag.autoexpand_occupied_space(n_orbs=2)
+            a_frag.solve()
+            E_new = a_frag.compute_fragment_energy()
+            
+            a_frag.print_configuration_space_data()
+            dE = np.abs(E_prev - E_new)
+            print("E(fragment):", E_new, " DE(fragment):", dE)
+            E_prev = E_new
+            print("---")
+
             while dE>args.fot:
 
-                print("--- virtual")
-                a_frag.autoexpand_occupied_space()
+                print("--- occupied")
+                a_frag.autoexpand_occupied_space(n_orbs=2)
                 a_frag.solve()
                 E_new = a_frag.compute_fragment_energy()
                 
@@ -750,6 +764,8 @@ if __name__ == "__main__":
                 print("---")
             dE_outer = np.abs(E_prev_outer - E_prev)
             E_prev_outer = E_prev
+        print(E_new, "(Periodic RI")
+        print(-0.114393980708, "(3D Neon, fot 0.0001 (Gustav))")
 
             
             
