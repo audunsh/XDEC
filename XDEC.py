@@ -265,6 +265,18 @@ class fragment_amplitudes():
         self.g_d[:, ddL, :, mmM, :, ddM, :] = g_direct
         self.g_x[:, ddL, :, mmM, :, ddM, :] = g_exchange
 
+    def autoexpand_virtual_space(self, shellwidth = .2):
+        new_cut = np.min(self.d_ia.blocks[:-1][self.d_ia.blocks[:-1]>self.virtual_cutoff] + shellwidth)
+        print("Increasing virtual cutoff:", self.virtual_cutoff, "->", new_cut)
+        self.set_extent(new_cut, self.occupied_cutoff)
+    
+
+    def autoexpand_occupied_space(self, shellwidth = .2):
+        new_cut = np.min(self.d_ii.blocks[:-1][self.d_ii.blocks[:-1]>self.occupied_cutoff] + shellwidth)
+        print("Increasing occupied cutoff:", self.occupied_cutoff, "->", new_cut)
+        self.set_extent(self.virtual_cutoff, new_cut)
+        
+
     
     def set_extent(self, virtual_cutoff, occupied_cutoff):
         self.virtual_cutoff = virtual_cutoff
@@ -362,8 +374,10 @@ class fragment_amplitudes():
 
         self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1]<=self.virtual_cutoff)
         self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1]<=self.occupied_cutoff)
-
     
+    def print_configuration_space_data(self):
+        print("%i virtual orbitals included in fragment." % self.n_virtual_tot)
+        print("%i occupied orbitals included in fragment." % self.n_occupied_tot)
 
     def solve_(self):
         # Converge
@@ -444,6 +458,8 @@ class fragment_amplitudes():
 
                 print("Iteration:",ti, "Amplitude gradient norm:",  np.linalg.norm(t2_new))
                 break
+    
+
 
     def solve(self):
         # Converge
@@ -625,6 +641,7 @@ if __name__ == "__main__":
     parser.add_argument("auxbasis", type = str, help="Auxiliary fitting basis.")
     parser.add_argument("wcenters", type = str, help="Wannier centers")
     parser.add_argument("-attenuation", type = float, default = 1.2, help = "Attenuation paramter for RI")
+    parser.add_argument("-fot", type = float, default = 0.0001, help = "fragment optimization treshold")
     args = parser.parse_args()
 
 
@@ -695,22 +712,86 @@ if __name__ == "__main__":
     for fragment in center_fragments:
         print("Fragment:", fragment)
         
-        a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0)
-        print("Recalc energy:", a_frag.compute_energy())
+        a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 2.0, occupied_cutoff = 1.0)
+       
+        a_frag.solve()
+        
+        # Converge to fot
+        E_prev_outer = a_frag.compute_fragment_energy()
+        E_prev = E_prev_outer*1.0
+        dE_outer = 10
+        print("Initial fragment energy:", E_prev)
+        while dE_outer>args.fot:
+            dE = 10
+            while dE>args.fot:
+
+                print("--- virtual")
+                a_frag.autoexpand_virtual_space()
+                a_frag.solve()
+                E_new = a_frag.compute_fragment_energy()
+                
+                a_frag.print_configuration_space_data()
+                dE = np.abs(E_prev - E_new)
+                print("E(fragment):", E_new, " DE(fragment):", dE)
+                E_prev = E_new
+                print("---")
+            dE = 10
+            while dE>args.fot:
+
+                print("--- virtual")
+                a_frag.autoexpand_occupied_space()
+                a_frag.solve()
+                E_new = a_frag.compute_fragment_energy()
+                
+                a_frag.print_configuration_space_data()
+                dE = np.abs(E_prev - E_new)
+                print("E(fragment):", E_new, " DE(fragment):", dE)
+                E_prev = E_new
+                print("---")
+            dE_outer = np.abs(E_prev_outer - E_prev)
+            E_prev_outer = E_prev
+
+            
+            
+
+
+        """
         print("Fragment energy:", a_frag.compute_fragment_energy())
         a_frag.solve()
-        print("Recalc energy:", a_frag.compute_energy())
         print("Fragment energy:", a_frag.compute_fragment_energy())
+        print(" Testiteration")
+
+        a_frag.autoexpand_virtual_space()
+        a_frag.print_configuration_space_data()
+        a_frag.solve()
+        print("Fragment energy:", a_frag.compute_fragment_energy())
+        print(" Testiteration")
+
+        a_frag.autoexpand_virtual_space()
+        a_frag.print_configuration_space_data()
+        a_frag.solve()
+        print("Fragment energy:", a_frag.compute_fragment_energy())
+        """
+
+        
+        #print("Recalc energy:", a_frag.compute_energy())
+
+
+
+
+
+        """
+        a_frag.print_configuration_space_data()
         a_frag.set_extent(6.0, 1.0)
+        a_frag.print_configuration_space_data()
         print("Recalc energy:", a_frag.compute_energy())
         print("Fragment energy:", a_frag.compute_fragment_energy())
         a_frag.solve()
         print("Recalc energy:", a_frag.compute_energy())
         print("Fragment energy:", a_frag.compute_fragment_energy())
 
-        
-        
-
+        a_frag.print_configuration_space_data()
+        """
 
         # Screen virtual space
         di_v = dd.build_local_domain_index_matrix(fragment, d, virt_cut)
