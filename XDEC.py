@@ -127,9 +127,10 @@ class fragment_amplitudes():
         self.p = p #prism object
         self.d = dd.build_distance_matrix(p, coords, wcenters, wcenters) # distance matrix
         
-        self.d_ii = dd.build_distance_matrix(p, coords, wcenters[:p.get_nocc()], wcenters[:p.get_nocc()])
-        self.d_ia = dd.build_distance_matrix(p, coords, wcenters[:p.get_nocc()], wcenters[p.get_nocc():])
-        
+        self.d_ii = dd.build_distance_matrix(p, coords, wcenters[fragment], wcenters[:p.get_nocc()])
+        self.d_ia = dd.build_distance_matrix(p, coords, wcenters[fragment], wcenters[p.get_nocc():])
+        self.fragment = fragment
+
         self.ib = ib #integral builder
         self.virtual_cutoff = virtual_cutoff
         self.occupied_cutoff = occupied_cutoff
@@ -212,8 +213,43 @@ class fragment_amplitudes():
                 
                     g_direct = self.g_d[:,ddL,:,mM, :, ddM, :]
                     g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :]
-                    t = g_direct*self.e_iajb**-1
+                    t = self.t2[:,ddL,:,mM, :, ddM, :]
                     e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+        return e_mp2
+    
+    def compute_fragment_energy(self):
+        e_mp2 = 0
+        N_virt = self.n_virtual_cells
+        
+        mM = 0 #occupied index only runs over fragment
+
+        for ddL in np.arange(N_virt):
+            dL = self.d_ia.coords[ddL]
+            dL_i = self.d_ia.cget(dL)[0,:]<self.virtual_cutoff # dL index mask
+            
+            for ddM in np.arange(N_virt):
+                dM =  self.d_ia.coords[ddM]
+                dM_i = self.d_ia.cget(dM)[0,:]<self.virtual_cutoff # dM index mask
+
+                
+
+
+               # Usung multiple levels of masking, probably some other syntax makes more sense
+                
+                g_direct = self.g_d[:,ddL,:,mM, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
+                g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
+
+                
+
+                #g_direct =   self.g_d[:,ddL,:,mM, :, ddM, :][self.fragment, :, self.fragment, :]
+                #print(g_direct.shape)
+                
+                #g_exchange = self.g_x[self.fragment,ddL,dM_i,mM, self.fragment, ddM, dL_i]
+
+
+
+                t = self.t2[:,ddL,:,mM, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
+                e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
         return e_mp2
 
 
@@ -329,11 +365,162 @@ class fragment_amplitudes():
 
     
 
+    def solve_(self):
+        # Converge
+        #pass
+        nocc = self.p.get_nocc()
+
+        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
+        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
+
+        vp_indx = mapgen(virtual_extent, pair_extent)
+        pp_indx = mapgen(pair_extent, pair_extent)
+
+        for ti in np.arange(100):
+            #t2_new = np.zeros((nocc, ndom,  nvirt, pdom, nocc, ndom, nvirt), dtype = float)
+            t2_new = np.zeros_like(self.t2)
+            for dL in np.arange(self.n_virtual_cells):
+                dLv = self.d_ia.coords[dL]
+                dL_i = self.d_ia.cget(dLv)[0,:]<self.virtual_cutoff # dL index mask
+
+                for dM in np.arange(self.n_virtual_cells): 
+                    dMv = self.d_ia.coords[dM]
+                    dM_i = self.d_ia.cget(dMv)[0,:]<self.virtual_cutoff # dL index mask
+                    for M in np.arange(self.n_occupied_cells):
+                        Mv = self.d_ii.coords[M]
+                        M_i = self.d_ii.cget(Mv)[0,:]<self.occupied_cutoff # dL index mask
+
+
+
+                        tnew = -self.g_d[:, dL, :, M, :, dM, :] #[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i]
+
+                        
+
+
+                        # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{Li,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
+                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
+
+                        dL_ac = (self.d_ia.cget(virtual_extent - virtual_extent[dL])<=self.virtual_cutoff)[:, self.fragment[0], :]
+
+                        print(Fac.shape, dL_ac.shape)
+
+
+                        for K in np.arange(self.n_virtual_cells):
+                            dK_i = self.d_ia.cget(self.d_ia.coords[K])[0,:]<self.virtual_cutoff
+                            tnew -= np.einsum("icjb,ac->iajb", self.t2[:, K, :, M, :, dM, :][self.fragment][:, :][:, :, dK_i][:, :,:,  M_i][:,:,:,:,dM_i] \
+                             , Fac[K][:][:, dK_i])
+
+
+                        #tb = t2[:, :, :, M, :, dM, :][di_occ.cget(di_occ.coords[M])[:,0]]
+                        #tnew -= np.einsum("iKcjb,Kac->iajb", self.t2[:, :, :, M, :, dM, :][self.fragment][:, :][:, :, dL_i][:, :,:,  M_i][:,:,:,:,dM_i] \
+                        #     , Fac[dL_ac[:, None, :]])
+
+
+
+
+                        # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
+                        Fbc = self.f_mo_aa.cget(virtual_extent - virtual_extent[dM])
+                        tnew -= np.einsum("iajKb,Kbc->iajb", self.t2[:, dL, :, M, :, :, :], Fbc)
+                        
+                        # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
+                        
+                        Fki = self.f_mo_ii.cget(-1*pair_extent)
+                        tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
+                        
+                        # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
+                        
+                        Fkj = self.f_mo_ii.cget(-1*pair_extent + pair_extent[M])
+                        tnew += np.einsum("iaKkb,Kkj->iajb",self.t2[:, dL, :, :, :, dM, :], Fkj)
+
+                        
+                        # + \left(t^{\Delta L a, \Delta Mb}_{L'k,Mj}\right)_{n}\varepsilon^{\Delta L a, \Delta Mb}_{0i,Mj},
+                        #tnew += t2[:, dL, :, M, :, dM, :] #*E[:,dL,:,M,:,dM,:]**-1
+
+                        t2_new[:, dL, :, M, :, dM, :][self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i] = (tnew*self.e_iajb**-1)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i]
+            #print("Residual norm: ")
+            self.t2 -= t2_new
+            rnorm = np.linalg.norm(t2_new)
+            if rnorm<1e-10:
+
+                print("Iteration:",ti, "Amplitude gradient norm:",  np.linalg.norm(t2_new))
+                break
+
     def solve(self):
         # Converge
-        pass
+        #pass
+        nocc = self.p.get_nocc()
+
+        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
+        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
+
+        vp_indx = mapgen(virtual_extent, pair_extent)
+        pp_indx = mapgen(pair_extent, pair_extent)
+
+        for ti in np.arange(100):
+            #t2_new = np.zeros((nocc, ndom,  nvirt, pdom, nocc, ndom, nvirt), dtype = float)
+            t2_new = np.zeros_like(self.t2)
+            for dL in np.arange(self.n_virtual_cells):
+                dLv = self.d_ia.coords[dL]
+                dL_i = self.d_ia.cget(dLv)[0,:]<self.virtual_cutoff # dL index mask
+
+                for dM in np.arange(self.n_virtual_cells): 
+                    dMv = self.d_ia.coords[dM]
+                    dM_i = self.d_ia.cget(dMv)[0,:]<self.virtual_cutoff # dM index mask
+                    for M in np.arange(self.n_occupied_cells):
+                        Mv = self.d_ii.coords[M]
+                        M_i = self.d_ii.cget(Mv)[0,:]<self.occupied_cutoff # M index mask
+
+                        
 
 
+
+                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
+
+                        # generate index mapping of non-zero amplitudes in cell
+                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+                        #print("Cell map shape:", cell_map.shape)
+                        #print(cell_map)
+
+                        #Solve equations
+
+                        # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{Li,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
+                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
+                        tnew -= np.einsum("iKcjb,Kac->iajb", self.t2[:, :, :, M, :, dM, :], Fac)
+
+                        # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
+                        Fbc = self.f_mo_aa.cget(virtual_extent - virtual_extent[dM])
+                        tnew -= np.einsum("iajKb,Kbc->iajb", self.t2[:, dL, :, M, :, :, :], Fbc)
+                        
+                        # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
+                        
+                        Fki = self.f_mo_ii.cget(-1*pair_extent)
+                        tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
+                        
+                        # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
+                        
+                        Fkj = self.f_mo_ii.cget(-1*pair_extent + pair_extent[M])
+                        tnew += np.einsum("iaKkb,Kkj->iajb",self.t2[:, dL, :, :, :, dM, :], Fkj)
+
+                        
+                        # + \left(t^{\Delta L a, \Delta Mb}_{L'k,Mj}\right)_{n}\varepsilon^{\Delta L a, \Delta Mb}_{0i,Mj},
+                        #tnew += t2[:, dL, :, M, :, dM, :] #*E[:,dL,:,M,:,dM,:]**-1
+                        #print(np.linalg.norm(t2_new[:, dL, :, M, :, dM, :][self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i]), np.linalg.norm(tnew))
+                        
+                        t2_mapped = np.zeros_like(tnew).ravel()
+                        #print(t2_mapped.shape, tnew.shape, self.e_iajb.shape)
+                        t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
+                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
+                        # t2_new[:, dL, :, M, :, dM, :][self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i] = (tnew*self.e_iajb**-1)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i]
+                        
+                        #print(np.linalg.norm(t2_new[:, dL, :, M, :, dM, :][self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i]), np.linalg.norm(tnew))
+                        #t2_new[:, dL, :, M, :, dM, :]  = tnew*self.e_iajb**-1
+            #print("Residual norm: ")
+            self.t2 -= t2_new
+            rnorm = np.linalg.norm(t2_new)
+            if rnorm<1e-10:
+
+                print("Iteration:",ti, "Amplitude gradient norm:",  np.linalg.norm(t2_new))
+                break
 
 
 
@@ -409,6 +596,7 @@ def converge_fragment_amplitudes(t2, G_direct, f_mo_ii, f_mo_aa, di_virt, di_occ
             print("Iteration:",ti, "Amplitude gradient norm:",  np.linalg.norm(t2_new))
             break
     return t2
+    
 
 
 
@@ -508,8 +696,20 @@ if __name__ == "__main__":
         print("Fragment:", fragment)
         
         a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0)
+        print("Recalc energy:", a_frag.compute_energy())
+        print("Fragment energy:", a_frag.compute_fragment_energy())
+        a_frag.solve()
+        print("Recalc energy:", a_frag.compute_energy())
+        print("Fragment energy:", a_frag.compute_fragment_energy())
         a_frag.set_extent(6.0, 1.0)
         print("Recalc energy:", a_frag.compute_energy())
+        print("Fragment energy:", a_frag.compute_fragment_energy())
+        a_frag.solve()
+        print("Recalc energy:", a_frag.compute_energy())
+        print("Fragment energy:", a_frag.compute_fragment_energy())
+
+        
+        
 
 
         # Screen virtual space
