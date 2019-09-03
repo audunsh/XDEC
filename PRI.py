@@ -773,11 +773,12 @@ def test_matrix_kspace_condition(M, n_fourier):
 
 
 class integral_builder():
-    def __init__(self, c,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1]):
+    def __init__(self, c,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = False):
         self.c = c
         self.p = p
         self.attenuation = attenuation
         self.auxname = auxname
+        self.circulant = circulant
 
         # Oneshot calculations:
         # build attenuated JK matrix and inverse
@@ -842,7 +843,11 @@ class integral_builder():
 
         for i in np.arange(coord_q.shape[0]):
             print("JK dot X for cell ", coord_q[i])
-            self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.cdot(Xreg[i])
+
+            if circulant:
+                self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.circulantdot(Xreg[i])
+            else:
+                self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.cdot(Xreg[i])
 
 
 
@@ -852,6 +857,7 @@ class integral_builder():
 
 
     def getcell(self, dL, M, dM):
+        circulant = self.circulant
         for d in [dL, dM]:
             if self.XregT[d[0], d[1], d[2]] is 0:
 
@@ -861,11 +867,18 @@ class integral_builder():
                 # Should compute all within range
                 Xreg = compute_fitting_coeffs(self.c,self.p,coord_q = np.array([d]), attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv])
                 self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
-                self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
+                if circulant:
+                    self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0])
+                else:
+                    self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
+                
                 print(d, "computed.")
                 #self.Xreg[d[0], d[1], d[2]] =  self.XregT[d[0], d[1], d[2]].tT() #transpose matrix
-        
-        return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+        if circulant:
+            return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+
+        else:
+            return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
 
     
 
@@ -911,12 +924,12 @@ if __name__ == "__main__":
     parser.add_argument("-attenuation", type = float, default = 0.2)
     parser.add_argument("-test_ao", default = False, action = "store_true", help="Run test for AO-basis")
     parser.add_argument("-test_ibuild", default = False, action = "store_true", help="Test integral builder")
-    
+    parser.add_argument("-basis_truncation", type = float, default = 0.5, help = "Truncate AO-basis function below this threshold." )
     args = parser.parse_args()
 
     p = pr.prism(args.project_file)
     
-    auxbasis = basis_trimmer(p, args.auxbasis)
+    auxbasis = basis_trimmer(p, args.auxbasis, alphacut = args.basis_truncation)
     f = open("ri-fitbasis.g94", "w")
     f.write(auxbasis)
     f.close()

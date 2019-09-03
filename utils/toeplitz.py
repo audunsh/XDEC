@@ -1214,17 +1214,20 @@ class tmat():
                 
         return ret
 
-    def circulantdot(self, other):
+    def circulantdot(self, other, complx = False):
         n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
         self_k = transform(self, np.fft.fftn, n_points = n_points)
         other_k = transform(other, np.fft.fftn, n_points = n_points)
-        ret = self_k*1.0
+
+        ret = tmat()
+        ret.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], other_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        #ret = self_k*1.0
         ret.blocks*=0.0
 
         for i in np.arange(len(self_k.blocks)-1):
             ret.blocks[i] = np.dot(self_k.blocks[i],other_k.blocks[i])
 
-        ret = transform(ret, np.fft.ifftn, n_points = n_points)
+        ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = complx)
         return ret
 
 

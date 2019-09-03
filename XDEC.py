@@ -644,7 +644,10 @@ if __name__ == "__main__":
     parser.add_argument("auxbasis", type = str, help="Auxiliary fitting basis.")
     parser.add_argument("wcenters", type = str, help="Wannier centers")
     parser.add_argument("-attenuation", type = float, default = 1.2, help = "Attenuation paramter for RI")
-    parser.add_argument("-fot", type = float, default = 0.0001, help = "fragment optimization treshold")
+    parser.add_argument("-basis_truncation", type = float, default = 0.5, help = "Truncate AO-basis function below this threshold." )
+    parser.add_argument("-fot", type = float, default = 0.001, help = "fragment optimization treshold")
+    parser.add_argument("-circulant",default = False, action = "store_true", help = "fragment optimization treshold")
+    
     args = parser.parse_args()
 
 
@@ -655,7 +658,7 @@ if __name__ == "__main__":
 
 
     # Fitting basis
-    auxbasis = PRI.basis_trimmer(p, args.auxbasis)
+    auxbasis = PRI.basis_trimmer(p, args.auxbasis, alphacut = args.basis_truncation)
     f = open("ri-fitbasis.g94", "w")
     f.write(auxbasis)
     f.close()
@@ -690,7 +693,7 @@ if __name__ == "__main__":
     wcenters = np.load(args.wcenters)
 
     # Initialize integrals 
-    ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[1,0,0])
+    ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[1,0,0], circulant=args.circulant)
 
     # Initialize domain definitions
 
@@ -701,8 +704,8 @@ if __name__ == "__main__":
 
 
     center_fragments = dd.atomic_fragmentation(p, d, 3.0)
-    
-
+    print("Fragmentation of orbital space")
+    print(center_fragments)
 
     
 
@@ -714,6 +717,8 @@ if __name__ == "__main__":
 
     for fragment in center_fragments:
         print("Fragment:", fragment)
+
+        ib.fragment = fragment
         
         a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 2.0, occupied_cutoff = 1.0)
        
@@ -807,6 +812,11 @@ if __name__ == "__main__":
         print("Fragment energy:", a_frag.compute_fragment_energy())
 
         a_frag.print_configuration_space_data()
+        """
+
+
+
+
         """
 
         # Screen virtual space
@@ -904,7 +914,10 @@ if __name__ == "__main__":
         # solve MP2 equations
 
         t2 = converge_fragment_amplitudes(t2, G_direct, f_mo_ii, f_mo_aa, di_v, di_o, fragment,p)
-        
+        """
+
+
+
         """
         # This part is put in external function, will be called twice later
         for ti in np.arange(20):
@@ -952,7 +965,7 @@ if __name__ == "__main__":
                 #dLi, Mi, dMi = domains[i]
         """
 
-
+        """
         e0 = 0
         for ddL in np.arange(di_v.coords.shape[0]):
             for ddM in np.arange(di_v.coords.shape[0]):
@@ -975,6 +988,7 @@ if __name__ == "__main__":
                     e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
                     #print(dL, dM, e0)
         print("optimized fragment energy:", e0)
+        """
         
 
 
