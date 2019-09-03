@@ -25,7 +25,7 @@ import time
 #os.environ["LIBINT_DATA_PATH"] = os.getcwd() #"/usr/local/libint/2.5.0-beta.2/share/libint/2.5.0-beta.2/basis/"
 #os.environ["CRYSTAL_EXE_PATH"] = "/Users/audunhansen/PeriodicDEC/utils/crystal_bin/"
 
-def basis_trimmer(p, auxbasis):
+def basis_trimmer(p, auxbasis, alphacut = 0.5):
     # make basis more suited for periodic calculations
     # this solution is quite ad-hoc, should not be the ultimate way of solving this problem of linear dependencies
     f = open(auxbasis, "r")
@@ -33,7 +33,9 @@ def basis_trimmer(p, auxbasis):
     trimmed_basis_list = []
     for line in basis:
         try: 
-            if literal_eval(line.split()[0]) >= 0.9:
+            # We only retain basis functions with exponent > alphacut
+            if literal_eval(line.split()[0]) >= alphacut:
+                
                 trimmed_basis_list.append(line)
             else:
                 #print("Bsis trimmer removed function from basis:")
@@ -648,8 +650,8 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
 
 
 def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1, auxname = "cc-pvdz-ri", JKmats = None):
-    cube = tp.lattice_coords([2,2,2]) #assumed max twobody AO-extent (subst. C-S Screening)
-    
+    cube = tp.lattice_coords([1,1,1]) #assumed max twobody AO-extent (subst. C-S Screening)
+    print("Remember: Compute fitting screening set to [ 1,1,1]")
     if JKmats is None:
         # build JK and inverse
         big_tmat = estimate_attenuation_distance(p, attenuation = .5*attenuation, thresh = 10e-14, auxname = auxname)
@@ -779,7 +781,10 @@ class integral_builder():
 
         # Oneshot calculations:
         # build attenuated JK matrix and inverse
-        big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 10e-14, auxname = auxname)
+        #big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 1e-14, auxname = auxname)
+        print("Warning: short range attenuation distance estimate in integral builder")
+        big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 1e-12, auxname = auxname)
+        
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
 
         #self.JKa = compute_JK(self.p,self.c, attenuation = attenuation, auxname = auxname)
