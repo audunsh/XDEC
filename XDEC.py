@@ -300,7 +300,7 @@ class fragment_amplitudes():
         print("%i virtual orbitals included in fragment." % self.n_virtual_tot)
         print("%i occupied orbitals included in fragment." % self.n_occupied_tot)
 
-    def solve(self):
+    def solve(self, norm_thresh = 1e-10):
         """
         Converge fragment (AOS) amplitudes within occupied and virtual extents 
         """
@@ -354,7 +354,7 @@ class fragment_amplitudes():
 
             self.t2 -= t2_new
             rnorm = np.linalg.norm(t2_new)
-            if rnorm<1e-10:
+            if rnorm<norm_thresh:
 
                 print("Iteration:",ti, "Amplitude gradient norm:",  np.linalg.norm(t2_new))
                 break
@@ -504,7 +504,7 @@ if __name__ == "__main__":
 
     # Initialize integrals 
     
-    ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[1,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation)
+    ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[1,1,1], circulant=args.circulant, extent_thresh=args.attenuated_truncation)
 
     # Initialize domain definitions
 
@@ -515,10 +515,12 @@ if __name__ == "__main__":
 
 
     center_fragments = dd.atomic_fragmentation(p, d, 3.0)
+    print(" ")
     print("Fragmentation of orbital space")
     print(center_fragments)
+    print(" ")
 
-    print("Current memory usage of integrals (in MB):", ib.nbytes())
+    print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
 
     
 
@@ -529,7 +531,10 @@ if __name__ == "__main__":
     occ_cut = 1.0
 
     for fragment in center_fragments:
-        print("Fragment:", fragment)
+        print("Running fragment optimization for:")
+        print(fragment)
+        print("Initial ")
+        print(" ")
 
         ib.fragment = fragment
         
@@ -541,12 +546,12 @@ if __name__ == "__main__":
         E_prev_outer = a_frag.compute_fragment_energy()
         E_prev = E_prev_outer*1.0
         dE_outer = 10
-        print("Initial fragment energy:", E_prev)
+        print("Initial fragment energy: %.5e" % E_prev)
         while dE_outer>args.fot:
             dE = 10
             while dE>args.fot:
 
-                print("--- virtual")
+                #print("--- virtual")
                 a_frag.autoexpand_virtual_space(n_orbs=4)
                 a_frag.solve()
                 E_new = a_frag.compute_fragment_energy()

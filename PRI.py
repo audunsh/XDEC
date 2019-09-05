@@ -523,15 +523,16 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
         # build JK and inverse
         big_tmat = estimate_attenuation_distance(p, attenuation = .5*attenuation, thresh = 10e-14, auxname = auxname)
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
+        print("JK outer max (should be small):", cmax, np.max(np.abs(JK.cget(cmax))))
 
-        print(cmax,c.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))])
+        #print(cmax,c.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))])
         #print(big_tmat.coords)
         #JK = compute_JK(p,big_tmat, attenuation = attenuation, auxname = auxname)
         JK = compute_JK(p,big_tmat, attenuation = attenuation, auxname = auxname)
 
         
         
-        print("JK outer max (should be small):", cmax, np.max(np.abs(JK.cget(cmax))))
+        
         JKinv = invert_JK(JK)
         print("Condition:", np.abs(JK.blocks).max(), np.abs(JKinv.blocks).max())
         # test inversion
@@ -563,7 +564,6 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
         Jpq_c.append(tp.tmat())
         Jpq_c[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
         Jpq_c[-1].blocks *= 0
-´
     
     for c2 in cube:
         # Compute JMN with nsep =  c2
@@ -637,7 +637,6 @@ class integral_builder():
         # Oneshot calculations:
         # build attenuated JK matrix and inverse
         #big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 1e-14, auxname = auxname)
-        print("Warning: short range attenuation distance estimate in integral builder")
         big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = extent_thresh, auxname = auxname)
         
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
@@ -645,28 +644,29 @@ class integral_builder():
         #self.JKa = compute_JK(self.p,self.c, attenuation = attenuation, auxname = auxname)
         self.JKa = compute_JK(self.p,big_tmat, attenuation = attenuation, auxname = auxname)
         
-
-        print("Attenuated coulomb matrix computed")
-        print("JK_attenuated outer max (should be small):", cmax, np.max(np.abs(self.JKa.cget(cmax))))
-        print("JK_attenuated shape:", self.JKa.blocks[:-1].shape)
+        print("")
+        print("Attenuated coulomb matrix (JKa) computed.")
+        print("JKa outer coordinate (should be smaller than %.2f):" % extent_thresh, cmax, np.max(np.abs(self.JKa.cget(cmax))))
+        print("JKa block shape:", self.JKa.blocks[:-1].shape)
+        print("")
         #print("Number of auxiliary functions in ")
         self.JKinv = invert_JK(self.JKa)
-        print("Reciprocal space inversion complete.")
+        print("JKa inverse computed, checking max deviation from 0 = JKa^-1 JKa - I within extent")
         # print("Condition:", np.abs(JK.blocks).max(), np.abs(JKinv.blocks).max())
         # test inversion
         tcoords = np.zeros((np.max(self.JKa.coords),3), dtype = int)
         tcoords[:,0] = np.arange(self.JKa.coords.max(), dtype = int)
         I = self.JKinv.cdot(self.JKa, coords = tcoords )
         #I = JKinv.circulantdot(JK)
-        print("Direct space inversion test (0,0,0):", np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
+        print("Direct space inversion (0,0,0): %.3e" % np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
         for cc in tcoords[1:]:
-            print("Direct space inversion test (%i,0,0):" % cc[0], np.max(np.abs(I.cget(cc))))
-        print("---")
+            print("Direct space inversion (%i,0,0): %.3e" % (cc[0], np.max(np.abs(I.cget(cc)))))
+        #print("---")
 
         I = self.JKinv.circulantdot(self.JKa)
-        print("Circulant inversion test (0,0,0):", np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
+        print("Circulant inversion    (0,0,0): %.3e" % np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
         for cc in tcoords[1:]:
-            print("Circulant inversion test (%i,0,0):" % cc[0], np.max(np.abs(I.cget(cc))))
+            print("Circulant inversion    (%i,0,0): %.3e" % (cc[0], np.max(np.abs(I.cget(cc)))))
         print("---")
 
         
@@ -675,7 +675,12 @@ class integral_builder():
 
         # initial coeffs computed in single layer around center cell
         coord_q =  tp.lattice_coords(initial_virtual_dom) #initial virtual domain
+        print("Computing fitting coefficients for dL = ")
+        print(coord_q)
+        t0 = time.process_time()
         Xreg = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv])
+        t1 = time.process_time()
+        print("Time spent on fitting %i cells:" %len(coord_q), t1)
         print("Number of auxiliary functions in use:", Xreg[0].blocks[:-1].shape[0]*Xreg[0].blocks[:-1].shape[1])
         for i in np.arange(coord_q.shape[0]):
             print("Transpose of coordinate", coord_q[i])
