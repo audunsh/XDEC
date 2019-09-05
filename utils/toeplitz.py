@@ -1215,6 +1215,10 @@ class tmat():
         return ret
 
     def circulantdot(self, other, complx = False):
+        """
+        Computes the dot product assuming a circulant matrix structure
+        """
+
         n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
         self_k = transform(self, np.fft.fftn, n_points = n_points)
         other_k = transform(other, np.fft.fftn, n_points = n_points)

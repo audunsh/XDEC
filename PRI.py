@@ -26,8 +26,10 @@ import time
 #os.environ["CRYSTAL_EXE_PATH"] = "/Users/audunhansen/PeriodicDEC/utils/crystal_bin/"
 
 def basis_trimmer(p, auxbasis, alphacut = 0.5):
+    """
     # make basis more suited for periodic calculations
-    # this solution is quite ad-hoc, should not be the ultimate way of solving this problem of linear dependencies
+    # this solution is rather ad-hoc, should not be the ultimate way of solving this problem of linear dependencies
+    """
     f = open(auxbasis, "r")
     basis = f.readlines()
     trimmed_basis_list = []
@@ -38,22 +40,6 @@ def basis_trimmer(p, auxbasis, alphacut = 0.5):
                 
                 trimmed_basis_list.append(line)
             else:
-                #print("Bsis trimmer removed function from basis:")
-                
-                
-                #print(trimmed_basis_list[-1])
-                #print(line)
-                #print("New lline:")
-                
-                #l1 = 10*literal_eval(line.split()[0])
-                #line_new = "      %.6f    1.00\n" % l1
-                #trimmed_basis_list.append(line_new)
-                
-                #print(line_new)
-                
-                #print("New line:", line_new)
-                
-                
                 trimmed_basis_list = trimmed_basis_list[:-1]
                 pass
 
@@ -72,8 +58,10 @@ def basis_trimmer(p, auxbasis, alphacut = 0.5):
 
 
 def occ_virt_split(c,p):
-    # returns two matrices with occupied and virtual space separately
-
+    """
+    Split matrix c(tmat object) in occupied and virtual columns depending on information contained in p (prism object)
+    Returns two tmat objects c_occ and c_virt (typically coefficients)
+    """
     c_virt = tp.tmat()
     c_virt.load_nparray(c.blocks[:,:,p.get_nocc():], c.coords[:])
 
@@ -100,6 +88,10 @@ def get_xyz(p, t = np.array([[0,0,0]])):
     return sret
 
 def compute_pqrs(p, t = np.array([[0,0,0]])):
+    """
+    Computes integrals of the type ( 0 p 0 q | T r T s)
+    for all coordinates T provided in t
+    """
 
     bname = "libint_basis" #libint basis (will be generated)
     #auxname = "cc-pvdz"    #auxiliary basis (must be present)
@@ -144,6 +136,10 @@ def compute_pqrs(p, t = np.array([[0,0,0]])):
     return np.array(integrals)
 
 def compute_pqpq(p, t = np.array([[0,0,0]])):
+    """
+    Computes integrals of the type ( 0 p 0 q | T p T q)
+    for all coordinates T provided in t
+    """
 
     bname = "libint_basis" #libint basis (will be generated)
     #auxname = "cc-pvdz"    #auxiliary basis (must be present)
@@ -186,142 +182,23 @@ def compute_pqpq(p, t = np.array([[0,0,0]])):
     sp.call(["rm", "-rf", atomsK])
     
     return np.array(integrals)
-    """
-    lint.set_braket_xsxs()
-    lint.set_integrator_params(attenuation)
-    
-    vint = np.array(lint.get_pq(atomsJ, auxname, atomsK, auxname))
-    #print(vint.shape)
-    #print(vint)
-    
-    blockshape = (vint.shape[0], vint.shape[1])
-    
-    
-    JK = tp.tmat()
-    JK.load_nparray(np.ones((s.coords.shape[0], blockshape[0], blockshape[1]),dtype = float),  s.coords)
-    
-    
-    count = 0
-    for coord in s.coords:
-        atomsK = "atoms_K%i.xyz" % count
-        f = open(atomsK, "w")
-        f.write(get_xyz(p, [p.coor2vec(coord)]))
-        f.close()
-        
-        lint.setup_pq(atomsJ, auxname, atomsK, auxname)
-        lint.set_braket_xsxs()
-        if not coulomb:
-            lint.set_integrator_params(attenuation)
-        
-        vint = np.array(lint.get_pq(atomsJ, auxname, atomsK, auxname))
-        
-        
-        JK.cset(coord, vint.reshape((blockshape[0], blockshape[1])))
-        count += 1
-        #print(coord, np.abs(vint).max())
-        sp.call(["rm", "-rf", "atoms_K%i.xyz" % count])
-    return JK
-    """
+
 
 
 
 
 def compute_Jmm(p, s, attenuation = 0.0, auxname = "cc-pvdz", coulomb = False, nshift = np.array([[0,0,0]])):
+    """
+    Originally intended for a Cauchy-Schwartz-like screening, never implemented
+    """
     pass
 
-def compute_Jmn_(p, s, attenuation = 0.0, auxname = "cc-pvdz", coulomb = False, nshift = np.array([[0,0,0]])):
-    
-    
-    
-    
-    bname = "libint_basis" #libint basis (will be generated)
-    #auxname = "cc-pvdz"    #auxiliary basis (must be present)
-    
-    
-    basis = os.environ["LIBINT_DATA_PATH"] + "/%s.g94" % bname
-
-    # Save basis
-    f = open(basis, "w")
-    f.write(p.get_libint_basis())
-    f.close()
-    
-    
-    
-    atomsJ = "atoms_J.xyz"
-    atomsm = "atoms_m.xyz"
-    atomsn = "atoms_n.xyz"
-    
-    f = open(atomsJ, "w")
-    f.write(get_xyz(p))
-    f.close()
-
-    
-    f = open(atomsm, "w")
-    f.write(get_xyz(p))
-    f.close()
-    #print(nshift)
-    f = open(atomsn, "w")
-    f.write(get_xyz(p, nshift))
-    f.close()
-    
-    
-    
-    lint = li.engine()
-    
-    if not coulomb:
-        lint.set_operator_erfc()
-    if coulomb:
-        lint.set_operator_coulomb()
-    
-    
-    # compute one cell to get dimensions
-    
-    lint.setup_pqr(atomsJ, auxname, atomsm, bname, atomsn, bname, 0)
-    if not coulomb:
-        lint.set_integrator_params(attenuation)
-    
-    vint = np.array(lint.get_pqr(atomsJ, auxname, atomsm, bname, atomsn, bname))
-    print(vint.shape)
-    
-    blockshape = (vint.shape[0], vint.shape[1]*vint.shape[2])
-    
-    Jmn = tp.tmat()
-    Jmn.load_nparray(np.ones((s.coords.shape[0], blockshape[0], blockshape[1]),dtype = float),  s.coords)
-    Jmn.blocks *= 0.0
-    
-    
-    for coord in s.coords:
-        #f.write(get_xyz(p, [p.coor2vec(coord)]))
-        #print(np.array([coord]))
-        
-        
-        f = open(atomsJ, "w")
-        
-        f.write(get_xyz(p, np.array([coord])))
-        f.close()
-        
-        lint.setup_pqr(atomsJ, auxname, atomsm, bname, atomsn, bname, 0)
-    
-        #lint.set_integrator_params(0.2)
-        if not coulomb:
-            lint.set_integrator_params(attenuation)
-        
-        vint = np.array(lint.get_pqr(atomsJ, auxname, atomsm, bname, atomsn, bname))
-        
-        Jmn.cset(coord, vint.reshape((blockshape[0], blockshape[1])))
-        sp.call(["rm", "-rf", atomsJ])
-        #print(coord, np.abs(vint).max())
-    
-    sp.call(["rm", "-rf", atomsn])
-    sp.call(["rm", "-rf", atomsm])
-    
-    sp.call(["rm", "-rf", atomsJ])
-    
-    return Jmn
 
 def compute_Jmn(p, s, attenuation = 0.0, auxname = "cc-pvdz", coulomb = False, nshift = np.array([[0,0,0]])):
-    
-    
+    """
+    Computes integrals of the type ( T J |0 mu nu)
+    for all coordinates T provided in s.coords (tmat)
+    """
     
     
     bname = "libint_basis" #libint basis (will be generated)
@@ -414,6 +291,14 @@ def compute_Jmn(p, s, attenuation = 0.0, auxname = "cc-pvdz", coulomb = False, n
 
 
 def compute_onebody(p,s, T = np.array([[0,0,0]]), operator = "overlap"):
+    """
+    Computes integrals of the type 
+        ( 0 p | O^ | T q)
+    for all coordinates T provided in t. 
+    The operator O^ is provided as a string, see available operators below
+    (More are easily available from libint, needs some small extra functions in lwrap)
+
+    """
     atomsJ = "atoms_J.xyz"
     atomsK = "atoms_K.xyz"
     
@@ -452,7 +337,13 @@ def compute_onebody(p,s, T = np.array([[0,0,0]]), operator = "overlap"):
 
 
 def compute_JK(p, s, attenuation = 1, auxname = "cc-pvdz", coulomb = False):
+    """
+    Computes integrals of the type ( 0 J | T K )
+    for all coordinates T provided in t
+    attenuation set to 0 is equivalent to the coulomb operator, approaching 
+    infinity it tends to the Dirac delta-function.
     
+    """
     #auxname = "cc-pvdz"    #auxiliary basis (must be present)
 
     atomsJ = "atoms_J.xyz"
@@ -481,18 +372,12 @@ def compute_JK(p, s, attenuation = 1, auxname = "cc-pvdz", coulomb = False):
     lint.set_integrator_params(attenuation)
     
     vint = np.array(lint.get_pq(atomsJ, auxname, atomsK, auxname))
-    #print(vint.shape)
-    #print(vint)
     
     blockshape = (vint.shape[0], vint.shape[1])
     
     
     JK = tp.tmat()
-    #JK.load_nparray(np.ones((s.coords.shape[0], blockshape[0], blockshape[1]),dtype = float),  s.coords)
-    #JK.blocks *= 0
-    #JK.blocks *= 0
-    #print("Shape (blocks/coords):", JK.blocks.shape, JK.coords.shape)
-    #count = 0
+
 
     atomsK = "atoms_K.xyz"
     f = open(atomsK, "w")
@@ -513,28 +398,6 @@ def compute_JK(p, s, attenuation = 1, auxname = "cc-pvdz", coulomb = False):
     JK.load_nparray(vint, s.coords)
 
 
-    """
-    for coord in s.coords:
-        atomsK = "atoms_K%i.xyz" % count
-        f = open(atomsK, "w")
-        f.write(get_xyz(p, [coord]))
-        f.close()
-        
-        lint.setup_pq(atomsJ, auxname, atomsK, auxname)
-        lint.set_braket_xsxs()
-        if not coulomb:
-            lint.set_operator_erfc()
-            lint.set_integrator_params(attenuation)
-        
-        vint = np.array(lint.get_pq(atomsJ, auxname, atomsK, auxname))
-        
-        
-        JK.cset(coord, vint.reshape((blockshape[0], blockshape[1])))
-        
-        #print(coord, np.abs(vint).max())
-        sp.call(["rm", "-rf", "atoms_K%i.xyz" % count])
-        count += 1
-    """
     return JK
 
 def verify_pqpq(attenuation = 0, coulomb = False):
@@ -579,23 +442,13 @@ def verify_pqpq(attenuation = 0, coulomb = False):
     vint = np.array(lint.get_pqpq(atomsm, bname, atomsn, bname)) #, atomsm, bname, atomsn, bname))
     return vint
 
-def invert_JK_(JK):
-    n_points = 2*np.array(tp.n_lattice(JK))  #+ 1
-    JKk = tp.transform(JK, np.fft.fftn, n_points = n_points)
-    #JKk = tp.dfft(JK)*1
-    #JKk = tp.transform(JK, )
-    JKk_inv = JKk*1
-    for k in JKk.coords:
-        JKk_k = np.linalg.inv(JKk.cget(k))
-        JKk_inv.cset(k, JKk_k)
-        # Test each inversioon
-        #print(k, np.abs(np.sum((np.eye(JKk_k.shape[0]) - np.dot(JKk_k, JKk.cget(k)))**2)))
-    #JK_inv = tp.idfft(JKk_inv)
-    JK_inv = tp.transform(JK, np.fft.ifftn, complx = False, n_points = n_points)
-    return JK_inv
+
 
 
 def invert_JK_test(JK):
+    """
+    Obsolete debugging function
+    """
     #n_points = 2*np.array(tp.n_lattice(JK))
     JKk = tp.dfft(JK)*1
     JKk_inv = JKk*0
@@ -610,16 +463,22 @@ def invert_JK_test(JK):
     return JK_inv
 
 def invert_JK(JK):
+    """
+    Matrix inversion by means of a Fourier transform
+    Note that this is also implemented as a method internally to the tmat class
+    in the following way:
+
+       M^-1 = M.inv()
+
+    
+    """
     n_points = np.array(tp.n_lattice(JK))
     print(n_points)
     JKk = tp.transform(JK, np.fft.fftn, n_points = n_points)
     JKk_inv = JKk*1.0
     JKk_inv.blocks[:-1] = np.linalg.inv(JKk.blocks[:-1])
 
-    #for k in JKk.coords:
-    #    JKk_k = np.linalg.inv(JKk.cget(k))
-    #    
-    #    JKk_inv.cset(k, JKk_k)
+
 
     JK_inv_direct = tp.transform(JKk_inv, np.fft.ifftn, n_points = n_points, complx = False)
 
@@ -629,7 +488,12 @@ def invert_JK(JK):
 #    Jmn_ret = Jmn*0.0
 
 def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 10e-12, auxname = "cc-pvdz-ri"):
-    
+    """
+    For a given attenuation parameter, basis and lattice geometry, estimate
+    which blocks contain elements above the provided treshold.
+    Returns a tmat object with blocks initialized accordingly
+
+    """
     for i in np.arange(1,100):
         cube = tp.lattice_coords([i,0,0]) #assumed max twobody AO-extent (subst. C-S Screening)
         big_tmat = tp.tmat()
@@ -650,7 +514,10 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
 
 
 def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1, auxname = "cc-pvdz-ri", JKmats = None):
-    cube = tp.lattice_coords([1,1,1]) #assumed max twobody AO-extent (subst. C-S Screening)
+    """
+    Perform a least-squares type fit of products of gaussian functions
+    """
+    cube = tp.lattice_coords([2,2,2]) #assumed max twobody AO-extent (subst. C-S Screening)
     print("Remember: Compute fitting screening set to [ 1,1,1]")
     if JKmats is None:
         # build JK and inverse
@@ -688,18 +555,7 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
 
     
     
-    
-    
-
-    #print(JK.cget([s.coords]))
-    #Jmn = compute_Jmn(p,s2, attenuation = attenuation, auxname = "cc-pvdz-ri", coulomb = False)
-    #print(Jmn.cget([0,0,0]).shape)
-    
     c_occ, c_virt = occ_virt_split(c,p)
-    #print(c_occ.blockshape)
-    #print(c_virt.blockshape)
-    #c_occ = c
-    #c_virt = c
 
     Jpq_c = []
     for i in np.arange(coord_q.shape[0]):
@@ -707,31 +563,28 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
         Jpq_c.append(tp.tmat())
         Jpq_c[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
         Jpq_c[-1].blocks *= 0
-    #print(Jpq.blocks.shape)
+´
     
     for c2 in cube:
         # Compute JMN with nsep =  c2
-        #print(c2)
-        #print(get_xyz(p,[c2]))
-
-        # Use s2 here?
         
         big_tmat = estimate_attenuation_distance(p, attenuation = attenuation, c2 = c2, auxname = auxname)
         
         
         Jmnc2 = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
-        #print("Jmnc2")
         
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
-        
-        #print("Jmnc2 outer max (should be small):", cmax, np.max(np.abs(Jmnc2.cget(cmax))))
-        
-        #print(get_xyz(p, [c2]))
-        # C-S like screening
-        #Jmnc2_est = 
+               
         
         if np.max(np.abs(Jmnc2.blocks))>1e-12:
+            # We go for maximum vectorization here, for some reason it changes the results ever so slightly - it should not, but it is still far below the FOT.
+            for i in np.arange(coord_q.shape[0]):
+                Jpq_c[i].blocks[:-1] = Jpq_c[i].cget(c.coords) + np.einsum("Kjmn,Kmk,Knl->Kjkl", Jmnc2.cget(c.coords).reshape(c.coords.shape[0], JK.blockshape[0],c_occ.blockshape[0],c_virt.blockshape[0]), c_occ.cget(c.coords), c_virt.cget(c.coords + c2 + coord_q[i]), optimize = True).reshape((c.coords.shape[0],JK.blockshape[0],c_occ.blockshape[1]*c_virt.blockshape[1]))
+                #print(Jpqc.shape, Jpq_c[i].blocks.shape)
+
+
             
+            """
             for c1 in c.coords:
                 #@numba.autojit(nopython= True)
                 for i in np.arange(coord_q.shape[0]):
@@ -745,6 +598,7 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
                     #    print(c1 - c2 + coord_q[i], c1, c2, coord_q[i])
                     #    print(np.linalg.norm(Jpqc))
                     #    print("Max element in shifted matrix ", c2, " is ", np.max(np.abs(Jmnc2.blocks)))
+            """
         #print(c2, " done.")
     
 
@@ -773,7 +627,7 @@ def test_matrix_kspace_condition(M, n_fourier):
 
 
 class integral_builder():
-    def __init__(self, c,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = False):
+    def __init__(self, c,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = False, extent_thresh = 1e-14):
         self.c = c
         self.p = p
         self.attenuation = attenuation
@@ -784,16 +638,18 @@ class integral_builder():
         # build attenuated JK matrix and inverse
         #big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 1e-14, auxname = auxname)
         print("Warning: short range attenuation distance estimate in integral builder")
-        big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 1e-12, auxname = auxname)
+        big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = extent_thresh, auxname = auxname)
         
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
 
         #self.JKa = compute_JK(self.p,self.c, attenuation = attenuation, auxname = auxname)
         self.JKa = compute_JK(self.p,big_tmat, attenuation = attenuation, auxname = auxname)
-
+        
 
         print("Attenuated coulomb matrix computed")
         print("JK_attenuated outer max (should be small):", cmax, np.max(np.abs(self.JKa.cget(cmax))))
+        print("JK_attenuated shape:", self.JKa.blocks[:-1].shape)
+        #print("Number of auxiliary functions in ")
         self.JKinv = invert_JK(self.JKa)
         print("Reciprocal space inversion complete.")
         # print("Condition:", np.abs(JK.blocks).max(), np.abs(JKinv.blocks).max())
@@ -820,7 +676,7 @@ class integral_builder():
         # initial coeffs computed in single layer around center cell
         coord_q =  tp.lattice_coords(initial_virtual_dom) #initial virtual domain
         Xreg = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv])
-        
+        print("Number of auxiliary functions in use:", Xreg[0].blocks[:-1].shape[0]*Xreg[0].blocks[:-1].shape[1])
         for i in np.arange(coord_q.shape[0]):
             print("Transpose of coordinate", coord_q[i])
             self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i].tT()
@@ -880,7 +736,18 @@ class integral_builder():
         else:
             return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
 
-    
+    def nbytes(self):
+        # Return memory usage of all arrays in instance
+        total_mem_usage = 0.0
+        for i in np.arange(self.VXreg.shape[0]):
+            for j in np.arange(self.VXreg.shape[1]):
+                for k in np.arange(self.VXreg.shape[2]):
+                    if type(self.XregT[i,j,k]) is tp.tmat:
+                        total_mem_usage += self.XregT[i,j,k].blocks.nbytes
+                    if type(self.VXreg[i,j,k]) is tp.tmat:
+                        total_mem_usage += self.VXreg[i,j,k].blocks.nbytes
+        return total_mem_usage*1e-6 #return in MB
+
 
 
 
@@ -925,6 +792,7 @@ if __name__ == "__main__":
     parser.add_argument("-test_ao", default = False, action = "store_true", help="Run test for AO-basis")
     parser.add_argument("-test_ibuild", default = False, action = "store_true", help="Test integral builder")
     parser.add_argument("-basis_truncation", type = float, default = 0.5, help = "Truncate AO-basis function below this threshold." )
+    parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
     args = parser.parse_args()
 
     p = pr.prism(args.project_file)
@@ -1025,8 +893,3 @@ if __name__ == "__main__":
     else:
         np.save("fitted_coeffs", Xreg)
         print("Fitting complete, stored to file.")
-
-
-
-
-# Plan: 2. PAO adaption (periodic cluster operator, nonorthonormal orbitals) - 1. Robust fitting
