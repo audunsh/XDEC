@@ -105,7 +105,7 @@ class fragment_amplitudes():
                     self.g_d[:, ddL, :, mM, :, ddM, :] = g_direct
                     self.g_x[:, ddL, :, mM, :, ddM, :] = g_exchange
                     self.e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-        print("Initial energy from dynamic amplitudes:", self.e0)
+        #print("Initial energy from dynamic amplitudes:", self.e0)
 
     def compute_energy(self):
         """
@@ -541,6 +541,7 @@ if __name__ == "__main__":
         #print("Initial cutoffs:")
         print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
         print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))        
+        
         print(" ")
         a_frag.solve()
         
@@ -609,5 +610,7 @@ if __name__ == "__main__":
             dE_outer = np.abs(E_prev_outer - E_prev)
             E_prev_outer = E_prev
         #print("Current memory usage of integrals (in MB):", ib.nbytes())
-        print("%.12f" % E_new, "(Periodic RI")
-        print(-0.114393980708, "(3D Neon, fot 0.0001 (Gustav))")
+        print("Converged fragment energy: %.12f" % E_new, "(Periodic RI")
+        print(" ")
+        print(" ")
+        #print(-0.114393980708, "(3D Neon, fot 0.0001 (Gustav))")

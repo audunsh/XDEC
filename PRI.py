@@ -734,7 +734,7 @@ class integral_builder():
                 else:
                     self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
                 
-                #print(d, "computed.")
+                print("        On-demand calculation:", d)
                 #self.Xreg[d[0], d[1], d[2]] =  self.XregT[d[0], d[1], d[2]].tT() #transpose matrix
         if circulant:
             return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
