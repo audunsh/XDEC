@@ -178,7 +178,7 @@ class fragment_amplitudes():
         Include n_orbs more virtual orbitals in the virtual extent
         """
         new_cut = np.sort(self.d_ia.blocks[:-1][self.d_ia.blocks[:-1]>self.virtual_cutoff])[n_orbs -1] 
-        print("Increasing virtual cutoff:", self.virtual_cutoff, "->", new_cut)
+        #print("Increasing virtual cutoff:", self.virtual_cutoff, "->", new_cut)
         self.set_extent(new_cut, self.occupied_cutoff)
     
 
@@ -187,7 +187,7 @@ class fragment_amplitudes():
         Include n_orbs more orbitals in the occupied extent
         """
         new_cut = np.sort(self.d_ii.blocks[:-1][self.d_ii.blocks[:-1]>self.occupied_cutoff])[n_orbs-1] 
-        print("Increasing occupied cutoff:", self.occupied_cutoff, "->", new_cut)
+        #print("Increasing occupied cutoff:", self.occupied_cutoff, "->", new_cut)
         self.set_extent(self.virtual_cutoff, new_cut)
         
 
@@ -356,7 +356,7 @@ class fragment_amplitudes():
             rnorm = np.linalg.norm(t2_new)
             if rnorm<norm_thresh:
 
-                print("Iteration:",ti, "Amplitude gradient norm:",  np.linalg.norm(t2_new))
+                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
                 break
 
 
@@ -423,7 +423,7 @@ def converge_fragment_amplitudes(t2, G_direct, f_mo_ii, f_mo_aa, di_virt, di_occ
         rnorm = np.linalg.norm(t2_new)
         if rnorm<1e-10:
 
-            print("Iteration:",ti, "Amplitude gradient norm:",  np.linalg.norm(t2_new))
+            print("Converged in %i itertions with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
             break
     return t2
     
@@ -504,7 +504,7 @@ if __name__ == "__main__":
 
     # Initialize integrals 
     
-    ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[1,1,1], circulant=args.circulant, extent_thresh=args.attenuated_truncation)
+    ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[1,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation)
 
     # Initialize domain definitions
 
@@ -521,7 +521,7 @@ if __name__ == "__main__":
     print(" ")
 
     print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
-
+    print(" ")
     
 
     # Converge atomic fragment energies
@@ -531,22 +531,24 @@ if __name__ == "__main__":
     occ_cut = 1.0
 
     for fragment in center_fragments:
-        print("Running fragment optimization for:")
-        print(fragment)
-        print("Initial ")
-        print(" ")
+        
 
         ib.fragment = fragment
         
         a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 2.0, occupied_cutoff = 1.0)
-       
+        print("Running fragment optimization for:")
+        print(fragment)
+        #print("Initial cutoffs:")
+        print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+        print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))        
+        print(" ")
         a_frag.solve()
         
         # Converge to fot
         E_prev_outer = a_frag.compute_fragment_energy()
         E_prev = E_prev_outer*1.0
         dE_outer = 10
-        print("Initial fragment energy: %.5e" % E_prev)
+        #print("Initial fragment energy: %.5e" % E_prev)
         while dE_outer>args.fot:
             dE = 10
             while dE>args.fot:
@@ -556,37 +558,56 @@ if __name__ == "__main__":
                 a_frag.solve()
                 E_new = a_frag.compute_fragment_energy()
                 
-                a_frag.print_configuration_space_data()
+                #a_frag.print_configuration_space_data()
                 dE = np.abs(E_prev - E_new)
-                print("E(fragment):", E_new, " DE(fragment):", dE)
+                print("_______________________________________________________")
+                print("E(fragment): %.6f        DE(fragment): %.6e" % (E_new, dE))
+                print("_______________________________________________________")
+                print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+                print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+                print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                print(" ")
                 E_prev = E_new
-                print("---")
+                #print("---")
             #dE = 10
-            print("--- occupied")
+            #print("--- occupied")
             a_frag.autoexpand_occupied_space(n_orbs=2)
             a_frag.solve()
             E_new = a_frag.compute_fragment_energy()
             
-            a_frag.print_configuration_space_data()
-            dE = np.abs(E_prev - E_new)
-            print("E(fragment):", E_new, " DE(fragment):", dE)
+            #a_frag.print_configuration_space_data()
+            dE = np.abs(E_prev - E_new) 
+
+            print("_______________________________________________________")
+            print("E(fragment): %.6f        DE(fragment): %.6e" % (E_new, dE))
+            print("_______________________________________________________")
+            print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+            print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+            print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+            print(" ")
             E_prev = E_new
-            print("---")
+            #print("---")
 
             while dE>args.fot:
 
-                print("--- occupied")
+                #print("--- occupied")
                 a_frag.autoexpand_occupied_space(n_orbs=2)
                 a_frag.solve()
                 E_new = a_frag.compute_fragment_energy()
                 
-                a_frag.print_configuration_space_data()
+                #a_frag.print_configuration_space_data()
                 dE = np.abs(E_prev - E_new)
-                print("E(fragment):", E_new, " DE(fragment):", dE)
+                print("_______________________________________________________")
+                print("E(fragment): %.6f        DE(fragment): %.6e" % (E_new, dE))
+                print("_______________________________________________________")
+                print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+                print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+                print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                print(" ")
                 E_prev = E_new
-                print("---")
+                #print("---")
             dE_outer = np.abs(E_prev_outer - E_prev)
             E_prev_outer = E_prev
-        print("Current memory usage of integrals (in MB):", ib.nbytes())
-        print(E_new, "(Periodic RI")
+        #print("Current memory usage of integrals (in MB):", ib.nbytes())
+        print("%.12f" % E_new, "(Periodic RI")
         print(-0.114393980708, "(3D Neon, fot 0.0001 (Gustav))")

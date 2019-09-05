@@ -473,7 +473,7 @@ def invert_JK(JK):
     
     """
     n_points = np.array(tp.n_lattice(JK))
-    print(n_points)
+    #print(n_points)
     JKk = tp.transform(JK, np.fft.fftn, n_points = n_points)
     JKk_inv = JKk*1.0
     JKk_inv.blocks[:-1] = np.linalg.inv(JKk.blocks[:-1])
@@ -518,7 +518,7 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
     Perform a least-squares type fit of products of gaussian functions
     """
     cube = tp.lattice_coords([2,2,2]) #assumed max twobody AO-extent (subst. C-S Screening)
-    print("Remember: Compute fitting screening set to [ 1,1,1]")
+    #print("C-S like screening set to extent [ 2,2,2]")
     if JKmats is None:
         # build JK and inverse
         big_tmat = estimate_attenuation_distance(p, attenuation = .5*attenuation, thresh = 10e-14, auxname = auxname)
@@ -646,7 +646,7 @@ class integral_builder():
         
         print("")
         print("Attenuated coulomb matrix (JKa) computed.")
-        print("JKa outer coordinate (should be smaller than %.2f):" % extent_thresh, cmax, np.max(np.abs(self.JKa.cget(cmax))))
+        print("JKa outer coordinate (should be smaller than %.2e):" % extent_thresh, cmax, np.max(np.abs(self.JKa.cget(cmax))))
         print("JKa block shape:", self.JKa.blocks[:-1].shape)
         print("")
         #print("Number of auxiliary functions in ")
@@ -667,7 +667,7 @@ class integral_builder():
         print("Circulant inversion    (0,0,0): %.3e" % np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
         for cc in tcoords[1:]:
             print("Circulant inversion    (%i,0,0): %.3e" % (cc[0], np.max(np.abs(I.cget(cc)))))
-        print("---")
+        print(" ")
 
         
         self.XregT = np.zeros((15,15,15), dtype = tp.tmat)  # RI - coefficient matrices ^T
@@ -679,11 +679,11 @@ class integral_builder():
         print(coord_q)
         t0 = time.process_time()
         Xreg = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv])
-        t1 = time.process_time()
-        print("Time spent on fitting %i cells:" %len(coord_q), t1)
+        t1 = time.process_time() - t0
+        print("Time spent on fitting %i cells: %.2f (s,cpu)" % (len(coord_q), t1))
         print("Number of auxiliary functions in use:", Xreg[0].blocks[:-1].shape[0]*Xreg[0].blocks[:-1].shape[1])
         for i in np.arange(coord_q.shape[0]):
-            print("Transpose of coordinate", coord_q[i])
+            #print("Transpose of coordinate", coord_q[i])
             self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i].tT()
 
 
@@ -696,14 +696,15 @@ class integral_builder():
         s = tp.tmat()
         scoords = tp.lattice_coords(coulomb_extent)
         s.load_nparray(np.ones((scoords.shape[0],2,2), dtype = float), scoords)
-        print("Computing JK (Coulomb) matrix....",)
+        
         self.JK = compute_JK(p,s, coulomb=True, auxname = self.auxname) 
-        self.JK.tolerance = 10e-12
-        print(" done.")
+        #self.JK.tolerance = 10e-12
+        print("Coulomb matrix (JK) computed.")
+        #print(" done.")
 
 
         for i in np.arange(coord_q.shape[0]):
-            print("JK dot X for cell ", coord_q[i])
+            #print("JK dot X for cell ", coord_q[i])
 
             if circulant:
                 self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.circulantdot(Xreg[i])
@@ -733,7 +734,7 @@ class integral_builder():
                 else:
                     self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
                 
-                print(d, "computed.")
+                #print(d, "computed.")
                 #self.Xreg[d[0], d[1], d[2]] =  self.XregT[d[0], d[1], d[2]].tT() #transpose matrix
         if circulant:
             return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
@@ -754,16 +755,6 @@ class integral_builder():
         return total_mem_usage*1e-6 #return in MB
 
 
-
-
-
-        # array for integral storage
-
-        #max_virtual_extent = tp.lattice_coords([3,3,3])
-
-        #self.v = np.zeros(())
-
-        # compute center cell 
         
 
 
