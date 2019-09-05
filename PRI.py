@@ -513,9 +513,9 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
     
 
 
-def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1, auxname = "cc-pvdz-ri", JKmats = None):
+def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1, auxname = "cc-pvdz-ri", JKmats = None,robust = False):
     """
-    Perform a least-squares type fit of products of gaussian functions
+    Perform a least-squares type fit of products of functions expanded in gaussians
     """
     cube = tp.lattice_coords([2,2,2]) #assumed max twobody AO-extent (subst. C-S Screening)
     #print("C-S like screening set to extent [ 2,2,2]")
@@ -559,11 +559,19 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
     c_occ, c_virt = occ_virt_split(c,p)
 
     Jpq_c = []
+    Jpq_c_coulomb = []
+
+    
     for i in np.arange(coord_q.shape[0]):
 
         Jpq_c.append(tp.tmat())
         Jpq_c[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
         Jpq_c[-1].blocks *= 0
+        if robust:
+            Jpq_c_coulomb.append(tp.tmat())
+            Jpq_c_coulomb[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
+            Jpq_c_coulomb[-1].blocks *= 0
+
     
     for c2 in cube:
         # Compute JMN with nsep =  c2
@@ -572,7 +580,9 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
         
         
         Jmnc2 = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
-        
+        if robust:
+            Jmnc2_c = compute_Jmn(p,big_tmat, attenuation = 0.0, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
+
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
                
         
@@ -580,6 +590,8 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
             # We go for maximum vectorization here, for some reason it changes the results ever so slightly - it should not, but it is still far below the FOT.
             for i in np.arange(coord_q.shape[0]):
                 Jpq_c[i].blocks[:-1] = Jpq_c[i].cget(c.coords) + np.einsum("Kjmn,Kmk,Knl->Kjkl", Jmnc2.cget(c.coords).reshape(c.coords.shape[0], JK.blockshape[0],c_occ.blockshape[0],c_virt.blockshape[0]), c_occ.cget(c.coords), c_virt.cget(c.coords + c2 + coord_q[i]), optimize = True).reshape((c.coords.shape[0],JK.blockshape[0],c_occ.blockshape[1]*c_virt.blockshape[1]))
+                if robust:
+                    Jpq_c_coulomb[i].blocks[:-1] = Jpq_c_coulomb[i].cget(c.coords) + np.einsum("Kjmn,Kmk,Knl->Kjkl", Jmnc2_c.cget(c.coords).reshape(c.coords.shape[0], JK.blockshape[0],c_occ.blockshape[0],c_virt.blockshape[0]), c_occ.cget(c.coords), c_virt.cget(c.coords + c2 + coord_q[i]), optimize = True).reshape((c.coords.shape[0],JK.blockshape[0],c_occ.blockshape[1]*c_virt.blockshape[1]))
                 #print(Jpqc.shape, Jpq_c[i].blocks.shape)
 
 
@@ -613,6 +625,13 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
     for i in np.arange(len(Jpq_c)):
         #print("Compute coeffs for shifted coordinate", coord_q[i])
         X.append(JKinv.cdot(Jpq_c[i]))
+    
+    if robust:
+        X_c = []
+        for i in np.arange(len(Jpq_c_coulomb)):
+            #print("Compute coeffs for shifted coordinate", coord_q[i])
+            X_c.append(Jpq_c_coulomb[i])
+        X = [X, X_c]
     #X = JKinv.cdot(Jpq, coords = Jpq.coords) #compute coefficients
     #print("done")
     return X
@@ -627,12 +646,13 @@ def test_matrix_kspace_condition(M, n_fourier):
 
 
 class integral_builder():
-    def __init__(self, c,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = False, extent_thresh = 1e-14):
+    def __init__(self, c,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = False, extent_thresh = 1e-14, robust  = False):
         self.c = c
         self.p = p
         self.attenuation = attenuation
         self.auxname = auxname
         self.circulant = circulant
+        self.robust = robust
 
         # Oneshot calculations:
         # build attenuated JK matrix and inverse
@@ -672,19 +692,30 @@ class integral_builder():
         
         self.XregT = np.zeros((15,15,15), dtype = tp.tmat)  # RI - coefficient matrices ^T
         self.VXreg = np.zeros((15,15,15), dtype = tp.tmat) # RI - matrices with V contracted
+        if robust:
+            self.JpqXreg = np.zeros((15,15,15), dtype = tp.tmat)
 
         # initial coeffs computed in single layer around center cell
         coord_q =  tp.lattice_coords(initial_virtual_dom) #initial virtual domain
         print("Computing fitting coefficients for dL = ")
         print(coord_q)
-        t0 = time.process_time()
-        Xreg = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv])
-        t1 = time.process_time() - t0
+        if robust:
+            t0 = time.process_time()
+            Xreg, Jpq = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv], robust = True)
+            t1 = time.process_time() - t0
+        else:
+            t0 = time.process_time()
+            Xreg = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv])
+            t1 = time.process_time() - t0
         print("Time spent on fitting %i cells: %.2f (s,cpu)" % (len(coord_q), t1))
         print("Number of auxiliary functions in use:", Xreg[0].blocks[:-1].shape[0]*Xreg[0].blocks[:-1].shape[1])
         for i in np.arange(coord_q.shape[0]):
             #print("Transpose of coordinate", coord_q[i])
             self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i].tT()
+        if robust:
+            for i in np.arange(coord_q.shape[0]):
+                #print("Transpose of coordinate", coord_q[i])
+                self.JpqXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Jpq[i]
 
 
 
@@ -719,28 +750,55 @@ class integral_builder():
 
 
     def getcell(self, dL, M, dM):
-        circulant = self.circulant
-        for d in [dL, dM]:
-            if self.XregT[d[0], d[1], d[2]] is 0:
+        if self.robust:
+            circulant = self.circulant
+            for d in [dL, dM]:
+                if self.XregT[d[0], d[1], d[2]] is 0:
 
-                #coords_q = tp.lattice_coords()
+                    #coords_q = tp.lattice_coords()
 
 
-                # Should compute all within range
-                Xreg = compute_fitting_coeffs(self.c,self.p,coord_q = np.array([d]), attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv])
-                self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
-                if circulant:
-                    self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0])
-                else:
-                    self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
-                
-                print("        On-demand calculation:", d)
-                #self.Xreg[d[0], d[1], d[2]] =  self.XregT[d[0], d[1], d[2]].tT() #transpose matrix
-        if circulant:
-            return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                    # Should compute all within range
+                    Xreg, Jpq = compute_fitting_coeffs(self.c,self.p,coord_q = np.array([d]), attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv], robust = True)
+                    self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
+                    self.JpqXreg[d[0], d[1], d[2]] = Jpq[0]
+                    if circulant:
+                        self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0])
+                    else:
+                        self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
+                    
+                    print("        On-demand calculation:", d)
+                    #self.Xreg[d[0], d[1], d[2]] =  self.XregT[d[0], d[1], d[2]].tT() #transpose matrix
+            if circulant:
+                return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().circulantdot(self.XregT[dL[0], dL[1], dL[2]].tT()) + \
+                       self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.JpqXreg[dL[0], dL[1], dL[2]]) - \
+                       self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
 
+            else:
+                return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
         else:
-            return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+            circulant = self.circulant
+            for d in [dL, dM]:
+                if self.XregT[d[0], d[1], d[2]] is 0:
+
+                    #coords_q = tp.lattice_coords()
+
+
+                    # Should compute all within range
+                    Xreg = compute_fitting_coeffs(self.c,self.p,coord_q = np.array([d]), attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv])
+                    self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
+                    if circulant:
+                        self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0])
+                    else:
+                        self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
+                    
+                    print("        On-demand calculation:", d)
+                    #self.Xreg[d[0], d[1], d[2]] =  self.XregT[d[0], d[1], d[2]].tT() #transpose matrix
+            if circulant:
+                return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+
+            else:
+                return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
 
     def nbytes(self):
         # Return memory usage of all arrays in instance

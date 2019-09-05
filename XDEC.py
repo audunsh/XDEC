@@ -459,6 +459,7 @@ if __name__ == "__main__":
     parser.add_argument("-fot", type = float, default = 0.001, help = "fragment optimization treshold")
     parser.add_argument("-circulant",default = False, action = "store_true", help = "fragment optimization treshold")
     parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
+    parser.add_argument("-robust", default = False, action = "store_true", help = "Enable Dunlap robust fit for improved integral accuracy.")
     args = parser.parse_args()
 
 
@@ -504,7 +505,7 @@ if __name__ == "__main__":
 
     # Initialize integrals 
     
-    ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[1,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation)
+    ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[1,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust)
 
     # Initialize domain definitions
 
