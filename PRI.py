@@ -770,8 +770,8 @@ class integral_builder():
                     print("        On-demand calculation:", d)
                     #self.Xreg[d[0], d[1], d[2]] =  self.XregT[d[0], d[1], d[2]].tT() #transpose matrix
             if circulant:
-                return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().circulantdot(self.XregT[dL[0], dL[1], dL[2]].tT()) + \
-                       self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.JpqXreg[dL[0], dL[1], dL[2]]) - \
+                return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().circulantdot(self.XregT[dM[0], dM[1], dM[2]].tT()) + \
+                       self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.JpqXreg[dM[0], dM[1], dM[2]]) - \
                        self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
 
             else:
