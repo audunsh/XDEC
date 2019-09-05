@@ -513,7 +513,7 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
     
 
 
-def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1, auxname = "cc-pvdz-ri", JKmats = None,robust = False):
+def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1, auxname = "cc-pvdz-ri", JKmats = None,robust = False, circulant = True):
     """
     Perform a least-squares type fit of products of functions expanded in gaussians
     """
@@ -624,7 +624,10 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
     X = []
     for i in np.arange(len(Jpq_c)):
         #print("Compute coeffs for shifted coordinate", coord_q[i])
-        X.append(JKinv.cdot(Jpq_c[i]))
+        if circulant:
+            X.append(JKinv.circulantdot(Jpq_c[i]))
+        else:
+            X.append(JKinv.cdot(Jpq_c[i]))
     
     if robust:
         X_c = []
@@ -657,7 +660,7 @@ class integral_builder():
         # Oneshot calculations:
         # build attenuated JK matrix and inverse
         #big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 1e-14, auxname = auxname)
-        big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = extent_thresh, auxname = auxname)
+        big_tmat = estimate_attenuation_distance(p, attenuation = self.attenuation, thresh = extent_thresh, auxname = auxname)
         
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
 
