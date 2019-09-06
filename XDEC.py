@@ -39,10 +39,10 @@ class fragment_amplitudes():
     """
     def __init__(self, p, wannier_centers, coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0):
         self.p = p #prism object
-        self.d = dd.build_distance_matrix(p, coords, wcenters, wcenters) # distance matrix
+        self.d = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers) # distance matrix
         
-        self.d_ii = dd.build_distance_matrix(p, coords, wcenters[fragment], wcenters[:p.get_nocc()])
-        self.d_ia = dd.build_distance_matrix(p, coords, wcenters[fragment], wcenters[p.get_nocc():])
+        self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[:p.get_nocc()])
+        self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[p.get_nocc():])
         self.fragment = fragment
 
         self.ib = ib #integral builder
@@ -290,8 +290,8 @@ class fragment_amplitudes():
         self.n_virtual_cells = Nv
         self.n_occupied_cells = No
 
-        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1]<=self.virtual_cutoff)
-        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1]<=self.occupied_cutoff)
+        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1,self.fragment[0]]<=self.virtual_cutoff)
+        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1, self.fragment[0]]<=self.occupied_cutoff)
     
     def print_configuration_space_data(self):
         """
@@ -358,6 +358,86 @@ class fragment_amplitudes():
 
                 print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
                 break
+
+
+class attenuation_tuner():
+    def __init__(self, p, args):
+        
+        # Generate BT - identity matrix, small cutoff
+        c = tp.tmat()
+        c.load_nparray(np.ones((3,p.get_n_ao(), p.get_n_ao()), dtype =float),tp.lattice_coords([1,0,0]))
+        c.blocks[:-1] = 0.0
+        c.cset([0,0,0], np.eye(p.get_n_ao()))
+
+        c_occ, c_virt = PRI.occ_virt_split(c,p)
+        
+        ib_ao = PRI.integral_builder_ao(c,p,attenuation = 1.2, auxname="ri-fitbasis", circulant=args.circulant, robust = args.robust)
+
+        # AO Fock matrix
+        f_ao = tp.tmat()
+        f_ao.load(args.fock_matrix)
+
+        # Compute MO Fock matrix
+        f_mo = c.tT().cdot(f_ao*c, coords = c.coords)
+
+        f_mo_aa = c_virt.tT().cdot(f_ao*c_virt, coords = c.coords)
+        f_mo_ii = c_occ.tT().cdot(f_ao*c_occ, coords = c.coords)
+
+
+
+        # Compute energy denominator
+        f_aa = f_mo.cget([0,0,0])[np.arange(p.get_nocc(),p.get_n_ao()), np.arange(p.get_nocc(),p.get_n_ao())]
+        f_ii = f_mo.cget([0,0,0])[np.arange(p.get_nocc()),np.arange(p.get_nocc()) ]
+        
+        e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
+
+
+        # Wannier centers
+        wcenters = np.load(args.wcenters)*0
+
+
+        d = dd.build_distance_matrix(p, tp.lattice_coords([6,6,6]), wcenters, wcenters)
+        for cc in d.coords:
+            d.cset(cc, np.zeros_like(d.cget(cc))+np.sqrt(np.sum(cc**2)))
+        
+
+
+        
+
+
+
+        center_fragment = dd.atomic_fragmentation(p, d, 3.0)[0]
+        omegas = np.exp(np.linspace(np.log(0.1),np.log(10),10))
+        for i in np.arange(10):
+            omega = omegas[-(i+1)]
+            #print(omega)
+            ib_ri = PRI.integral_builder(c,p,attenuation =omega, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust)
+            
+
+            #print(ib_ri.getcell([0,0,0], [0,0,0], [0,0,0]))
+            #print(ib_ao.getcell([0,0,0], [0,0,0], [0,0,0]))
+
+            print(omega, np.linalg.norm(ib_ri.getcell([0,0,0], [0,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [0,0,0], [0,0,0])), np.max(np.abs(ib_ri.getcell([0,0,0], [0,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [0,0,0], [0,0,0]))))
+
+
+            #a_frag_ao=fragment_amplitudes(p, wcenters, c.coords, center_fragment, ib_ao, f_mo_ii, f_mo_aa, virtual_cutoff = 10.0, occupied_cutoff = 1.0)
+            
+            #a_frag_ri=fragment_amplitudes(p, wcenters, c.coords, center_fragment, ib_ri, f_mo_ii, f_mo_aa, virtual_cutoff = 10.0, occupied_cutoff = 1.0)
+
+            #a_frag_ao.solve()
+            #a_frag_ri.solve()
+
+            #ao_energy = a_frag_ao.compute_fragment_energy()
+            #ri_energy = a_frag_ri.compute_fragment_energy()
+
+            #print(omega, ao_energy, ri_energy)
+        
+
+
+
+
+
+
 
 
 
@@ -473,6 +553,9 @@ if __name__ == "__main__":
     f = open("ri-fitbasis.g94", "w")
     f.write(auxbasis)
     f.close()
+
+
+    #attenuation_tuner(p, args)
     
 
     # Wannier coefficients
@@ -512,6 +595,7 @@ if __name__ == "__main__":
 
 
     d = dd.build_distance_matrix(p, c.coords, wcenters, wcenters)
+
 
 
 

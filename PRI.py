@@ -513,7 +513,7 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
     
 
 
-def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1, auxname = "cc-pvdz-ri", JKmats = None,robust = False, circulant = True):
+def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1, auxname = "cc-pvdz-ri", JKmats = None,robust = False, circulant = False):
     """
     Perform a least-squares type fit of products of functions expanded in gaussians
     """
@@ -648,6 +648,30 @@ def test_matrix_kspace_condition(M, n_fourier):
         print()
 
 
+class integral_builder_ao():
+    """
+    This class i used when selecting the attenuation parameter only
+    For direct access to integrals use either lwrap directly, or some
+    of the functions defined above (like compute_pqpq)
+    """
+    def __init__(self, c, p, attenuation = 0.1, auxname = "cc-pvdz-ri", circulant = False, robust  = False):
+        self.c = c
+        self.p = p
+        self.attenuation = attenuation
+        self.auxname = auxname
+        self.circulant = circulant
+        self.robust = robust
+    def getcell(self, dL, M, dM):
+        p = self.p
+        pqMrs = compute_pqrs(p, t = np.array([M])).reshape(p.get_n_ao(), p.get_n_ao(),p.get_n_ao(),p.get_n_ao())
+        return pqMrs[:p.get_nocc(), p.get_nocc():, :p.get_nocc(), p.get_nocc():]
+    def nbytes(self):
+        return 0
+
+
+
+
+
 class integral_builder():
     def __init__(self, c,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = False, extent_thresh = 1e-14, robust  = False):
         self.c = c
@@ -703,14 +727,14 @@ class integral_builder():
         print("Computing fitting coefficients for dL = ")
         print(coord_q)
         if robust:
-            t0 = time.process_time()
-            Xreg, Jpq = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv], robust = True)
-            t1 = time.process_time() - t0
+            t0 = time.time()
+            Xreg, Jpq = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv], robust = True, circulant = self.circulant)
+            t1 = time.time() - t0
         else:
-            t0 = time.process_time()
+            t0 = time.time()
             Xreg = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv])
-            t1 = time.process_time() - t0
-        print("Time spent on fitting %i cells: %.2f (s,cpu)" % (len(coord_q), t1))
+            t1 = time.time() - t0
+        print("Time spent on fitting %i cells: %.2f (s)" % (len(coord_q), t1))
         print("Number of auxiliary functions in use:", Xreg[0].blocks[:-1].shape[0]*Xreg[0].blocks[:-1].shape[1])
         for i in np.arange(coord_q.shape[0]):
             #print("Transpose of coordinate", coord_q[i])
@@ -778,7 +802,12 @@ class integral_builder():
                        self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
 
             else:
-                return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                #return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().cdot(self.XregT[dM[0], dM[1], dM[2]].tT(), coords = [M]) + \
+                       self.XregT[dL[0], dL[1], dL[2]].cdot(self.JpqXreg[dM[0], dM[1], dM[2]], coords = [M]) - \
+                       self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+
+        
         else:
             circulant = self.circulant
             for d in [dL, dM]:
