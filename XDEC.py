@@ -66,8 +66,13 @@ class fragment_amplitudes():
         self.n_virtual_cells = np.sum(self.min_elm_ia<=self.virtual_cutoff)
         self.n_occupied_cells = np.sum(self.min_elm_ii<=self.occupied_cutoff)
 
-        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1]<=self.virtual_cutoff)
-        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1]<=self.occupied_cutoff)
+        
+
+        #self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1]<=self.virtual_cutoff)
+        #self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1]<=self.occupied_cutoff)
+        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1,self.fragment[0]]<=self.virtual_cutoff)
+        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1, self.fragment[0]]<=self.occupied_cutoff)
+    
         
         n_occ = self.p.get_nocc()     # Number of occupied orbitals per cell
         N_occ = self.n_occupied_cells # Number of occupied cells
@@ -177,7 +182,7 @@ class fragment_amplitudes():
         """
         Include n_orbs more virtual orbitals in the virtual extent
         """
-        new_cut = np.sort(self.d_ia.blocks[:-1][self.d_ia.blocks[:-1]>self.virtual_cutoff])[n_orbs -1] 
+        new_cut = np.sort(self.d_ia.blocks[:-1, self.fragment[0]][self.d_ia.blocks[:-1, self.fragment[0]]>self.virtual_cutoff])[n_orbs -1] 
         #print("Increasing virtual cutoff:", self.virtual_cutoff, "->", new_cut)
         self.set_extent(new_cut, self.occupied_cutoff)
     
@@ -186,7 +191,7 @@ class fragment_amplitudes():
         """
         Include n_orbs more orbitals in the occupied extent
         """
-        new_cut = np.sort(self.d_ii.blocks[:-1][self.d_ii.blocks[:-1]>self.occupied_cutoff])[n_orbs-1] 
+        new_cut = np.sort(self.d_ii.blocks[:-1, self.fragment[0]][self.d_ii.blocks[:-1, self.fragment[0]]>self.occupied_cutoff])[n_orbs-1] 
         #print("Increasing occupied cutoff:", self.occupied_cutoff, "->", new_cut)
         self.set_extent(self.virtual_cutoff, new_cut)
         
@@ -407,7 +412,9 @@ class attenuation_tuner():
 
 
         center_fragment = dd.atomic_fragmentation(p, d, 3.0)[0]
-        omegas = np.exp(np.linspace(np.log(0.1),np.log(10),10))
+        omegas = np.exp(np.linspace(np.log(0.15),np.log(10),10))
+
+        errors = []
         for i in np.arange(10):
             omega = omegas[-(i+1)]
             #print(omega)
@@ -419,7 +426,23 @@ class attenuation_tuner():
 
             print(omega, np.linalg.norm(ib_ri.getcell([0,0,0], [0,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [0,0,0], [0,0,0])), np.max(np.abs(ib_ri.getcell([0,0,0], [0,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [0,0,0], [0,0,0]))))
 
+            print(omega, np.linalg.norm(ib_ri.getcell([0,0,0], [1,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [1,0,0], [0,0,0])), np.max(np.abs(ib_ri.getcell([0,0,0], [1,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [1,0,0], [0,0,0]))))
+            
+            #print( (ib_ri.getcell([0,0,0], [0,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [0,0,0], [0,0,0]) )[0,:,0,:] )
+            #print( (ib_ri.getcell([0,0,0], [1,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [1,0,0], [0,0,0]) )[0,:,0,:] )
 
+            print( ib_ri.getcell([0,0,0], [0,0,0], [0,0,0])[0,:,0,:] )
+            print( ib_ao.getcell([0,0,0], [0,0,0], [0,0,0])[0,:,0,:] )
+            
+            print( ib_ri.getcell([0,0,0], [1,0,0], [0,0,0])[0,:,0,:] )
+            print( ib_ao.getcell([0,0,0], [1,0,0], [0,0,0])[0,:,0,:] )
+            err = []
+            err.append(ib_ri.getcell([0,0,0], [0,0,0], [0,0,0])[0,:,0,:])
+            err.append(ib_ao.getcell([0,0,0], [0,0,0], [0,0,0])[0,:,0,:])
+            err.append(ib_ri.getcell([0,0,0], [1,0,0], [0,0,0])[0,:,0,:])
+            err.append(ib_ao.getcell([0,0,0], [1,0,0], [0,0,0])[0,:,0,:])
+
+            errors.append(err)
             #a_frag_ao=fragment_amplitudes(p, wcenters, c.coords, center_fragment, ib_ao, f_mo_ii, f_mo_aa, virtual_cutoff = 10.0, occupied_cutoff = 1.0)
             
             #a_frag_ri=fragment_amplitudes(p, wcenters, c.coords, center_fragment, ib_ri, f_mo_ii, f_mo_aa, virtual_cutoff = 10.0, occupied_cutoff = 1.0)
@@ -431,6 +454,7 @@ class attenuation_tuner():
             #ri_energy = a_frag_ri.compute_fragment_energy()
 
             #print(omega, ao_energy, ri_energy)
+            np.save("errors_per_orb_cc_pvtz.npy", np.array(errors))
         
 
 
@@ -540,12 +564,13 @@ if __name__ == "__main__":
     parser.add_argument("-circulant",default = False, action = "store_true", help = "fragment optimization treshold")
     parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
     parser.add_argument("-robust", default = False, action = "store_true", help = "Enable Dunlap robust fit for improved integral accuracy.")
+    parser.add_argument("-n_core", type = int, default = 0, help = "Number of core orbitals (the first n_core orbitals will not be correlated).")
     args = parser.parse_args()
 
 
     # Load system
     p = pr.prism(args.project_file)
-
+    p.n_core = args.n_core
 
 
     # Fitting basis
@@ -563,6 +588,13 @@ if __name__ == "__main__":
     c.load(args.coefficients)
 
     c_occ, c_virt = PRI.occ_virt_split(c,p)
+
+    # Remove core orbitals
+    #p.n_core = 1
+    #c_occ = tp.tmat()
+    #c_occ.load_nparray(c_occ_full.blocks[:-1, :, 1:], c_occ_full.coords)
+
+
     
     # AO Fock matrix
     f_ao = tp.tmat()
@@ -577,14 +609,17 @@ if __name__ == "__main__":
 
 
     # Compute energy denominator
-    f_aa = f_mo.cget([0,0,0])[np.arange(p.get_nocc(),p.get_n_ao()), np.arange(p.get_nocc(),p.get_n_ao())]
-    f_ii = f_mo.cget([0,0,0])[np.arange(p.get_nocc()),np.arange(p.get_nocc()) ]
+    #f_aa = f_mo.cget([0,0,0])[np.arange(p.get_nocc(),p.get_n_ao()), np.arange(p.get_nocc(),p.get_n_ao())]
+    #f_ii = f_mo.cget([0,0,0])[np.arange(p.get_nocc()),np.arange(p.get_nocc()) ]
     
+    f_aa = np.diag(f_mo_aa.cget([0,0,0]))
+    f_ii = np.diag(f_mo_ii.cget([0,0,0]))
+
     e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
 
 
     # Wannier centers
-    wcenters = np.load(args.wcenters)
+    wcenters = np.load(args.wcenters)[p.n_core:]
 
     # Initialize integrals 
     
@@ -621,6 +656,8 @@ if __name__ == "__main__":
         ib.fragment = fragment
         
         a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 2.0, occupied_cutoff = 1.0)
+        
+        
         print("Running fragment optimization for:")
         print(fragment)
         #print("Initial cutoffs:")

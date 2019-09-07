@@ -36,7 +36,8 @@ def basis_trimmer(p, auxbasis, alphacut = 0.5):
     for line in basis:
         try: 
             # We only retain basis functions with exponent > alphacut
-            if literal_eval(line.split()[0]) >= alphacut:
+            exponent = literal_eval(line.split()[0])
+            if  exponent >= alphacut:
                 
                 trimmed_basis_list.append(line)
             else:
@@ -63,10 +64,10 @@ def occ_virt_split(c,p):
     Returns two tmat objects c_occ and c_virt (typically coefficients)
     """
     c_virt = tp.tmat()
-    c_virt.load_nparray(c.blocks[:,:,p.get_nocc():], c.coords[:])
+    c_virt.load_nparray(c.blocks[:,:,p.get_nocc()+p.n_core:], c.coords[:])
 
     c_occ = tp.tmat()
-    c_occ.load_nparray(c.blocks[:,:,:p.get_nocc()], c.coords[:])
+    c_occ.load_nparray(c.blocks[:,:,p.n_core:p.get_nocc()+p.n_core], c.coords[:])
     return c_occ, c_virt
 
 def get_xyz(p, t = np.array([[0,0,0]])):
@@ -81,7 +82,8 @@ def get_xyz(p, t = np.array([[0,0,0]])):
     pos, charge = p.get_atoms(t)
     ptable = [None, "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne"]
     sret = "%i\n\n" % len(charge)
-    conversion_factor = 0.52917721092 #**-1
+    #conversion_factor = 0.52917721092 #**-1
+    conversion_factor = 0.52917721067 #**-1
     for i in range(len(charge)):
         sret += "%s %.15f %.15f %.15f\n" % (ptable[int(charge[i])],conversion_factor*pos[i][0], conversion_factor*pos[i][1], conversion_factor*pos[i][2])
     sret = sret[:-2]
@@ -496,7 +498,13 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
     """
     for i in np.arange(1,100):
         cube = tp.lattice_coords([i,0,0]) #assumed max twobody AO-extent (subst. C-S Screening)
+        
+        #coords = np.zeros((2,3), dtype = float)
+        #coords[1] = np.array([i,0,0])
+        
+        
         big_tmat = tp.tmat()
+        #big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
         big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
 
         Jmnc = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = [c2])
@@ -504,6 +512,7 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
         #print("Largest element in %i th layer:" % i, np.max(np.abs(JK.cget(cmax))))
         if (np.max(np.abs(Jmnc.cget(cmax))))<thresh:
             #print("Converged to %i layers for shifted coordinate:" % i, c2)
+            #i = int(np.sqrt(3*i**2))
             break
     cube = tp.lattice_coords([i,i,i]) #assumed max twobody AO-extent (subst. C-S Screening)
     cube = cube[np.sqrt(np.sum(cube**2, axis = 1))<=i]
@@ -557,6 +566,12 @@ def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1,
     
     
     c_occ, c_virt = occ_virt_split(c,p)
+    #print(c_occ.blockshape, c_virt.blockshape)
+
+    # Remove core orbitals
+    #p.n_core = 1
+    #c_occ = tp.tmat()
+    #c_occ.load_nparray(c_occ_full.blocks[:-1, :, 1:], c_occ_full.coords)
 
     Jpq_c = []
     Jpq_c_coulomb = []

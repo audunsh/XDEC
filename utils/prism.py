@@ -143,6 +143,8 @@ class prism():
             
             self.atomic_numbers, self.basis_set = parse_crystal_basis(basis_s)
             self._sort_basis()
+
+            self.n_core = 0 #set number of core orbitals manually
             
             
             
@@ -735,11 +737,11 @@ class prism():
     
     def get_nocc(self):
         #returns n occupied, rhf
-        return int(np.sum(self.charges)/2)
+        return int(np.sum(self.charges)/2) - self.n_core
         
     def get_nvirt(self):
         #returns n occupied, rhf
-        return self.get_n_ao()-self.get_nocc()
+        return self.get_n_ao()-self.get_nocc() -self.n_core
         
     def get_n_ao(self):
         N_ao = 0
