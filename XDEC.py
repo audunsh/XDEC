@@ -162,6 +162,9 @@ class fragment_amplitudes():
         return e_mp2
 
     def init_cell_batch(self, coords):
+        """
+        Could perhaps save some seconds when initializing new cells
+        """
         pass
 
 
@@ -231,11 +234,15 @@ class fragment_amplitudes():
                 self.g_x = g_x_new
 
                 # Initialize empty blocks
+                
                 for ddL in np.arange(Nv):
                     for ddM in np.arange(Nv):
                         for mmM in np.arange(No):
+                            #t0 = time.time()
                             if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12:
                                 self.init_cell(ddL, mmM, ddM)
+                            #print(ddL, mmM, ddM, time.time()-t0)
+                #print(time.time()-t0, " s spent on cell init.")
                             
 
 
@@ -262,8 +269,12 @@ class fragment_amplitudes():
                 for ddL in np.arange(Nv):
                     for ddM in np.arange(Nv):
                         for mmM in np.arange(No):
+
+                            #t0 = time.time()
+                            #condition = np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12
                             if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12:
                                 self.init_cell(ddL, mmM, ddM)
+                            #print(condition, ddL, mmM, ddM, time.time()-t0)
 
         else:
             if No > self.n_occupied_cells:
@@ -284,8 +295,12 @@ class fragment_amplitudes():
                 for ddL in np.arange(Nv):
                     for ddM in np.arange(Nv):
                         for mmM in np.arange(No):
+                            #t0 = time.time()
+                            #condition = np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12
                             if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12:
                                 self.init_cell(ddL, mmM, ddM)
+                            #print(condition, ddL, mmM, ddM, time.time()-t0)
+
             else:
                 
 
@@ -539,16 +554,15 @@ def converge_fragment_amplitudes(t2, G_direct, f_mo_ii, f_mo_aa, di_virt, di_occ
 
 if __name__ == "__main__":
     os.environ["LIBINT_DATA_PATH"] = os.getcwd() 
-    print("""#####################################################
-##  ,--.   ,--.      ,------.  ,------. ,-----.    ##
-##   \  `.'  /,-----.|  .-.  \ |  .---''  .--./    ##
-##    .'    \ '-----'|  |  \  :|  `--, |  |        ## 
-##   /  .'.  \       |  '--'  /|  `---.'  '--'\    ##
-##  '--'   '--'      eXtended local correlation    ##
-##                   Author : Audun Skau Hansen    ##
-##                                                 ##
-##  Use keyword "--help" for more info             ## 
-#####################################################""")
+    print("""#########################################################
+##    ,--.   ,--.      ,------.  ,------. ,-----.      ##
+##     \  `.'  /,-----.|  .-.  \ |  .---''  .--./      ##
+##      .'    \ '-----'|  |  \  :|  `--, |  |          ## 
+##     /  .'.  \       |  '--'  /|  `---.'  '--'\      ##
+##    '--'   '--'      eXtended local correlation      ##
+##                                                     ##
+##  Use keyword "--help" for more info                 ## 
+#########################################################""")
 
         
     # Parse input
@@ -570,6 +584,29 @@ if __name__ == "__main__":
     parser.add_argument("-disable_static_mem", default = False, action = "store_true", help = "Recompute AO integrals for new fitting sets.")
     parser.add_argument("-n_core", type = int, default = 0, help = "Number of core orbitals (the first n_core orbitals will not be correlated).")
     args = parser.parse_args()
+
+    # Print run-info to screen
+    print("Author : Audun Skau Hansen, audunsh4@gmail.com, 2019")
+
+    import sys
+    print("Git rev:", sp.check_output(['git', 'rev-parse', 'HEAD'], cwd=sys.path[0]))
+    print("_________________________________________________________")
+    print("System data")
+    print("_________________________________________________________")
+    print("Geometry + AO basis :", args.project_file)
+    print("Wannier basis       :", args.coefficients)
+    print("Number of core orbs.:", args.n_core)
+    print("Auxiliary basis     :", args.auxbasis)
+    print("Aux. basis cutoff   :", args.basis_truncation)
+    print(" ")
+    print("Attenuation         :", args.attenuation)
+    print("Att. truncation     :", args.attenuated_truncation)
+    print(" ")
+    print("Dot-product         :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
+    print(" ")
+    print("RI fitting          :", ["Non-robust", "Robust"][int(args.robust)])
+    print("FOT                 :", args.fot)
+    print("_________________________________________________________")
 
 
     # Load system
@@ -659,7 +696,7 @@ if __name__ == "__main__":
     for fragment in center_fragments:
         
 
-        ib.fragment = fragment
+        #ib.fragment = fragment
         
         a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 2.0, occupied_cutoff = 1.0)
         
@@ -683,9 +720,13 @@ if __name__ == "__main__":
             while dE>args.fot:
 
                 #print("--- virtual")
+                t_0 = time.time()
                 a_frag.autoexpand_virtual_space(n_orbs=4)
+                t_1 = time.time()
                 a_frag.solve()
+                t_2 = time.time()
                 E_new = a_frag.compute_fragment_energy()
+                t_3 = time.time()
                 
                 #a_frag.print_configuration_space_data()
                 dE = np.abs(E_prev - E_new)
@@ -695,6 +736,7 @@ if __name__ == "__main__":
                 print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                 print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                 print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
                 print(" ")
                 E_prev = E_new
                 #print("---")

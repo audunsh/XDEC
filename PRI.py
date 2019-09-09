@@ -793,7 +793,7 @@ class integral_builder():
         # Oneshot calculations:
         # build attenuated JK matrix and inverse
         #big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 1e-14, auxname = auxname)
-        big_tmat = estimate_attenuation_distance(p, attenuation = self.attenuation, thresh = extent_thresh, auxname = auxname)
+        big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = extent_thresh, auxname = auxname)
         
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
 
@@ -1011,7 +1011,7 @@ class integral_builder_static():
         # initial coeffs computed in single layer around center cell
         coord_q =  tp.lattice_coords(initial_virtual_dom) #initial virtual domain
         print("Computing fitting coefficients for dL = ")
-        #print(coord_q)
+        print(coord_q)
         #if robust:
         #    t0 = time.time()
         #    Xreg, Jpq = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv], robust = True, circulant = self.circulant)
@@ -1046,7 +1046,7 @@ class integral_builder_static():
 
 
         # Compute JK_coulomb
-        coulomb_extent = np.max(np.abs(self.XregT[0,0,0].coords), axis = 0)
+        coulomb_extent = np.max(np.abs(self.XregT[0,0,0].coords), axis = 0) 
         print("Extent of Coulomb matrix:", coulomb_extent)
 
         s = tp.tmat()
@@ -1105,7 +1105,9 @@ class integral_builder_static():
                 if self.XregT[d[0], d[1], d[2]] is 0:
 
                     #coords_q = tp.lattice_coords()
+                    t0 = time.time() 
                     Xreg = self.cfit.get(np.array([d]))
+                    t1 = time.time() 
 
 
                     # Should compute all within range
@@ -1115,8 +1117,8 @@ class integral_builder_static():
                         self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0])
                     else:
                         self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
-                    
-                    print("        On-demand calculation:", d)
+                    t2 = time.time()
+                    print("        On-demand calculation:", d, "(%.1f + %.1f s)" % (t1-t0, t2-t1))
                     #self.Xreg[d[0], d[1], d[2]] =  self.XregT[d[0], d[1], d[2]].tT() #transpose matrix
             if circulant:
                 return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())

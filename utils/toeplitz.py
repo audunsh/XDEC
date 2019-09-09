@@ -1228,10 +1228,12 @@ class tmat():
         #ret = self_k*1.0
         ret.blocks*=0.0
 
+        #ret.blocks[:-1] = np.einsum("ijk,ikl->ijl", self_k.blocks[:-1], other_k.blocks[:-1], optimize = True)
+
         for i in np.arange(len(self_k.blocks)-1):
             ret.blocks[i] = np.dot(self_k.blocks[i],other_k.blocks[i])
 
-        ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = complx)
+        ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
         return ret
 
 
