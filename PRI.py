@@ -981,8 +981,10 @@ class integral_builder_static():
         
         print("")
         print("Attenuated coulomb matrix (JKa) computed.")
-        print("JKa outer coordinate (should be smaller than %.2e):" % extent_thresh, cmax, np.max(np.abs(self.JKa.cget(cmax))))
-        print("JKa block shape:", self.JKa.blocks[:-1].shape)
+        assert(np.max(np.abs(self.JKa.cget(cmax)))<=extent_thresh), "JKa outer coordinate (should be smaller than %.2e):" % extent_thresh
+        #print("JKa outer coordinate (should be smaller than %.2e):" % extent_thresh, cmax, np.max(np.abs(self.JKa.cget(cmax))))
+        print("Number of auxiliary basis functions (in supercell):", self.JKa.blocks[:-1].shape[0]*self.JKa.blocks[:-1].shape[1])
+        #print("JKa block shape:", self.JKa.blocks[:-1].shape)
         print("")
 
         self.JKinv = invert_JK(self.JKa)
@@ -1068,6 +1070,33 @@ class integral_builder_static():
             else:
                 self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.cdot(Xreg[i])
 
+    def getorientation(self, dL, dM):
+        for d in [dL, dM]:
+            #print(d)
+            if self.XregT[d[0], d[1], d[2]] is 0:
+                
+                #Xreg, Jpq = self.cfit.get(np.array([d]))
+                Xreg = self.cfit.get(np.array([d]))
+                self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
+                #self.JpqXreg[d[0], d[1], d[2]] = Jpq[0]
+                if self.circulant:
+                    self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0])
+                else:
+                    self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
+                
+                print("        On-demand calculation:", d)
+        if self.robust:
+            print("Robust orientation not yet implemented")
+            return None
+        else:
+            #print("Return:")
+            if self.circulant:
+                return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]), \
+                    (self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+            else:
+                return self.XregT[dL[0], dL[1], dL[2]].dot(self.VXreg[dM[0], dM[1], dM[2]]), \
+                    (self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+
     def getcell(self, dL, M, dM):
         if self.robust:
             circulant = self.circulant
@@ -1089,16 +1118,17 @@ class integral_builder_static():
                     
                     print("        On-demand calculation:", d)
                     #self.Xreg[d[0], d[1], d[2]] =  self.XregT[d[0], d[1], d[2]].tT() #transpose matrix
+
             if circulant:
                 return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().circulantdot(self.XregT[dM[0], dM[1], dM[2]].tT()) + \
-                       self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.JpqXreg[dM[0], dM[1], dM[2]]) - \
-                       self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                    self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.JpqXreg[dM[0], dM[1], dM[2]]) - \
+                    self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
 
             else:
                 #return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
                 return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().cdot(self.XregT[dM[0], dM[1], dM[2]].tT(), coords = [M]) + \
-                       self.XregT[dL[0], dL[1], dL[2]].cdot(self.JpqXreg[dM[0], dM[1], dM[2]], coords = [M]) - \
-                       self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                    self.XregT[dL[0], dL[1], dL[2]].cdot(self.JpqXreg[dM[0], dM[1], dM[2]], coords = [M]) - \
+                    self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
 
         
         else:
@@ -1122,6 +1152,7 @@ class integral_builder_static():
                     t2 = time.time()
                     print("        On-demand calculation:", d, "(%.1f + %.1f s)" % (t1-t0, t2-t1))
                     #self.Xreg[d[0], d[1], d[2]] =  self.XregT[d[0], d[1], d[2]].tT() #transpose matrix
+
             if circulant:
                 return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
 
