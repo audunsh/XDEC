@@ -515,7 +515,7 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
             #i = int(np.sqrt(3*i**2))
             break
     cube = tp.lattice_coords([i+1,i+1,i+1]) #assumed max twobody AO-extent (subst. C-S Screening)
-    cube = cube[np.sum(cube**2, axis = 1)<=i**2] #this is not correct, should be in rvec
+    cube = cube[np.sum(cube**2, axis = 1)<=i**2] #this is not entirely correct, should be in rvec
     #print(cube.shape)
     big_tmat = tp.tmat()
     big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
@@ -981,8 +981,13 @@ class integral_builder_static():
         
         print("")
         print("Attenuated coulomb matrix (JKa) computed.")
+        print("JKa outer coordinate (should be smaller than %.2e):" % extent_thresh, cmax, np.max(np.abs(self.JKa.cget(cmax))))
+     
         assert(np.max(np.abs(self.JKa.cget(cmax)))<=extent_thresh), "JKa outer coordinate (should be smaller than %.2e):" % extent_thresh
-        #print("JKa outer coordinate (should be smaller than %.2e):" % extent_thresh, cmax, np.max(np.abs(self.JKa.cget(cmax))))
+        print(np.max(self.JKa.coords, axis = 0))
+        print(np.min(self.JKa.coords, axis = 0))
+        print(self.JKa.coords)
+
         print("Number of auxiliary basis functions (in supercell):", self.JKa.blocks[:-1].shape[0]*self.JKa.blocks[:-1].shape[1])
         #print("JKa block shape:", self.JKa.blocks[:-1].shape)
         print("")
@@ -1050,7 +1055,7 @@ class integral_builder_static():
 
 
         # Compute JK_coulomb
-        coulomb_extent = np.max(np.abs(self.XregT[0,0,0].coords), axis = 0) 
+        coulomb_extent = np.max(np.abs(self.XregT[0,0,0].coords), axis = 0)  
         print("Extent of Coulomb matrix:", coulomb_extent)
 
         s = tp.tmat()

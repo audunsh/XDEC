@@ -67,7 +67,7 @@ class pair_fragment_amplitudes():
         self.f1_virtual_cells = self.f1.d_ia.coords[:self.f1.n_virtual_cells]
 
         self.f2_occupied_cells = self.f2.d_ii.coords[:self.f2.n_occupied_cells] + M
-        self.f2_virtual_cells = self.f2.d_ia.coords[:self.f2.n_virtual_cells] + M
+        self.f2_virtual_cells = self.f2.d_ia.coords[:self.f2.n_virtual_cells] #+ M
         
         
         # Set up unified occupied domain
@@ -108,6 +108,10 @@ class pair_fragment_amplitudes():
                                          self.f2.d_ia.cget(c+M)<=self.f2.virtual_cutoff, \
                                          self.f2.d_ia.cget(c-M)])<=self.f2.virtual_cutoff, axis = 0))
         
+        print("Virtual pair space")
+        print(self.coords_virtual, len(self.coords_virtual))
+        print("Occupied pair space")
+        print(self.coords_occupied, self.coords_occupied.shape[0])
         self.d_ia = tp.tmat()
         self.d_ia.load_nparray(np.array(d_ia_blocks, dtype = bool), self.coords_virtual, safemode=False, screening = False)
 
@@ -130,7 +134,7 @@ class pair_fragment_amplitudes():
         self.g_x = np.zeros((nocc, N_virt, nvirt, N_occ, nocc, N_virt, nvirt), dtype = float)
 
         # Use amplitudes from the two fragments as initial guess, fill in known tensors
-
+        """
         self.t2[self.f1.fragment, :self.f1.n_virtual_cells, :, :self.f1.n_occupied_cells, :, :self.f1.n_virtual_cells, :] = self.f1.t2[self.f1.fragment]
         self.g_d[:, :self.f1.n_virtual_cells, :, :self.f1.n_occupied_cells, :, :self.f1.n_virtual_cells, :] = self.f1.g_d
         self.g_x[:, :self.f1.n_virtual_cells, :, :self.f1.n_occupied_cells, :, :self.f1.n_virtual_cells, :] = self.f1.g_x
@@ -139,20 +143,22 @@ class pair_fragment_amplitudes():
         self.t2[self.f2.fragment, :self.f2.n_virtual_cells, :, :self.f2.n_occupied_cells, :, :self.f2.n_virtual_cells, :] = self.f2.t2[self.f2.fragment]
         self.g_d[:, :self.f2.n_virtual_cells, :, :self.f2.n_occupied_cells, :, :self.f2.n_virtual_cells, :] = self.f2.g_d
         self.g_x[:, :self.f2.n_virtual_cells, :, :self.f2.n_occupied_cells, :, :self.f2.n_virtual_cells, :] = self.f2.g_x
-       
+        """
+
+
         self.cmap = tp.tmat() #coordinate mapping
         cgrid = tp.lattice_coords([8,8,8])
         self.cmap.load_nparray(np.ones((cgrid.shape[0], 2,2), dtype = int), cgrid, safemode=False)
 
         sequence = []
         for ddL in np.arange(N_virt):
-            for ddM in np.arange(N_virt):
+            for ddM in np.arange(ddL, N_virt):
                 dL, dM = self.d_ia.coords[ddL], self.d_ia.coords[ddM]
 
                 for mM in np.arange(N_occ):
                     M = self.d_ii.coords[mM]
                     if np.linalg.norm(self.g_d[:, ddL, :, mM, :, ddM, :])<10e-10:
-
+                        """
                         # Get exchange block coordinates
                         M_cmap    = self.cmap.mapping[self.cmap._c2i(M) ]
                         ddL_cmap  = self.cmap.mapping[self.cmap._c2i(dL) ]
@@ -162,11 +168,128 @@ class pair_fragment_amplitudes():
                         
                         sequence.append([ddL_cmap  , M_cmap, ddM_cmap  , 0, ddL, mM, ddM])
                         sequence.append([ddL_M, M_cmap, ddM_M, 1, ddL, mM, ddM])
+                        """
+
+
+                        ## Instead
+
+                        M = self.d_ii.coords[mM]
+
+                        # Get exchange block coordinates
+                        # Note: these point out of the fragment domain,
+                        # use cfit carefully
+                        ddL_M = self.cmap.mapping[self.cmap._c2i(dM - M) ]
+                        ddM_M = self.cmap.mapping[self.cmap._c2i(dL + M) ]
+
+                        print("Queueing ")
+                        #print(ddL)
+
+                        
+
+
+                        print(dL, M, dM)
+                        print(ddL, mM, ddM)
+                        print(" ==== ")
+                        print(dM -M, M, dL + M)
+                        ## Should test here if mM_ is in set
+                        print(" ==== ")
+                        print(ddL_M, mM,ddM_M)
+                        print(" ")
+                        # Negative M 
+                        mM_ = self.d_ii.mapping[ self.d_ii._c2i(-M) ]
+                        
+                        # sequence[ ddL, mM, ddM        ,  0 ,   ddL, mM, ddM,    0]
+                        #                ^                 ^           ^          ^
+                        #            Calculate these    ex/direct    store here   1=transpose
+                        
+                        sequence.append([ddL, mM, ddM,   0, ddL, mM, ddM,   0]) # direct
+                        sequence.append([ddL, mM, ddM,   0, ddM, mM_, ddL,  1]) # direct, transposed
+
+
+                        if mM == self.mM:
+                            # block inside EOS
+                            sequence.append([ddL_M, mM, ddM_M, 1, ddL, mM , ddM,0])  # exchange
+                            sequence.append([ddL_M, mM, ddM_M, 1, ddM, mM_, ddL,1]) # exchange, transposed
+
         
         
         self.initialize_blocks(sequence)
-
     def initialize_blocks(self, sequence):
+        #print("Initialization sequence:")
+        sequence = np.array(sequence)
+
+
+
+
+        # Sort blocks by dL:
+        a = np.argsort(sequence[:,0])
+        sequence = sequence[a]
+        #print(sequence.shape)
+        sequence = np.append(sequence, [ [-1000,0,0,0, 0, 0, 0,0] ], axis = 0) #-100 Just to make sure :-)
+        #print(sequence.shape)
+        j = 0
+        for i in np.arange(len(sequence)):
+            if sequence[i,0] != sequence[j,0]:
+                a = np.argsort(sequence[j:i, 2])
+                sq_i = sequence[j:i][a]
+
+                sq_i = np.append(sq_i, [ [-1000,0,-1000,0, 0, 0, 0,0] ], axis = 0) #-100 Just to make sure :-)
+
+
+
+
+                #print(sq_i)
+
+                dL = self.cmap.coords[sq_i[0,0]]
+                
+
+
+                #print(sq_i)
+                k = 0
+                for l in np.arange(len(sq_i)):
+                    
+
+                    if sq_i[k,2] != sq_i[l,2]:
+                        print(sq_i[k,2])
+                        dM = self.cmap.coords[sq_i[k,2]]
+
+
+                        #print(sq_i[k:l])
+                        # Integrate here, loop over M
+                        print(dL, dM)
+                        I, Ishape = self.f1.ib.getorientation(dL, dM)
+
+                        for m in sq_i[k:l]:
+                            M = self.d_ii.coords[m[1]]
+                            ddL, mM, ddM = m[0], m[1], m[2]
+                            #print(self.g_x.shape, ddL, mM, ddM)
+                            #print(dL, M, dM)
+                            #print(I.cget(M).shape, Ishape)
+                            if m[7] == 0:
+                                if m[3] == 0:
+                                    # Direct contribution
+                                    self.g_d[:, ddL, :, mM, :, ddM, :] = I.cget(M).reshape(Ishape)
+                                    self.t2[:,  ddL, :, mM, :, ddM, :] = I.cget(M).reshape(Ishape)*self.f1.e_iajb**-1
+                                if m[3] == 1:
+                                    # Exchange contribution
+                                    ddL_, mM_, ddM_ = m[4], m[5], m[6]
+                                    self.g_x[:, ddL_, :, mM_, :, ddM_, :] = I.cget(M).reshape(Ishape)
+                            if m[7] == 1:
+                                if m[3] == 0:
+                                    # Direct contribution
+                                    self.g_d[:, ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)
+                                    self.t2[:,  ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)*self.f1.e_iajb**-1
+                                if m[3] == 1:
+                                    # Exchange contribution
+                                    ddL_, mM_, ddM_ = m[4], m[5], m[6]
+                                    self.g_x[:, ddL_, :, mM_, :, ddM_, :] = I.cget(M).T.reshape(Ishape)
+
+
+                        k = l*1
+                        
+                j = i*1
+
+    def initialize_blocks_(self, sequence):
         sequence = np.array(sequence)
 
 
@@ -760,136 +883,16 @@ class fragment_amplitudes():
                     sequence.append([ddL, mM, ddM,   0, ddM, mM_, ddL,  1]) # direct, transposed
 
 
+                    # For fragments, exchange only required for only M = (0,0,0) 
+                    # EOS always has the two occupied indices in the fragment, ie the refcell
+                    if np.sum(M**2) == 0:
+                        #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
+                        #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
 
-                    sequence.append([ddL_M, mM, ddM_M, 1, ddL, mM , ddM,0])  # exchange
-                    sequence.append([ddL_M, mM, ddM_M, 1, ddM, mM_, ddL,1]) # exchange, transposed
-
-
-                    #if ddL!=ddM:
-
-                        # Use the fact that
-                        # (g^{dL dM}_{M})_iajb = (g^{dL-M dM-M}_{-M})_jbia
-
-                    #    mM_M = ddL_M = self.d_ia.mapping[self.d_ia._c2i(- M) ]
-
-                    #    sequence.append([ddL  , mM, ddM  , 0, ddM, mM_M, ddL, 1])
-                    #    sequence.append([ddM_M, mM, ddL_M, 1, ddM, mM_M, ddL, 1])
-
-        self.initialize_blocks(sequence)
+                        sequence.append([ddL_M, mM, ddM_M, 1, ddL, mM , ddM,0])  # exchange
+                        sequence.append([ddL_M, mM, ddM_M, 1, ddM, mM_, ddL,1]) # exchange, transposed
 
 
-
-
-
-    def init_amplitudes_(self):
-        """
-        Initialize the amplitudes using the MP2-like starting guess
-        """
-        self.n_virtual_cells = np.sum(self.min_elm_ia<=self.virtual_cutoff)
-        self.n_occupied_cells = np.sum(self.min_elm_ii<=self.occupied_cutoff)
-        
-        
-
-        #self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1]<=self.virtual_cutoff)
-        #self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1]<=self.occupied_cutoff)
-        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1,self.fragment[0]]<=self.virtual_cutoff)
-        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1, self.fragment[0]]<=self.occupied_cutoff)
-    
-        
-        n_occ = self.p.get_nocc()     # Number of occupied orbitals per cell
-        N_occ = self.n_occupied_cells # Number of occupied cells
-        n_virt = self.p.get_nvirt()   # Number of virtual orbitals per cell
-        N_virt = self.n_virtual_cells # Number of virtual cells
-        
-
-        self.t2  = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = float)
-
-        self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = float)
-
-        self.g_x = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = float)
-
-        # Fill in tensors, initial guess, calculate initial energy
-
-        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
-    
-        self.e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
-
-
-        self.e0 = 0
-
-        #blocks = []
-        #coords = []
-
-        #dLmax = 2*p.max(np.abs(self.d_ia.coords), axis = 0)
-
-        #isequence = np.zeros((self.dia_coords.shape[0], self.dia_coords.shape[0], 5), dtype = int)
-        
-        sequence = []
-
-
-        for ddL in np.arange(N_virt):
-            for ddM in np.arange(ddL, N_virt):
-                dL, dM = self.d_ia.coords[ddL], self.d_ia.coords[ddM]
-
-                
-
-                # Compute direct integals + init amplitudes
-                """
-                I_direct, shape = self.ib.getorientation(dL, dM)
-                for mM in np.arange(N_occ):
-                    M = self.d_ii.coords[mM]
-                    g_direct = I_direct.cget(M).reshape(shape)
-                    self.g_d[:, ddL, :, mM, :, ddM, :] = g_direct
-                    self.t2[:, ddL, :, mM, :, ddM, :] = g_direct*self.e_iajb**-1
-                    print("Computed: ", M)
-                """
-
-
-
-                #I_direct = self.ib.XregT[dL[0], dL[1], dL[2]].circulantdot(self.ib.VXreg[dM[0], dM[1], dM[2]]) #.cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
-                #dM_M = dM + M
-                #dL_L = dL - M
-                #I_exchange = self.ib.XregT[dM_M[0], dM_M[1], dM_M[2]].circulantdot(self.ib.VXreg[dL_L[0], dL_L[1], dL_L[2]]) #.cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
-
-                for mM in np.arange(N_occ):
-                    M = self.d_ii.coords[mM]
-
-                    # Get exchange block coordinates
-                    ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM + M) ]
-                    ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL - M) ]
-                    
-                    sequence.append([ddL  , mM, ddM  , 0, ddL, mM, ddM,0]) # direct
-                    sequence.append([ddL_M, mM, ddM_M, 1, ddL, mM, ddM,0]) # exchange
-
-                    if ddL!=ddM:
-
-                        # Use the fact that
-                        # (g^{dL dM}_{M})_iajb = (g^{dL-M dM-M}_{-M})_jbia
-
-                        mM_M = ddL_M = self.d_ia.mapping[self.d_ia._c2i(- M) ]
-
-                        sequence.append([ddL  , mM, ddM  , 0, ddM, mM_M, ddL, 1])
-                        sequence.append([ddM_M, mM, ddL_M, 1, ddM, mM_M, ddL, 1])
-
-
-
-
-                    
-                
-                    #g_direct = self.ib.getcell(dL, M, dM)
-                    #g_exchange = self.ib.getcell(dM+M, M, dL-M) 
-                    #t = g_direct*self.e_iajb**-1
-                    #self.t2[:, ddL, :, mM, :, ddM, :]  = g_direct*self.e_iajb**-1
-                    #self.g_d[:, ddL, :, mM, :, ddM, :] = g_direct
-                    #self.g_x[:, ddL, :, mM, :, ddM, :] = g_exchange
-                    
-                    
-                    #self.e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-        
-        #print("Initial energy from dynamic amplitudes:", self.e0)
-        
-        
         self.initialize_blocks(sequence)
 
 
@@ -1083,6 +1086,7 @@ class fragment_amplitudes():
         # Note: forking here is due to intended future implementation of block-specific initialization
         if Nv > self.n_virtual_cells:
             if No > self.n_occupied_cells:
+                print("Extending both occupied and virtuals")
                 # Extend tensors in both occupied and virtual direction
                 t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
                 t2new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.t2
@@ -1130,8 +1134,13 @@ class fragment_amplitudes():
 
 
 
-                                sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
-                                sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
+                                #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
+                                #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
+                                # For fragments, exchange only required for only M = (0,0,0) 
+                                # EOS always has the two occupied indices in the fragment, ie the refcell
+                                if np.sum(M**2) == 0:
+                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
+                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
 
 
                                 #self.init_cell(ddL, mmM, ddM)
@@ -1146,6 +1155,7 @@ class fragment_amplitudes():
 
 
             else:
+                print("Extending virtuals.")
                 # Extend tensors in the virtual direction
                 
                 t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
@@ -1194,9 +1204,14 @@ class fragment_amplitudes():
 
 
 
-                                sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
-                                sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
+                                #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
+                                #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
 
+                                # For fragments, exchange only required for only M = (0,0,0) 
+                                # EOS always has the two occupied indices in the fragment, ie the refcell
+                                if np.sum(M**2) == 0:
+                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
+                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
 
 
                                 #self.init_cell(ddL, mmM, ddM)
@@ -1206,6 +1221,7 @@ class fragment_amplitudes():
 
         else:
             if No > self.n_occupied_cells:
+                print("extending occupied")
                 # Extend tensors in the occupied dimension
                 t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
                 t2new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.t2
@@ -1251,10 +1267,11 @@ class fragment_amplitudes():
                                 sequence.append([ddL, mmM, ddM,   0, ddL, mmM, ddM,   0]) # direct
                                 sequence.append([ddL, mmM, ddM,   0, ddM, mmM_, ddL,  1]) # direct, transposed
 
-
-
-                                sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
-                                sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
+                                # For fragments, exchange only required for only M = (0,0,0) 
+                                # EOS always has the two occupied indices in the fragment, ie the refcell
+                                if np.sum(M**2) == 0:
+                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
+                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
 
 
 
@@ -1762,7 +1779,11 @@ if __name__ == "__main__":
             
             while dE_outer>args.fot:
                 dE = 10
+                e_virt = []
+                #
                 while dE>args.fot:
+                    #for i in np.arange(30):
+                    print("e_prev:", E_prev)
 
                     #print("--- virtual")
                     t_0 = time.time()
@@ -1775,7 +1796,7 @@ if __name__ == "__main__":
                     t_2 = time.time()
                     E_new = a_frag.compute_fragment_energy()
                     t_3 = time.time()
-                    
+                    print("E_new:", E_new)
                     #a_frag.print_configuration_space_data()
                     dE = np.abs(E_prev - E_new)
                     
@@ -1785,8 +1806,12 @@ if __name__ == "__main__":
                     print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
                     print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
                     print(" ")
+                    e_virt.append(E_prev)
                     E_prev = E_new
+                    
                     #print("---")
+                print("Converged virtual space, expanding occupied space")
+                print(e_virt)
                 #dE = 10
                 #print("--- occupied")
                 a_frag.autoexpand_occupied_space(n_orbs=6)
@@ -1810,7 +1835,7 @@ if __name__ == "__main__":
                 while dE>args.fot:
 
                     #print("--- occupied")
-                    a_frag.autoexpand_occupied_space(n_orbs=2)
+                    a_frag.autoexpand_occupied_space(n_orbs=6)
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                 
@@ -1828,6 +1853,7 @@ if __name__ == "__main__":
                     E_prev = E_new
                     #print("---")
                 dE_outer = np.abs(E_prev_outer - E_prev)
+                print("dE_outer:", dE_outer)
                 E_prev_outer = E_prev
             #print("Current memory usage of integrals (in MB):", ib.nbytes())
             print("_________________________________________________________")
@@ -1839,11 +1865,12 @@ if __name__ == "__main__":
             print(" ")
             print(" ")
 
-        
         pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([1,0,0]))
         print(pair.compute_pair_fragment_energy())
         pair.solve()
         print("Pair fragment energy for (1,0,0):", pair.compute_pair_fragment_energy())
+        """
+        
 
 
         pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([0,1,0]))
@@ -1876,3 +1903,4 @@ if __name__ == "__main__":
         #    print(a_frag.d_ii.coords[pair], "Pair fragment energy:", a_frag.compute_pair_fragment_energy(pair))
         #    print("-0.0000611450091260 (Gustav, 0,1)")
         #print(-0.114393980708, "(3D Neon, fot 0.0001 (Gustav))")
+        """
