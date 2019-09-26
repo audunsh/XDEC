@@ -556,9 +556,9 @@ class coefficient_fitter_static():
 
                 
             if np.max(np.abs(Jmnc2.blocks))>screening_thresh:
-                #print("Jmn fit:", c2, np.max(np.abs(Jmnc2.blocks)))
+                print("Jmn fit:", c2, np.max(np.abs(Jmnc2.blocks)))
                 self.coords.append(c2)
-                self.Jmn.append(Jmnc2)
+                self.Jmn.append(Jmnc2.T()) #make sure it is transposed (due to how it is computed efficiently in libint)
                 if self.robust:
                     self.Jmnc.append(Jmnc2_c)
         self.coords = np.array(self.coords)
@@ -601,13 +601,15 @@ class coefficient_fitter_static():
             
             #if i==self.c0:
             for j in np.arange(coord_q.shape[0]):
-                
+                #t = time.time()
                 C2bo = c_occ.cget(c_occ.coords) # Kmp
-                C2vi = c_virt.cget(c_occ.coords + c2 + coord_q[j]) #Knq
+                C2vi = c_virt.cget(c_occ.coords - c2 - coord_q[j]) #Knq
+                
                 C2b = np.einsum("Kmp,Knq->Kmnpq", C2bo, C2vi, optimize = True).reshape(c_occ.coords.shape[0], c_occ.blockshape[0]**2, c_occ.blockshape[1]*c_virt.blockshape[1])
+                
                 C2 = tp.tmat()
                 C2.load_nparray(C2b, c_occ.coords)
-
+                #print("t:", time.time()-t)
 
                 #Cmnpq000 = C2.cget([0,0,0]).reshape(c_occ.blockshape[0],c_occ.blockshape[0],c_occ.blockshape[1],c_virt.blockshape[1])
                 #print(c2, Cmnpq000.max(),c_occ.cget([0,0,0]).max(), c_virt.cget([0,0,0]).max())
@@ -621,12 +623,15 @@ class coefficient_fitter_static():
                 #print(c_occ.)
                 #print(C2.blocks.shape)
                 #print(c2, Jmnc2.blocks.shape)
+                #t = time.time()
                 try:
+                    #print("circ")
                     Jpq_c[j] = Jpq_c[j] + Jmnc2.circulantdot(C2)
                 except:
+                    #print("direct")
                     Jpq_c[j] = Jpq_c[j] + Jmnc2.cdot(C2) #Why doesn't circulantdot work here?
                 #print(Jpq_c[j].cget([0,0,0]))
-                
+                #print("t:", time.time()-t)
 
                 """
                 for R in Jmnc2.coords:
