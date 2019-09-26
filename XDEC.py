@@ -152,10 +152,11 @@ class pair_fragment_amplitudes():
 
         sequence = []
         for ddL in np.arange(N_virt):
-            for ddM in np.arange(ddL, N_virt):
+            for ddM in np.arange(N_virt):
                 dL, dM = self.d_ia.coords[ddL], self.d_ia.coords[ddM]
 
                 for mM in np.arange(N_occ):
+                    # Further room for improvement here!! (only positive indidces needed) :-)
                     M = self.d_ii.coords[mM]
                     if np.linalg.norm(self.g_d[:, ddL, :, mM, :, ddM, :])<10e-10:
                         """
@@ -178,15 +179,31 @@ class pair_fragment_amplitudes():
                         # Get exchange block coordinates
                         # Note: these point out of the fragment domain,
                         # use cfit carefully
-                        ddL_M = self.cmap.mapping[self.cmap._c2i(dM - M) ]
-                        ddM_M = self.cmap.mapping[self.cmap._c2i(dL + M) ]
 
-                        print("Queueing ")
+                        #ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM - M) ]
+                        #ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL + M) ]
+
+                        # Indices to calculate
+
+                        ddL_index = self.cmap._c2i(dL) 
+                        ddM_index = self.cmap._c2i(dM) 
+                        ddL_M_index = self.cmap._c2i(dM + M) 
+                        ddM_M_index = self.cmap._c2i(dL - M) 
+                        mM_index    = self.cmap._c2i(M)
+                        mM__index   = self.cmap._c2i(-M)
+
+
+
+
+
+
+
+                        #print("Queueing ")
                         #print(ddL)
 
                         
 
-
+                        """
                         print(dL, M, dM)
                         print(ddL, mM, ddM)
                         print(" ==== ")
@@ -195,21 +212,27 @@ class pair_fragment_amplitudes():
                         print(" ==== ")
                         print(ddL_M, mM,ddM_M)
                         print(" ")
-                        # Negative M 
+                        """
+                        #assert(ddM!=7)
+                        # Negative M - where to store it
                         mM_ = self.d_ii.mapping[ self.d_ii._c2i(-M) ]
                         
                         # sequence[ ddL, mM, ddM        ,  0 ,   ddL, mM, ddM,    0]
                         #                ^                 ^           ^          ^
                         #            Calculate these    ex/direct    store here   1=transpose
                         
-                        sequence.append([ddL, mM, ddM,   0, ddL, mM, ddM,   0]) # direct
-                        sequence.append([ddL, mM, ddM,   0, ddM, mM_, ddL,  1]) # direct, transposed
+                        sequence.append([ddL_index, mM_index, ddM_index,   0, ddL, mM, ddM,   0]) # direct
+
+                        # make sure - M in domain
+                        if mM_<self.d_ii.coords.shape[0]:
+                            sequence.append([ddL_index, mM_index, ddM_index,   0, ddM, mM_, ddL,  1]) # direct, transposed
 
 
                         if mM == self.mM:
                             # block inside EOS
-                            sequence.append([ddL_M, mM, ddM_M, 1, ddL, mM , ddM,0])  # exchange
-                            sequence.append([ddL_M, mM, ddM_M, 1, ddM, mM_, ddL,1]) # exchange, transposed
+                            sequence.append([ddL_M_index, mM_index, ddM_M_index, 1, ddL, mM , ddM,0])  # exchange
+                            if mM_<self.d_ii.coords.shape[0]:
+                                sequence.append([ddL_M_index, mM_index, ddM_M_index, 1, ddM, mM_, ddL,1]) # exchange, transposed
 
         
         
@@ -229,6 +252,7 @@ class pair_fragment_amplitudes():
         #print(sequence.shape)
         j = 0
         for i in np.arange(len(sequence)):
+            #print(sequence[i])
             if sequence[i,0] != sequence[j,0]:
                 a = np.argsort(sequence[j:i, 2])
                 sq_i = sequence[j:i][a]
@@ -240,8 +264,8 @@ class pair_fragment_amplitudes():
 
                 #print(sq_i)
 
-                dL = self.cmap.coords[sq_i[0,0]]
-                
+                #dL = self.d_ia.coords[sq_i[0,0]]
+                dL = self.cmap._i2c(np.array([sq_i[0,0]]))[0]
 
 
                 #print(sq_i)
@@ -250,18 +274,21 @@ class pair_fragment_amplitudes():
                     
 
                     if sq_i[k,2] != sq_i[l,2]:
-                        print(sq_i[k,2])
-                        dM = self.cmap.coords[sq_i[k,2]]
+                        #print(sq_i[k,2])
+                        #dM = self.d_ia.coords[sq_i[k,2]]
+                        dM = self.cmap._i2c(np.array([sq_i[k,2]]))[0]
 
 
                         #print(sq_i[k:l])
                         # Integrate here, loop over M
-                        print(dL, dM)
+                        #print(dL, dM)
                         I, Ishape = self.f1.ib.getorientation(dL, dM)
 
                         for m in sq_i[k:l]:
-                            M = self.d_ii.coords[m[1]]
-                            ddL, mM, ddM = m[0], m[1], m[2]
+                            #M = self.d_ii.coords[m[1]]
+                            M = self.cmap._i2c(np.array([m[1]]))[0]
+
+                            ddL, mM, ddM = m[4], m[5], m[6]
                             #print(self.g_x.shape, ddL, mM, ddM)
                             #print(dL, M, dM)
                             #print(I.cget(M).shape, Ishape)
@@ -352,20 +379,22 @@ class pair_fragment_amplitudes():
         
         for ddL in np.arange(N_virt):
             dL = self.d_ia.coords[ddL]
-            dL_i = np.array(self.d_ia.cget(dL)[self.f1.fragment[0],:], dtype = bool) # dL index mask
+            #dL_i = np.array(self.d_ia.cget(dL)[self.f1.fragment[0],:], dtype = bool) # dL index mask
+            dL_i = np.array(self.d_ia.cget([0,0,0])[self.f1.fragment[0],:], dtype = bool) # dL index mask
 
             
             for ddM in np.arange(N_virt):
                 dM =  self.d_ia.coords[ddM]
-                dM_i = np.array(self.d_ia.cget(dM)[self.f2.fragment[0],:], dtype = bool) # dM index mask
+                #dM_i = np.array(self.d_ia.cget(dM)[self.f2.fragment[0],:], dtype = bool) # dM index mask
+                dM_i = np.array(self.d_ia.cget([0,0,0])[self.f2.fragment[0],:], dtype = bool) # dM index mask
                 
                 
-                g_direct = self.g_d[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
-                g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+                g_direct = self.g_d[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
+                g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
 
                 
                 
-                t = self.t2[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
+                t = self.t2[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
 
                 e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
                 
@@ -807,8 +836,11 @@ class fragment_amplitudes():
         self.p = p #prism object
         self.d = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers) # distance matrix
         
-        self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[:p.get_nocc()])
-        self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[p.get_nocc():])
+        #self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[:p.get_nocc()])
+        #self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[p.get_nocc():])
+        self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[:p.get_nocc()])
+        self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[p.get_nocc():])
+        
         self.fragment = fragment
 
         self.ib = ib #integral builder
@@ -821,6 +853,10 @@ class fragment_amplitudes():
         
         self.f_mo_ii = f_mo_ii # Occupied MO-Fock matrix elements
         self.f_mo_aa = f_mo_aa # Virtual MO-Fock matrix elements
+
+        #print("Fragment extent")
+        #print(self.d_ii.coords)
+        #print(self.d_ia.coords)
 
         self.init_amplitudes()
     def init_amplitudes(self):
@@ -864,33 +900,35 @@ class fragment_amplitudes():
                 for mM in np.arange(N_occ):
                     M = self.d_ii.coords[mM]
 
-                    # Get exchange block coordinates
-                    ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM - M) ]
-                    ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL + M) ]
+                    if M[0]>=0:
 
-                    
+                        # Get exchange block coordinates
+                        ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM + M) ]
+                        ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL - M) ]
 
-
-
-                    # Negative M 
-                    mM_ = self.d_ia.mapping[ self.d_ia._c2i(-M) ]
-                    
-                    # sequence[ ddL, mM, ddM        ,  0 ,   ddL, mM, ddM,    0]
-                    #                ^                 ^           ^          ^
-                    #            Calculate these    ex/direct    store here   1=transpose
-
-                    sequence.append([ddL, mM, ddM,   0, ddL, mM, ddM,   0]) # direct
-                    sequence.append([ddL, mM, ddM,   0, ddM, mM_, ddL,  1]) # direct, transposed
+                        
 
 
-                    # For fragments, exchange only required for only M = (0,0,0) 
-                    # EOS always has the two occupied indices in the fragment, ie the refcell
-                    if np.sum(M**2) == 0:
-                        #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
-                        #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
 
-                        sequence.append([ddL_M, mM, ddM_M, 1, ddL, mM , ddM,0])  # exchange
-                        sequence.append([ddL_M, mM, ddM_M, 1, ddM, mM_, ddL,1]) # exchange, transposed
+                        # Negative M 
+                        mM_ = self.d_ia.mapping[ self.d_ia._c2i(-M) ]
+                        
+                        # sequence[ ddL, mM, ddM        ,  0 ,   ddL, mM, ddM,    0]
+                        #                ^                 ^           ^          ^
+                        #            Calculate these    ex/direct    store here   1=transpose
+
+                        sequence.append([ddL, mM, ddM,   0, ddL, mM, ddM,   0]) # direct
+                        sequence.append([ddL, mM, ddM,   0, ddM, mM_, ddL,  1]) # direct, transposed
+
+
+                        # For fragments, exchange only required for only M = (0,0,0) 
+                        # EOS always has the two occupied indices in the fragment, ie the refcell
+                        if np.sum(M**2) == 0:
+                            #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
+                            #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
+
+                            sequence.append([ddL_M, mM, ddM_M, 1, ddL, mM , ddM,0])  # exchange
+                            sequence.append([ddL_M, mM, ddM_M, 1, ddM, mM_, ddL,1]) # exchange, transposed
 
 
         self.initialize_blocks(sequence)
@@ -1008,11 +1046,11 @@ class fragment_amplitudes():
 
         for ddL in np.arange(N_virt):
             dL = self.d_ia.coords[ddL]
-            dL_i = self.d_ia.cget(dL)[0,:]<self.virtual_cutoff # dL index mask
+            dL_i = self.d_ia.cget(dL)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
             
             for ddM in np.arange(N_virt):
                 dM =  self.d_ia.coords[ddM]
-                dM_i = self.d_ia.cget(dM)[0,:]<self.virtual_cutoff # dM index mask
+                dM_i = self.d_ia.cget(dM)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
 
                # Using multiple levels of masking, probably some other syntax makes more sense
                 
@@ -1109,7 +1147,7 @@ class fragment_amplitudes():
                         for mmM in np.arange(No):
                             M = self.d_ii.coords[mmM]
                             #t0 = time.time()
-                            if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12:
+                            if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12: # and M[0]>=0:
 
 
                                 M = self.d_ii.coords[mmM]
@@ -1179,14 +1217,14 @@ class fragment_amplitudes():
                         for mmM in np.arange(No):
                             M = self.d_ii.coords[mmM]
                             #t0 = time.time()
-                            if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12:
+                            if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12 and M[0]>=0:
 
 
                                 M = self.d_ii.coords[mmM]
 
                                 # Get exchange block coordinates
-                                ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM - M) ]
-                                ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL + M) ]
+                                ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM + M) ]
+                                ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL - M) ]
 
                                 
 
@@ -1244,14 +1282,14 @@ class fragment_amplitudes():
                         for mmM in np.arange(No):
                             M = self.d_ii.coords[mmM]
                             #t0 = time.time()
-                            if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12:
+                            if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12 and M[0]>=0:
 
 
                                 M = self.d_ii.coords[mmM]
 
                                 # Get exchange block coordinates
-                                ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM - M) ]
-                                ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL + M) ]
+                                ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM + M) ]
+                                ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL - M) ]
 
                                 
 
@@ -1646,11 +1684,9 @@ if __name__ == "__main__":
     c.load(args.coefficients)
 
     c_occ, c_virt = PRI.occ_virt_split(c,p)
+    
 
-    # Remove core orbitals
-    #p.n_core = 1
-    #c_occ = tp.tmat()
-    #c_occ.load_nparray(c_occ_full.blocks[:-1, :, 1:], c_occ_full.coords)
+    
 
 
     
@@ -1679,13 +1715,45 @@ if __name__ == "__main__":
     # Wannier centers
     wcenters = np.load(args.wcenters)[p.n_core:]
 
+
+    #REMOVE THIS
+    
+
+
     # Initialize integrals 
     if args.disable_static_mem:
-        ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[1,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust)
+        ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust)
     else:
-        ib = PRI.integral_builder_static(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[1,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust)
+        ib = PRI.integral_builder_static(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust)
     
     
+    """
+    if args.ao_test:
+        # Test a fit of the AO integrals
+        print("TESTING AO INTEGRALS")
+        c.blocks *= 0
+        c.blocks[c.mapping[c._c2i([0,0,0])]] = np.eye(c.blockshape[0])
+
+        i0, ishape = ib.getorientation([0,0,0],[0,0,0])
+
+        devs = []
+        for co in c.coords:
+            ib_mo = i0.cget([co]).reshape(ishape)
+            ib_ao = PRI.compute_pqrs(p, np.array([co]))[:p.get_nocc(),p.get_nocc():,:p.get_nocc(),p.get_nocc():].reshape(ishape)
+            imax    = np.argmax(ib_ao.ravel())
+            max_err = np.max(np.abs(ib_mo-ib_ao))
+            rel_err = np.abs(ib_mo.ravel()[imax]-ib_ao.ravel()[imax])/ib_ao.ravel()[imax]
+            devs.append(max_err)
+            print("max:%.4e    rel:%.4e" % (max_err, rel_err), co)
+            print("exact:", ib_ao.ravel()[imax])
+            print("fit  :", ib_mo.ravel()[imax])
+        print("SUMMARY")
+        devs = np.array(devs)
+        print("Max error:", np.max(devs))
+        print("Mean err :", np.mean(devs))
+        assert(False)
+    """
+
     # Test symmetries in the g-tensor
     d = dd.build_distance_matrix(p, c.coords, wcenters, wcenters)
 
@@ -1726,6 +1794,7 @@ if __name__ == "__main__":
 
 
 
+
     # Initialize domain definitions
 
 
@@ -1736,6 +1805,9 @@ if __name__ == "__main__":
 
 
     center_fragments = dd.atomic_fragmentation(p, d, 3.0)
+
+    #center_fragments = [[1], [0]]
+
     print(" ")
     print("Fragmentation of orbital space")
     print(center_fragments)
@@ -1756,7 +1828,7 @@ if __name__ == "__main__":
 
         #ib.fragment = fragment
         t0 = time.time()
-        a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 2.0, occupied_cutoff = 2.0)
+        a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0)
         print("Frag init:", time.time()-t0)
         
         
@@ -1787,7 +1859,7 @@ if __name__ == "__main__":
 
                     #print("--- virtual")
                     t_0 = time.time()
-                    a_frag.autoexpand_virtual_space(n_orbs=6)
+                    a_frag.autoexpand_virtual_space(n_orbs=1)
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                     
@@ -1865,10 +1937,12 @@ if __name__ == "__main__":
             print(" ")
             print(" ")
 
-        pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([1,0,0]))
-        print(pair.compute_pair_fragment_energy())
-        pair.solve()
-        print("Pair fragment energy for (1,0,0):", pair.compute_pair_fragment_energy())
+
+
+        #pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([1,0,0]))
+        #print(pair.compute_pair_fragment_energy())
+        #pair.solve()
+        #print("Pair fragment energy for (1,0,0):", pair.compute_pair_fragment_energy())
         """
         
 

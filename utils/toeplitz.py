@@ -847,7 +847,7 @@ class tmat():
         # BT inversion through FFT - blockwise inversion - IFFT
         # Mathematical details may be found in notes
         n_points = 2*np.array(n_lattice(self))
-        JKk = transform(JK, np.fft.fftn, n_points = n_points)
+        JKk = transform(self, np.fft.fftn, n_points = n_points)
         JKk_inv = JKk*1.0
 
         #for k in JKk.coords:
@@ -858,6 +858,10 @@ class tmat():
         JK_inv_direct = transform(JKk_inv, np.fft.ifftn, n_points = n_points, complx = False)
 
         return JK_inv_direct 
+
+    def check_inversion_condition(self):
+        pass
+
         
 
 
@@ -1213,6 +1217,151 @@ class tmat():
                 ret.blocks[ ret.mapping[ ret._c2i(c1+c2) ] ]+= bb
                 
         return ret
+
+    def kspace_svd(self):
+        n_points = np.max(np.array([n_lattice(self)]), axis = 0)
+        self_k = transform(self, np.fft.fftn, n_points = n_points)
+
+        s = tmat()
+        s.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], self_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        s.blocks*=0.0
+
+        vh = tmat()
+        vh.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], self_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        vh.blocks*=0.0
+
+        u = tmat()
+        u.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], self_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        u.blocks*=0.0
+
+        for i in np.arange(len(self_k.blocks)-1):
+            u_,s_,vh_ = np.linalg.svd(self_k.blocks[i])
+            
+
+
+            s.blocks[i] = np.diag(s_)
+            vh.blocks[i] = vh_
+            u.blocks[i] = u_
+
+
+        u = transform(u, np.fft.ifftn, n_points = n_points, complx = False)
+        vh = transform(vh, np.fft.ifftn, n_points = n_points, complx = False)
+        s = transform(s, np.fft.ifftn, n_points = n_points, complx = False)
+        return u,s,vh
+
+    def kspace_svd_solve(self, other, tolerance = 1e-3):
+        """
+        goes to reciprocal space and solves 
+            self \cdot x = other
+        using svd decomposition
+            u s vh = self
+        returns x
+        """
+
+        n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
+        self_k = transform(self, np.fft.fftn, n_points = n_points)
+        other_k = transform(other, np.fft.fftn, n_points = n_points)
+
+        ret = tmat()
+        ret.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], other_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        #ret = self_k*1.0
+        ret.blocks*=0.0
+
+
+        
+        for i in np.arange(len(self_k.blocks)-1):
+            u_,s_,vh_ = np.linalg.svd(self_k.blocks[i])
+            b = other_k.blocks[i]
+            t = s_>tolerance
+
+            pinv = np.dot(vh_[t,:].conj().T, np.dot(np.diag(s_[t]**-1), u_[:,t].conj().T))
+            x = np.dot(pinv, b)
+
+            #rhs = np.dot(np.dot(np.diag(s_[t]**-1), u_[:,t].conj().T), b)
+            #x = np.linalg.solve(vh_[t,:], rhs)
+            
+            
+            
+            #svhx = np.linalg.solve(u_[:,t], b)
+
+            #x = np.linalg.solve(np.dot(np.diag(s_[t]),vh_[t,:]), svhx )
+
+            
+            """
+            
+            U = u_[:,t]
+            S = np.diag(s_[t])
+            VH = vh_[t,:]
+
+            SVH = np.dot(S, VH)
+            Ub  = np.dot(U.conj().T, other_k.blocks[i])
+            """
+
+            ret.blocks[i] = x #np.linalg.solve(SVH, Ub)
+        ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
+        return ret
+
+    def kspace_cholesky_solve(self, other):
+        """
+        # Solve linear system in reciprocal space
+        #
+        #     self \cdot x = other
+        # First let self = M M^T, so that
+        #    M M^T \cdot x = other
+        # Then solve for y and x
+        #    (1)   M \cdot y = other 
+        #    (2) M^T \cdot x = y
+        # return x
+        """
+        n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
+        self_k = transform(self, np.fft.fftn, n_points = n_points)
+        other_k = transform(other, np.fft.fftn, n_points = n_points)
+
+        ret = tmat()
+        ret.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], other_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        #ret = self_k*1.0
+        ret.blocks*=0.0
+
+        #ret.blocks[:-1] = np.einsum("ijk,ikl->ijl", self_k.blocks[:-1], other_k.blocks[:-1], optimize = True)
+
+        for i in np.arange(len(self_k.blocks)-1):
+            
+            #print(np.max(np.abs(self_k.blocks[i].T-self_k.blocks[i])))
+            #assert(np.max(np.abs(self_k.blocks[i].T-self_k.blocks[i]))<1e-10), "not symmetric"
+            #assert(np.linalg.norm(self_k.blocks[i].T-self_k.blocks[i])<1e-10), "not symmetric"
+            Mk = np.linalg.cholesky(self_k.blocks[i])
+            yk = np.linalg.solve(Mk, other_k.blocks[i])
+
+
+            ret.blocks[i] = np.linalg.solve(Mk.conj().T, yk)
+
+        ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
+        return ret
+
+
+    def kspace_linear_solve(self, other):
+        """
+        # Solve linear system in reciprocal space
+        #     self \cdot x = other
+        # returns x
+        """
+        n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
+        self_k = transform(self, np.fft.fftn, n_points = n_points)
+        other_k = transform(other, np.fft.fftn, n_points = n_points)
+
+        ret = tmat()
+        ret.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], other_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        #ret = self_k*1.0
+        ret.blocks*=0.0
+
+        #ret.blocks[:-1] = np.einsum("ijk,ikl->ijl", self_k.blocks[:-1], other_k.blocks[:-1], optimize = True)
+
+        for i in np.arange(len(self_k.blocks)-1):
+            ret.blocks[i] = np.linalg.solve(self_k.blocks[i],other_k.blocks[i])
+
+        ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
+        return ret
+
 
     def circulantdot(self, other, complx = False):
         """
