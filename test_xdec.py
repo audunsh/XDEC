@@ -566,6 +566,18 @@ def test_x_(attenuation = .4):
     print("Exact (2)   :",  np.sum(pqrs_ex[0,2,0,v]))
     print("Diff        :", np.abs(i0.cget([0,0,0]).reshape(ishape)[0,0,0,3]) - np.sum(pqrs_ex[0,2,0,v]) ) #, "err"
 
+    i0, ishape = ib.getorientation([0,0,0],[1,0,0])
+
+
+    print("Integral(ao):  ( (000)0, (000)2 | (000) 0 , (100)(0+1+2+3+4+...+N_ao) )")
+    print("Fit         :", i0.cget([0,0,0]).reshape(ishape)[0,0,0,3]) # = (0,2,0,:)_fit
+    print("Exact (1)   :",  np.sum(pqRrs_ex[0,2,0,v])) # = (0,2|0,:) libint
+    pqRrs_ex = PRI.compute_pqrs_(p, np.array([[0,0,0]]),np.array([[0,0,0]]),np.array([[-1,0,0]]))
+    print("Exact (1)   :",  np.sum(pqRrs_ex[0,2,0,v])) # = (0,2|0,:) libint
+    #print("Diff        :", np.abs( i0.cget([0,0,0]).reshape(ishape)[0,0,1,1]) - np.sum(pqTrs_ex[0,2,0,v]))
+    
+
+
     
     #print("Fit       :", i0.cget([0,0,0]).reshape(ishape)[0,0,1,4]) # = (0,2,0,:)_AO
 
@@ -644,4 +656,4 @@ for i in [.9,.8,.7,.6,.5,.4,.3,.2]:
     print("================***")
 """
 
-test_x_(attenuation = .1)
+test_x_(attenuation = .3)

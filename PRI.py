@@ -793,7 +793,7 @@ class coefficient_fitter_static():
             for j in np.arange(coord_q.shape[0]):
                 #t = time.time()
                 C2bo = c_occ.cget(c_virt.coords) # Kmp
-                C2vi = c_virt.cget(c_virt.coords - c2 - coord_q[j]) #Knq
+                C2vi = c_virt.cget(c_virt.coords - c2 + coord_q[j]) #Knq
                 #C2bo = c_occ.cget(-c_virt.coords) # Kmp
                 #C2vi = c_virt.cget(-c_virt.coords + c2 - coord_q[j]) #Knq
                  

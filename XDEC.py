@@ -900,7 +900,7 @@ class fragment_amplitudes():
                 for mM in np.arange(N_occ):
                     M = self.d_ii.coords[mM]
 
-                    if M[0]>=0:
+                    if M[0]>=0: #?
 
                         # Get exchange block coordinates
                         ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM + M) ]
@@ -929,8 +929,8 @@ class fragment_amplitudes():
 
                             sequence.append([ddL_M, mM, ddM_M, 1, ddL, mM , ddM,0])  # exchange
                             sequence.append([ddL_M, mM, ddM_M, 1, ddM, mM_, ddL,1]) # exchange, transposed
-
-
+            print("SEQUENCE")
+        print(sequence)
         self.initialize_blocks(sequence)
 
 
@@ -942,8 +942,13 @@ class fragment_amplitudes():
         #print("Initialization sequence:")
         sequence = np.array(sequence)
 
+        print(sequence)
+
+        print("shape sequence:", sequence.shape)
 
 
+        n_computed_di = 0
+        n_computed_ex = 0
 
         # Sort blocks by dL:
         a = np.argsort(sequence[:,0])
@@ -953,12 +958,14 @@ class fragment_amplitudes():
         #print(sequence.shape)
         j = 0
         for i in np.arange(len(sequence)):
+
             if sequence[i,0] != sequence[j,0]:
                 a = np.argsort(sequence[j:i, 2])
                 sq_i = sequence[j:i][a]
+                
 
                 sq_i = np.append(sq_i, [ [-1000,0,-1000,0, 0, 0, 0,0] ], axis = 0) #-100 Just to make sure :-)
-
+                print(sq_i)
 
 
 
@@ -975,15 +982,16 @@ class fragment_amplitudes():
 
                     if sq_i[k,2] != sq_i[l,2]:
                         dM = self.d_ia.coords[sq_i[k,2]]
+                        #print("-------")
 
-
-                        #print(sq_i[k:l])
+ 
+                        #print(sq_i[k:l]) 
                         # Integrate here, loop over M
                         I, Ishape = self.ib.getorientation(dL, dM)
 
                         for m in sq_i[k:l]:
                             M = self.d_ii.coords[m[1]]
-                            ddL, mM, ddM = m[0], m[1], m[2]
+                            ddL, mM, ddM = m[4], m[5], m[6]
                             #print(self.g_x.shape, ddL, mM, ddM)
                             #print(dL, M, dM)
                             #print(I.cget(M).shape, Ishape)
@@ -992,25 +1000,30 @@ class fragment_amplitudes():
                                     # Direct contribution
                                     self.g_d[:, ddL, :, mM, :, ddM, :] = I.cget(M).reshape(Ishape)
                                     self.t2[:,  ddL, :, mM, :, ddM, :] = I.cget(M).reshape(Ishape)*self.e_iajb**-1
+                                    n_computed_di += 1
                                 if m[3] == 1:
                                     # Exchange contribution
                                     ddL_, mM_, ddM_ = m[4], m[5], m[6]
                                     self.g_x[:, ddL_, :, mM_, :, ddM_, :] = I.cget(M).reshape(Ishape)
+                                    n_computed_ex += 1
                             if m[7] == 1:
                                 if m[3] == 0:
                                     # Direct contribution
                                     self.g_d[:, ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)
                                     self.t2[:,  ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)*self.e_iajb**-1
+                                    n_computed_di += 1
                                 if m[3] == 1:
                                     # Exchange contribution
                                     ddL_, mM_, ddM_ = m[4], m[5], m[6]
                                     self.g_x[:, ddL_, :, mM_, :, ddM_, :] = I.cget(M).T.reshape(Ishape)
+                                    n_computed_ex += 1
 
 
                         k = l*1
                         
                 j = i*1
-
+        print(n_computed_di)
+        print(n_computed_ex)
   
 
 
@@ -1056,7 +1069,8 @@ class fragment_amplitudes():
                 
                 g_direct = self.g_d[:,ddL,:,mM, :, ddM, :] #[self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
                 g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :] #[self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
-
+                print(self.d_ia.coords[ddL],self.d_ii.coords[mM],self.d_ia.coords[ddM] )
+                print(ddL, mM, ddM, np.linalg.norm(g_direct), np.linalg.norm(g_exchange))
                 
 
                 t = self.t2[:,ddL,:,mM, :, ddM, :]#[self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
@@ -1175,7 +1189,7 @@ class fragment_amplitudes():
                                 #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
                                 #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
                                 # For fragments, exchange only required for only M = (0,0,0) 
-                                # EOS always has the two occupied indices in the fragment, ie the refcell
+                                # EOS always has the two occupied indices in the fragment, i.e. inside the refcell
                                 if np.sum(M**2) == 0:
                                     sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
                                     sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
@@ -1237,7 +1251,7 @@ class fragment_amplitudes():
                                 #                ^                 ^           ^          ^
                                 #            Calculate these    ex/direct    store here   1=transpose
                                 
-                                sequence.append([ddL, mmM, ddM,   0, ddL, mmM, ddM,   0]) # direct
+                                sequence.append([ddL, mmM, ddM,   0, ddL, mmM , ddM,  0]) # direct
                                 sequence.append([ddL, mmM, ddM,   0, ddM, mmM_, ddL,  1]) # direct, transposed
 
 
@@ -1248,7 +1262,7 @@ class fragment_amplitudes():
                                 # For fragments, exchange only required for only M = (0,0,0) 
                                 # EOS always has the two occupied indices in the fragment, ie the refcell
                                 if np.sum(M**2) == 0:
-                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
+                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0]) # exchange
                                     sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
 
 
