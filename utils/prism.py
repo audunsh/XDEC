@@ -723,6 +723,7 @@ class prism():
             for c in range(len(self.charges)):
                 #print(lattice, i, np.dot(lattice,i))
                 charge, pos = self.charges[c],self.atoms[c]+np.dot(i,lattice)
+                #charge, pos = self.charges[c],self.atoms[c]-np.dot(lattice, i)
 
                 Positi.append(pos)
                 

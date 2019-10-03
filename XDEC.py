@@ -1052,14 +1052,14 @@ class fragment_amplitudes():
                 dM =  self.d_ia.coords[ddM]
                 dM_i = self.d_ia.cget(dM)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
 
-               # Using multiple levels of masking, probably some other syntax makes more sense
+               # Using multiple levels of masking, probably some other syntax could make more sense
                 
-                g_direct = self.g_d[:,ddL,:,mM, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-                g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
+                g_direct = self.g_d[:,ddL,:,mM, :, ddM, :] #[self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
+                g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :] #[self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
 
                 
 
-                t = self.t2[:,ddL,:,mM, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
+                t = self.t2[:,ddL,:,mM, :, ddM, :]#[self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
                 e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
         return e_mp2
     
@@ -1426,6 +1426,7 @@ class fragment_amplitudes():
 
                         t2_mapped = np.zeros_like(tnew).ravel()
                         t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
+                        #t2_mapped = (tnew*self.e_iajb**-1).ravel()
                         t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
 
             self.t2 -= t2_new
@@ -1629,14 +1630,15 @@ if __name__ == "__main__":
     parser.add_argument("auxbasis", type = str, help="Auxiliary fitting basis.")
     parser.add_argument("wcenters", type = str, help="Wannier centers")
     parser.add_argument("-attenuation", type = float, default = 1.2, help = "Attenuation paramter for RI")
-    parser.add_argument("-basis_truncation", type = float, default = 0.5, help = "Truncate AO-basis function below this threshold." )
     parser.add_argument("-fot", type = float, default = 0.001, help = "fragment optimization treshold")
     parser.add_argument("-circulant",default = False, action = "store_true", help = "fragment optimization treshold")
-    parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
     parser.add_argument("-robust", default = False, action = "store_true", help = "Enable Dunlap robust fit for improved integral accuracy.")
     parser.add_argument("-disable_static_mem", default = False, action = "store_true", help = "Recompute AO integrals for new fitting sets.")
     parser.add_argument("-n_core", type = int, default = 0, help = "Number of core orbitals (the first n_core orbitals will not be correlated).")
     parser.add_argument("-skip_fragment_optimization", default = False, action = "store_true", help = "Skip fragment optimization (for debugging, will run faster but no error estimate.)")
+    parser.add_argument("-basis_truncation", type = float, default = 0.5, help = "Truncate AO-basis function below this threshold." )
+    parser.add_argument("-ao_screening", type = float, default = 1e-12, help = "Screening of the (J|mn) (three index) integrals.")
+    parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
     
     args = parser.parse_args()
 
@@ -1646,21 +1648,24 @@ if __name__ == "__main__":
     import sys
     print("Git rev:", sp.check_output(['git', 'rev-parse', 'HEAD'], cwd=sys.path[0]))
     print("_________________________________________________________")
-    print("System data")
+    print("Input configuration")
     print("_________________________________________________________")
+    print("Input files:")
     print("Geometry + AO basis :", args.project_file)
     print("Wannier basis       :", args.coefficients)
-    print("Number of core orbs.:", args.n_core)
     print("Auxiliary basis     :", args.auxbasis)
-    print("Aux. basis cutoff   :", args.basis_truncation)
     print(" ")
+    print("Screening and approximations:")
+    print("FOT                 :", args.fot)
+    print("Number of core orbs.:", args.n_core, "(frozen)")
+    print("Aux. basis cutoff   :", args.basis_truncation)
     print("Attenuation         :", args.attenuation)
     print("Att. truncation     :", args.attenuated_truncation)
+    print("AO basis screening  :", args.ao_screening)
     print(" ")
+    print("General settings:")
     print("Dot-product         :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
-    print(" ")
     print("RI fitting          :", ["Non-robust", "Robust"][int(args.robust)])
-    print("FOT                 :", args.fot)
     print("_________________________________________________________")
 
 
@@ -1683,6 +1688,8 @@ if __name__ == "__main__":
     c = tp.tmat()
     c.load(args.coefficients)
 
+    
+
     c_occ, c_virt = PRI.occ_virt_split(c,p)
     
 
@@ -1695,10 +1702,10 @@ if __name__ == "__main__":
     f_ao.load(args.fock_matrix)
 
     # Compute MO Fock matrix
-    f_mo = c.tT().cdot(f_ao*c, coords = c.coords)
+    #f_mo = c.tT().cdot(f_ao*c, coords = c.coords)
 
-    f_mo_aa = c_virt.tT().cdot(f_ao*c_virt, coords = c.coords)
-    f_mo_ii = c_occ.tT().cdot(f_ao*c_occ, coords = c.coords)
+    f_mo_aa = c_virt.tT().cdot(f_ao*c_virt, coords = c_virt.coords)
+    f_mo_ii = c_occ.tT().cdot(f_ao*c_occ, coords = c_occ.coords)
 
 
 
@@ -1716,43 +1723,17 @@ if __name__ == "__main__":
     wcenters = np.load(args.wcenters)[p.n_core:]
 
 
-    #REMOVE THIS
-    
 
-
+ 
     # Initialize integrals 
     if args.disable_static_mem:
         ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust)
     else:
-        ib = PRI.integral_builder_static(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust)
+        ib = PRI.integral_builder_static(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening)
+    
+    print("Number of (J|mn) tensors:", len(ib.cfit.Jmn))
     
     
-    """
-    if args.ao_test:
-        # Test a fit of the AO integrals
-        print("TESTING AO INTEGRALS")
-        c.blocks *= 0
-        c.blocks[c.mapping[c._c2i([0,0,0])]] = np.eye(c.blockshape[0])
-
-        i0, ishape = ib.getorientation([0,0,0],[0,0,0])
-
-        devs = []
-        for co in c.coords:
-            ib_mo = i0.cget([co]).reshape(ishape)
-            ib_ao = PRI.compute_pqrs(p, np.array([co]))[:p.get_nocc(),p.get_nocc():,:p.get_nocc(),p.get_nocc():].reshape(ishape)
-            imax    = np.argmax(ib_ao.ravel())
-            max_err = np.max(np.abs(ib_mo-ib_ao))
-            rel_err = np.abs(ib_mo.ravel()[imax]-ib_ao.ravel()[imax])/ib_ao.ravel()[imax]
-            devs.append(max_err)
-            print("max:%.4e    rel:%.4e" % (max_err, rel_err), co)
-            print("exact:", ib_ao.ravel()[imax])
-            print("fit  :", ib_mo.ravel()[imax])
-        print("SUMMARY")
-        devs = np.array(devs)
-        print("Max error:", np.max(devs))
-        print("Mean err :", np.mean(devs))
-        assert(False)
-    """
 
     # Test symmetries in the g-tensor
     d = dd.build_distance_matrix(p, c.coords, wcenters, wcenters)
@@ -1831,9 +1812,14 @@ if __name__ == "__main__":
         a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0)
         print("Frag init:", time.time()-t0)
         
+
+ 
         
         print(" ")
         a_frag.solve()
+
+        #np.save("direct0_01.npy", a_frag.g_d)
+        #np.save("exchag0_01.npy", a_frag.g_x)
         
         # Converge to fot
         E_prev_outer = a_frag.compute_fragment_energy()
@@ -1848,6 +1834,7 @@ if __name__ == "__main__":
             print("Running fragment optimization for:")
             print(fragment)
             #print("Initial cutoffs:")
+
             
             while dE_outer>args.fot:
                 dE = 10
@@ -1859,10 +1846,12 @@ if __name__ == "__main__":
 
                     #print("--- virtual")
                     t_0 = time.time()
-                    a_frag.autoexpand_virtual_space(n_orbs=1)
+                    a_frag.autoexpand_virtual_space(n_orbs=4)
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                     
+                    
+
                     t_1 = time.time()
                     a_frag.solve()
                     t_2 = time.time()

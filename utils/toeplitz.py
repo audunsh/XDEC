@@ -21,7 +21,19 @@ Authors: Audun Skau Hansen (main author) and
          functions related to fast Fourier transform)
 '''
 
-
+def c2_not_in_c1(c1, c2, sort = False):
+    """
+    Returns the 3-vectors in c2 not present in c1
+    """
+    distance = np.sum((c1[:,None] - c2[None,:])**2, axis = 2)
+    
+    c1_in_c2 = np.any(distance==0, axis = 0)
+    if not sort:
+        return c2[c1_in_c2==False]
+    if sort:
+        c2_ret = c2[c1_in_c2==False]
+        c2_ret = c2_ret[np.argsort(np.sum(c2_ret**2, axis = 1))]
+        return c2_ret
 
 def test_tmat(t):
     '''
@@ -268,7 +280,14 @@ class tmat():
                                     self.norm, self.tolerance)
             
         if (coords is not None) and (domain is None):
-            self.domain = np.amax(np.absolute(coords), axis=0) + 1
+            try:
+                self.domain = np.amax(np.absolute(coords), axis=0) + 1
+            except:
+                print("Init error")
+                print(coords)
+                print(np.absolute(coords))
+                print("")
+                assert(False), "Error"
         else:
             self.domain = domain
             
@@ -886,15 +905,30 @@ class tmat():
         else:
             #Assume int or float
             ret = deepcopy(self)
-            ret.blocks = self.blocks+other
+            ret.blocks[:-1] = self.blocks[:-1]+other
             return ret
     
     def __sub__(self, other):
         # Subtract elements in matrix with other
         # See "Add" for additional details
         return self._sum(other, scalar1 = 1, scalar2 = -1)
-    
+
     def _sum(self, other, scalar1 = 1, scalar2 = 1, safemode = True):
+        ret = tmat()
+
+        coords_extra = c2_not_in_c1(self.coords, other.coords, sort = True)
+        coords = np.zeros((self.coords.shape[0]+coords_extra.shape[0], 3), dtype = int)
+        coords[:self.coords.shape[0]] = self.coords
+        coords[self.coords.shape[0]:] = coords_extra
+
+        blocks = self.cget(coords) + other.cget(coords)
+
+        ret.load_nparray(blocks, coords)
+        return ret
+
+
+    
+    def __sum(self, other, scalar1 = 1, scalar2 = 1, safemode = True):
         # Summation of Toeplitz matrices
         if safemode:
             self.align(other) #make sure indexing is consistent
@@ -978,11 +1012,11 @@ class tmat():
         
         The matrix-matrix multiplication is implemented as
 
-          C(L) = \sum_M A**M * B**(L - M)
+          C(L) = \sum_M A^M * B^L - M)
         
         where L and M are cell coordinates. Here the definition
         
-          C**(L2 - L1) \equiv \overline{C}**(L1, L2) 
+          C^L2 - L1) \equiv \overline{C}^(L1, L2) 
         
         is used.
         '''
@@ -1249,7 +1283,7 @@ class tmat():
         s = transform(s, np.fft.ifftn, n_points = n_points, complx = False)
         return u,s,vh
 
-    def kspace_svd_solve(self, other, tolerance = 1e-3):
+    def kspace_svd_solve(self, other, tolerance = 1e-8):
         """
         goes to reciprocal space and solves 
             self \cdot x = other
@@ -1369,6 +1403,9 @@ class tmat():
         """
 
         n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
+        #print(np.array(n_lattice(self)))
+        #print(np.array(n_lattice(other)))
+        #print("Npoints:", n_points)
         self_k = transform(self, np.fft.fftn, n_points = n_points)
         other_k = transform(other, np.fft.fftn, n_points = n_points)
 
