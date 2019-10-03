@@ -582,7 +582,7 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
         #print(np.sqrt(np.sum(p.coor2vec(c2)**2)), c2, attenuation, cmax, "Largest element in %i th layer:" % i, np.max(np.abs(Jmnc.cget(cmax))))
         if (np.max(np.abs(Jmnc.cget(cube))))<thresh:
-            print("Converged to %i layers for shifted coordinate:" % i, c2)
+            #print("Converged to %i layers for shifted coordinate:" % i, c2)
             #i = int(np.sqrt(3*i**2))
             break
     cube = tp.lattice_coords([i+1,i+1,i+1]) #assumed max twobody AO-extent (subst. C-S Screening)
@@ -647,7 +647,7 @@ class coefficient_fitter_static():
 
                 
             if np.max(np.abs(Jmnc2.blocks))>screening_thresh:
-                print("Jmn fit:", c2, np.max(np.abs(Jmnc2.blocks)), Jmnc2.coords.shape[0])
+                #print("Jmn fit:", c2, np.max(np.abs(Jmnc2.blocks)), Jmnc2.coords.shape[0])
                 self.coords.append(c2)
                 self.Jmn.append(Jmnc2.T()) #make sure it is uppercase-transposed (due to how it is computed efficiently in libint)
                 if self.robust:
@@ -664,8 +664,8 @@ class coefficient_fitter_static():
         Jpq_c_coulomb = []
 
         Jpq_coords = self.Jmn[self.c0].coords
-        print("Jpq_0     :", self.coords[self.c0])
-        print("Jpq_length:", Jpq_coords.shape[0], c_virt.coords.shape[0], c_occ.coords.shape[0])
+        #print("Jpq_0     :", self.coords[self.c0])
+        #print("Jpq_length:", Jpq_coords.shape[0], c_virt.coords.shape[0], c_occ.coords.shape[0])
 
         
         for i in np.arange(coord_q.shape[0]):
@@ -732,8 +732,8 @@ class coefficient_fitter_static():
         Jpq_c_coulomb = []
 
         Jpq_coords = self.Jmn[self.c0].coords
-        print("Jpq_0     :", self.coords[self.c0])
-        print("Jpq_length:", Jpq_coords.shape[0], c_virt.coords.shape[0], c_occ.coords.shape[0])
+        #print("Jpq_0     :", self.coords[self.c0])
+        #print("Jpq_length:", Jpq_coords.shape[0], c_virt.coords.shape[0], c_occ.coords.shape[0])
 
         
         for i in np.arange(coord_q.shape[0]):

@@ -929,8 +929,8 @@ class fragment_amplitudes():
 
                             sequence.append([ddL_M, mM, ddM_M, 1, ddL, mM , ddM,0])  # exchange
                             sequence.append([ddL_M, mM, ddM_M, 1, ddM, mM_, ddL,1]) # exchange, transposed
-            print("SEQUENCE")
-        print(sequence)
+            #print("SEQUENCE")
+        #print(sequence)
         self.initialize_blocks(sequence)
 
 
@@ -942,9 +942,9 @@ class fragment_amplitudes():
         #print("Initialization sequence:")
         sequence = np.array(sequence)
 
-        print(sequence)
+        #print(sequence)
 
-        print("shape sequence:", sequence.shape)
+        #print("shape sequence:", sequence.shape)
 
 
         n_computed_di = 0
@@ -965,7 +965,7 @@ class fragment_amplitudes():
                 
 
                 sq_i = np.append(sq_i, [ [-1000,0,-1000,0, 0, 0, 0,0] ], axis = 0) #-100 Just to make sure :-)
-                print(sq_i)
+                #print(sq_i)
 
 
 
@@ -1065,15 +1065,13 @@ class fragment_amplitudes():
                 dM =  self.d_ia.coords[ddM]
                 dM_i = self.d_ia.cget(dM)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
 
-               # Using multiple levels of masking, probably some other syntax could make more sense
+                # Using multiple levels of masking, probably some other syntax could make more sense
                 
-                g_direct = self.g_d[:,ddL,:,mM, :, ddM, :] #[self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-                g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :] #[self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
-                print(self.d_ia.coords[ddL],self.d_ii.coords[mM],self.d_ia.coords[ddM] )
-                print(ddL, mM, ddM, np.linalg.norm(g_direct), np.linalg.norm(g_exchange))
+                g_direct = self.g_d[:,ddL,:,mM, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
+                g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
                 
 
-                t = self.t2[:,ddL,:,mM, :, ddM, :]#[self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
+                t = self.t2[:,ddL,:,mM, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
                 e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
         return e_mp2
     
