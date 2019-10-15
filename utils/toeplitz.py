@@ -921,7 +921,7 @@ class tmat():
         coords[:self.coords.shape[0]] = self.coords
         coords[self.coords.shape[0]:] = coords_extra
 
-        blocks = self.cget(coords) + other.cget(coords)
+        blocks = scalar1*self.cget(coords) + scalar2*other.cget(coords)
 
         ret.load_nparray(blocks, coords)
         return ret

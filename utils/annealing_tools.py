@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.linalg import expm
 
-import toeplitz as tp
+import utils.toeplitz as tp
 
 
 def summarize_anneal(N_uphill_steps, N_accept_steps, N_steps, T, yp0, yp):

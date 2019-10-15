@@ -158,6 +158,8 @@ class prism():
             
         if filename.split(".")[-1] == "g94":
             print("READ:Libint not yet implemented")
+        if filename.split(".")[-1] == "xyz":
+            pass
             
 
             
@@ -205,13 +207,16 @@ class prism():
             return np.array([0])
         if l==1:
             return np.array([0,1,2])
+            #return np.array([1,2,0])
         if l==2:
             return np.array([4, 2, 0, 1, 3])
         if l==3:
             return np.array([6, 4,2,0,1,3,5])            
         if l==4:
             return np.array([8,6, 4,2,0,1,3,5,7])
-        if l>4:
+        if l==5:
+            return np.array([10, 8,6, 4,2,0,1,3,5,7, 9])
+        if l>5:
             print("Error: Angular momentum permutation not defined.")
     
     def get_permutation_vector(self):

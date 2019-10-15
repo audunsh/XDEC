@@ -22,6 +22,7 @@ struct engine{
         void set_operator_erfc(){_opt = libint2::Operator::erfc_coulomb;}
         void set_operator_overlap(){_opt = libint2::Operator::overlap;}
         void set_operator_nuclear(){_opt = libint2::Operator::nuclear;}
+        void set_operator_emultipole(){_opt = libint2::Operator::emultipole3;}
         void set_operator_kinetic(){_opt = libint2::Operator::kinetic;}
         void set_integrator_params(double w){_integrator.set_params(w);}
         void set_braket_xsxs(){_integrator.set(libint2::BraKet::xs_xs);}
@@ -335,6 +336,70 @@ struct engine{
 
 	   return results;};
 
+std::vector<vector<vector<double>>> get_pq_multipole(std::string geometry_p,
+                                    std::string basis_p,
+                                    std::string geometry_q,
+                                    std::string basis_q){
+
+	   // Compute ( p | V | q )
+	   // where V is the coulomb operator
+
+ // read input files
+                   ifstream input_file_p(geometry_p);
+                   vector<libint2::Atom> atoms_p = libint2::read_dotxyz(input_file_p);
+                   libint2::BasisSet obs_p(basis_p, atoms_p);
+
+                   ifstream input_file_q(geometry_q);
+                   vector<libint2::Atom> atoms_q = libint2::read_dotxyz(input_file_q);
+                   libint2::BasisSet obs_q(basis_q, atoms_q);
+
+           //std::vector<float> results; // list for results, to be returned to python
+
+	   // calculate and gather results
+	   auto shell2bf_p = obs_p.shell2bf(); // maps shell index to basis function index
+					// shell2bf[0] = index of the first basis function in shell 0
+					// shell2bf[1] = index of the first basis function in shell 1
+	   auto shell2bf_q = obs_q.shell2bf(); // maps shell index to basis function index
+					// shell2bf[0] = index of the first basis function in shell 0
+					// shell2bf[1] = index of the first basis function in shell 1
+					// ...
+        int nq(obs_q.nbf());
+        int np(obs_p.nbf());
+        
+		std::vector<std::vector<std::vector<double>>> results(np, std::vector<std::vector<double>>(nq,std::vector<double>(20, 0.0)));
+	    
+		const auto& buf_vec = _integrator.results(); // will point to computed shell sets
+						  // const auto& is very important!
+
+	    for(auto s1=0; s1!=obs_p.size(); ++s1) {
+	     for(auto s2=0; s2!=obs_q.size(); ++s2) {
+	       //for all shells in osb
+	       _integrator.compute(obs_p[s1], obs_q[s2]);
+	       auto ints_shellset = buf_vec[0];  // location of the computed integrals
+	       if (ints_shellset == nullptr)
+		   continue;  // nullptr returned if the entire shell-set was screened out
+
+	       auto bf1 = shell2bf_p[s1];  // first basis function in first shell
+	       auto n1 = obs_p[s1].size(); // number of basis functions in first shell
+	       auto bf2 = shell2bf_q[s2];  // first basis function in second shell
+	       auto n2 = obs_q[s2].size(); // number of basis functions in second shell
+        
+               // integrals are packed into ints_shellset in row-major (C) form
+	       // this iterates over integrals in this order
+	        for(int f1=0; f1!=n1; ++f1){
+		      for(int f2=0; f2!=n2; ++f2){
+		   //cout << "  " << bf1+f1 << " " << bf2+f2 << " " << ints_shellset[f1*n2+f2] << endl;
+		   //results.push_back(ints_shellset[f1*n2+f2]);
+                for(int j = 0; j!=20; ++j){
+                   results[bf1+f1][bf2+f2][j] = ints_shellset[f1*n2+f2 + j*n2*n1];
+				   }
+		      }
+	        }
+	   }
+	   }
+
+	   return results;};
+
 
         // Cauchy-Schwartz screening integrals
  
@@ -374,7 +439,8 @@ struct engine{
 			       );
 	};
 
-        std::vector<std::vector<double>> get_pqpq(std::string geometry_p,
+
+std::vector<std::vector<double>> get_pqpq(std::string geometry_p,
                                     std::string basis_p,
                                     std::string geometry_q,
                                     std::string basis_q){
@@ -551,6 +617,7 @@ PYBIND11_MODULE(lwrap, m) {
         .def("set_operator_kinetic", &engine::set_operator_kinetic)
         .def("set_operator_nuclear", &engine::set_operator_nuclear)
         .def("set_operator_coulomb", &engine::set_operator_coulomb)
+		.def("set_operator_emultipole", &engine::set_operator_emultipole)
         .def("set_braket_xsxs", &engine::set_braket_xsxs)
         .def("set_integrator_params", &engine::set_integrator_params)
         .def("set_operator_erf", &engine::set_operator_erf)
@@ -562,5 +629,6 @@ PYBIND11_MODULE(lwrap, m) {
         .def("setup_pqr", &engine::setup_pqr)
         .def("get_pqr", &engine::get_pqr)
         .def("setup_pq", &engine::setup_pq)
-        .def("get_pq", &engine::get_pq);
+        .def("get_pq", &engine::get_pq)
+		.def("get_pq_multipole", &engine::get_pq_multipole);
 }
