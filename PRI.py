@@ -588,14 +588,14 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
             #r
             cmax = np.argmax(np.sqrt(np.sum(np.dot(cube,p.lattice)**2, axis = 1)))
             rmax = np.sqrt(np.sum(np.dot(cube,p.lattice)**2, axis = 1))[cmax]
-            print("Converged to %i layers for shifted coordinate:" % i, c2, cmax, big_tmat.coords[cmax], rmax)
+            #print("Converged to %i layers for shifted coordinate:" % i, c2, cmax, big_tmat.coords[cmax], rmax)
             break
     #print("Converged to %i layers for shifted coordinate:" % i, c2)
     cube = tp.lattice_coords([2*i+1,2*i+1,2*i+1]) #assumed max twobody AO-extent (subst. C-S Screening)
     
     cmax = np.argmax(np.sqrt(np.sum(np.dot(cube,p.lattice)**2, axis = 1)))
     cube = cube[np.sqrt(np.sum(np.dot(cube,p.lattice)**2, axis = 1))<=rmax+.1] #this is not entirely correct, should be in rvec-measure
-    print(cube.shape)
+    #print(cube.shape)
     big_tmat = tp.tmat()
     big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
     return big_tmat #return expansion region in form of toeplitz matrix
@@ -624,7 +624,7 @@ class coefficient_fitter_static():
     def __init__(self, c, p, attenuation, auxname, JK, JKInv, screening_thresh = 1e-12, robust = False, circulant = True, jpm_screening = 1e-10):
         cube = tp.lattice_coords([3,3,3]) #assumed max twobody AO-extent (subst. C-S Screening)
         print("WARNING: MINIMAL FITTING DOMAIN")
-        cube = tp.lattice_coords([0,0,0])
+        cube = tp.lattice_coords([1,1,1])
         #cube = np.array([[-1,0,0],[1,0,0],[0,0,0],[0,1,0],[0,-1,0],[0,0,1], [0,0,-1]])
         self.robust = robust
         self.coords = []
@@ -659,7 +659,7 @@ class coefficient_fitter_static():
             if np.max(np.abs(Jmnc2.blocks))>screening_thresh:
                 print("Jmn fit:", c2, np.max(np.abs(Jmnc2.blocks)), Jmnc2.coords.shape[0])
                 self.coords.append(c2)
-                self.Jmn.append(Jmnc2.T()) #make sure it is uppercase-transposed (due to how it is computed efficiently in libint)
+                self.Jmn.append(Jmnc2) #make sure it is uppercase-transposed (due to how it is computed efficiently in libint)
                 if self.robust:
                     self.Jmnc.append(Jmnc2_c)
         self.coords = np.array(self.coords)
@@ -688,9 +688,13 @@ class coefficient_fitter_static():
             self.Jmnc_screening.append([])
 
             for coord in np.arange(self.c.coords.shape[0]):
-                #tj = np.einsum("LJmn,Lmp->JpLn", Jmnc2.blocks[:-1].reshape(NL, NJ,Nn,Nn ), self.c_occ.cget(-Jmnc2.coords + self.c.coords[coord]), optimize = True)
-                tj = np.einsum("LJmn,Lmp->JpLn", Jmnc2.blocks[:-1].reshape(NL, NJ,Nn,Nn ), self.c_occ.cget(-Jmnc2.coords + self.c.coords[coord]), optimize = True).reshape(NJ*Np, NL*Nn)
+                #tj = np.einsum("LJmn,Lmp->JpLn", Jmnc2.blocks[:-1].reshape(NL, NJ,Nn,Nn ), self.c_occ.cget(-Jmnc2.coords + self.c.coords[coord]), optimize = True).reshape(NJ*Np, NL*Nn)
+                
+                tj = np.einsum("LJmn,Lmp->JpLn", Jmnc2.blocks[:-1].reshape(NL, NJ,Nn,Nn ), self.c_occ.cget(-Jmnc2.coords - self.c.coords[coord]), optimize = True).reshape(NJ*Np, NL*Nn)
+                
+                
                 screen = np.max(np.abs(tj), axis = 0)>jpm_screening
+                
                 self.Jmnc_tensors[-1].append(tj[:, screen])
 
 
@@ -746,22 +750,22 @@ class coefficient_fitter_static():
             #    tensors.append(np.einsum("LJmn,Lmp->JpLn", Jmnc2.blocks[:-1].reshape(NL, NJ,Nn,Nn ), c_occ.cget(-Jmnc2.coords + c.coords[coord]), optimize = True))
             tensors = self.Jmnc_tensors[i]
             screening = self.Jmnc_screening[i]
-            t0 = time.time()
+            #t0 = time.time()
             for j in np.arange(coords_q.shape[0]):
                 for coord in np.arange(c.coords.shape[0]):
                     #block_j = np.einsum("JpLn,Lnq->Jpq", tensors[coord], c_virt.cget(-Jmnc2.coords + c.coords[coord] + coords_q[j]), optimize = True)
                     screen = screening[coord]
-                    block_j = np.dot(tensors[coord], c_virt.cget(-Jmnc2.coords + c.coords[coord] - coords_q[j]).reshape(NL*Nn, Nq)[screen,:]).reshape(NJ, Np, Nq)
+                    block_j = np.dot(tensors[coord], c_virt.cget(-Jmnc2.coords - c.coords[coord] + coords_q[j] - c2).reshape(NL*Nn, Nq)[screen,:]).reshape(NJ, Np, Nq)
                     Jpq_c[j].blocks[Jpq_c[j].mapping[ Jpq_c[j]._c2i(c.coords[coord]) ]] +=  block_j.reshape(NJ, Np*Nq)
-            print("Contraction of virtuals:", time.time()-t0)
+            #print("Contraction of virtuals:", time.time()-t0)
         X = []
         for i in np.arange(len(Jpq_c)):
             t0 = time.time()
             if self.circulant:
-                X.append(self.JKInv.circulantdot(Jpq_c[i]))
+                #X.append(self.JKInv.circulantdot(Jpq_c[i]))
                 #X.append(self.JK.kspace_linear_solve(Jpq_c[i]))
                 #X.append(self.JK.kspace_cholesky_solve(Jpq_c[i]))
-                #X.append(self.JK.kspace_svd_solve(Jpq_c[i]))
+                X.append(self.JK.kspace_svd_solve(Jpq_c[i]))
             
             else:
                 X.append(self.JKInv.cdot(Jpq_c[i]))
