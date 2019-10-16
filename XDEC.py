@@ -1659,7 +1659,7 @@ if __name__ == "__main__":
     parser.add_argument("-disable_static_mem", default = False, action = "store_true", help = "Recompute AO integrals for new fitting sets.")
     parser.add_argument("-n_core", type = int, default = 0, help = "Number of core orbitals (the first n_core orbitals will not be correlated).")
     parser.add_argument("-skip_fragment_optimization", default = False, action = "store_true", help = "Skip fragment optimization (for debugging, will run faster but no error estimate.)")
-    parser.add_argument("-basis_truncation", type = float, default = 0.5, help = "Truncate AO-basis function below this threshold." )
+    parser.add_argument("-basis_truncation", type = float, default = 0.1, help = "Truncate AO-basis function below this threshold." )
     parser.add_argument("-ao_screening", type = float, default = 1e-12, help = "Screening of the (J|mn) (three index) integrals.")
     parser.add_argument("-jpm_screening", type = float, default = 1e-10, help = "Screening of the (J|pn) (three index) integrals.")
     

@@ -569,10 +569,15 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
     for i in np.arange(1,100):
         cube = tp.lattice_coords([i,0,0]) #assumed max twobody AO-extent (subst. C-S Screening)
         
-        cube = np.zeros((4,3), dtype = int)
+        cube = np.zeros((8,3), dtype = int)
         cube[1] = np.array([i,0,0])
         cube[2] = np.array([0,i,0])
         cube[3] = np.array([0,0,i])
+
+        cube[4] = np.array([i,0,i])
+        cube[5] = np.array([0,i,i])
+        cube[6] = np.array([i,i,0])
+        cube[7] = np.array([i,i,i])
         
         
         big_tmat = tp.tmat()
@@ -588,13 +593,14 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
             #r
             cmax = np.argmax(np.sqrt(np.sum(np.dot(cube,p.lattice)**2, axis = 1)))
             rmax = np.sqrt(np.sum(np.dot(cube,p.lattice)**2, axis = 1))[cmax]
+            #
             #print("Converged to %i layers for shifted coordinate:" % i, c2, cmax, big_tmat.coords[cmax], rmax)
             break
     #print("Converged to %i layers for shifted coordinate:" % i, c2)
-    cube = tp.lattice_coords([2*i+1,2*i+1,2*i+1]) #assumed max twobody AO-extent (subst. C-S Screening)
+    cube = tp.lattice_coords([i,i,i]) #assumed max twobody AO-extent (subst. C-S Screening)
     
-    cmax = np.argmax(np.sqrt(np.sum(np.dot(cube,p.lattice)**2, axis = 1)))
-    cube = cube[np.sqrt(np.sum(np.dot(cube,p.lattice)**2, axis = 1))<=rmax+.1] #this is not entirely correct, should be in rvec-measure
+    #cmax = np.argmax(np.sqrt(np.sum(np.dot(cube,p.lattice)**2, axis = 1)))
+    #cube = cube[np.sqrt(np.sum(np.dot(cube,p.lattice)**2, axis = 1))<=rmax+.1] #this is not entirely correct, should be in rvec-measure
     #print(cube.shape)
     big_tmat = tp.tmat()
     big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
@@ -624,7 +630,7 @@ class coefficient_fitter_static():
     def __init__(self, c, p, attenuation, auxname, JK, JKInv, screening_thresh = 1e-12, robust = False, circulant = True, jpm_screening = 1e-10):
         cube = tp.lattice_coords([3,3,3]) #assumed max twobody AO-extent (subst. C-S Screening)
         print("WARNING: MINIMAL FITTING DOMAIN")
-        cube = tp.lattice_coords([1,1,1])
+        cube = tp.lattice_coords([0,0,0])
         #cube = np.array([[-1,0,0],[1,0,0],[0,0,0],[0,1,0],[0,-1,0],[0,0,1], [0,0,-1]])
         self.robust = robust
         self.coords = []
@@ -648,8 +654,8 @@ class coefficient_fitter_static():
             
             
             
-            #Jmnc2 = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
-            Jmnc2 = compute_Jmn(p,self.JK, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
+            Jmnc2 = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
+            #Jmnc2 = compute_Jmn(p,self.JK, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
             
             if robust:
                 Jmnc2_c = compute_Jmn(p,big_tmat, attenuation = 0.0, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
@@ -657,7 +663,7 @@ class coefficient_fitter_static():
 
                 
             if np.max(np.abs(Jmnc2.blocks))>screening_thresh:
-                print("Jmn fit:", c2, np.max(np.abs(Jmnc2.blocks)), Jmnc2.coords.shape[0])
+                print("Jmn fit of dM=:", c2," with extent ",  np.max(np.abs(Jmnc2.coords), axis = 0), " and shape ", Jmnc2.blocks.shape[0])
                 self.coords.append(c2)
                 self.Jmn.append(Jmnc2) #make sure it is uppercase-transposed (due to how it is computed efficiently in libint)
                 if self.robust:
@@ -692,8 +698,12 @@ class coefficient_fitter_static():
                 
                 tj = np.einsum("LJmn,Lmp->JpLn", Jmnc2.blocks[:-1].reshape(NL, NJ,Nn,Nn ), self.c_occ.cget(-Jmnc2.coords - self.c.coords[coord]), optimize = True).reshape(NJ*Np, NL*Nn)
                 
+                #Jmnc2.blocks[:-1].reshape(NL, NJ,Nn,Nn )
+
                 
                 screen = np.max(np.abs(tj), axis = 0)>jpm_screening
+
+
                 
                 self.Jmnc_tensors[-1].append(tj[:, screen])
 

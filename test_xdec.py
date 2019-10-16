@@ -531,6 +531,8 @@ def test_x_(attenuation = .4):
     pqTrs_ex = PRI.compute_pqrs_(p, np.array([[0,0,0]]),np.array([[1,0,0]]),np.array([[1,0,0]]))
     pqRrs_ex = PRI.compute_pqrs_(p, np.array([[0,0,0]]),np.array([[0,0,0]]),np.array([[1,0,0]]))
 
+    pqT_rs_ex = PRI.compute_pqrs_(p, np.array([[0,0,0]]),np.array([[-1,0,0]]),np.array([[-1,0,0]]))
+    
     # Test max deviation
     #print("Maxdev:", np.max(np.abs(pqrs_ex[:p.get_nocc(), p.get_nocc():, :p.get_nocc(), p.get_nocc():] - i0.cget([0,0,0]).reshape(ishape))))
      
@@ -549,6 +551,8 @@ def test_x_(attenuation = .4):
     print("Integral(ao):  ( (000)0, (000)2 | (100) 0 , (100)(0+1+2+3+4+...+N_ao) )")
     print("Fit         :", i0.cget([0,0,0]).reshape(ishape)[0,0,1,1]) # = (0,2,0,:)_fit
     print("Exact (1)   :",  np.sum(pqTrs_ex[0,2,0,v])) # = (0,2|0,:) libint
+    print("Exact (1)   :",  np.sum(pqT_rs_ex[0,2,0,v])) # = (0,2|0,:) libint
+  
     print("Diff        :", np.abs( i0.cget([0,0,0]).reshape(ishape)[0,0,1,1]) - np.sum(pqTrs_ex[0,2,0,v]))
     #print("Fit       :", i0.cget([0,0,0]).reshape(ishape)[0,0,1,2]) # = (0,2,0,:)_AO
     #print("Fit       :", i0.cget([0,0,0]).reshape(ishape)[0,0,1,3]) # = (0,2,0,:)_AO
@@ -817,7 +821,7 @@ def test_extent_neon_fcc(attenuation = .4, separation = np.array([0,0,0])):
     print("Integral(ao):  ( (000)0, (000)2 | (000) 0 , (100)(0+1+2+3+4+...+N_ao) )")
     print("Fit         :", i0.cget([0,0,0]).reshape(ishape)[0,0,0,3]) # = (0,2,0,:)_fit
     print("Exact (1)   :",  np.sum(pqRrs_ex[0,2,0,v])) # = (0,2|0,:) libint
-   #pqRrs_ex = PRI.compute_pqrs_(p, np.array([[0,0,0]]),np.array([[0,0,0]]),np.array([[-1,0,0]]))
+    #pqRrs_ex = PRI.compute_pqrs_(p, np.array([[0,0,0]]),np.array([[0,0,0]]),np.array([[-1,0,0]]))
     print("Diff        :",  i0.cget([0,0,0]).reshape(ishape)[0,0,0,3] - np.sum(pqRrs_ex[0,2,0,v]) ) # = (0,2|0,:) libint
     #print("Diff        :", np.abs( i0.cget([0,0,0]).reshape(ishape)[0,0,1,1]) - np.sum(pqTrs_ex[0,2,0,v]))
 
@@ -856,7 +860,7 @@ np.save("fitt_diff_zoom_.npy", Z)
 
 #for i in [0.1,0.2,0.3,0.4,0.5,0.75,1.0,2.0,3.0,4.0,5.0]:
 
-"""
+
 for i in [.9,.8,.7,.6,.5,.4,.3,.2,.15,.1,.09]:
     print("================***")
     print(i)
@@ -865,10 +869,10 @@ for i in [.9,.8,.7,.6,.5,.4,.3,.2,.15,.1,.09]:
     #print(i, np.max(np.abs(pqrs - i0)))
     test_x_(i) #test lih ao integrals
     print("================***")
-"""
-for i in np.arange(5):
-    print("Separation:", i)
-    test_extent_neon_fcc(.3, np.array([i,0,0]))
+
+#for i in np.arange(5):
+#    print("Separation:", i)
+#    test_extent_neon_fcc(.3, np.array([i,0,0]))
 
 #for i in [8,11]:
 #    print("--------")
