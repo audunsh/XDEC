@@ -1283,7 +1283,7 @@ class tmat():
         s = transform(s, np.fft.ifftn, n_points = n_points, complx = False)
         return u,s,vh
 
-    def kspace_svd_solve(self, other, tolerance = 1e-8):
+    def kspace_svd_solve(self, other, tolerance = 1e-10):
         """
         goes to reciprocal space and solves 
             self \cdot x = other

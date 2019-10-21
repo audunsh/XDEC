@@ -861,7 +861,8 @@ np.save("fitt_diff_zoom_.npy", Z)
 #for i in [0.1,0.2,0.3,0.4,0.5,0.75,1.0,2.0,3.0,4.0,5.0]:
 
 
-for i in [.9,.8,.7,.6,.5,.4,.3,.2,.15,.1,.09]:
+#for i in [.9,.8,.7,.6,.5,.4,.3,.2,.15,.1,.09]:
+for i in [.3,.2,.15,.1,.09]:
     print("================***")
     print(i)
     #test_x_lih_ao(attenuation =i,coulomb_extent = (7,7,7), JKa_extent = (7,7,7))
@@ -883,3 +884,62 @@ for i in [.9,.8,.7,.6,.5,.4,.3,.2,.15,.1,.09]:
 #test_x_(attenuation = 1.0)
 
 #i = 7
+
+
+def test_orthonormality():
+    p = pr.prism("/Users/audunhansen/papers/pao-paper/results/LiH_122018/Crystal/LiH_111218.d12")
+    os.environ["LIBINT_DATA_PATH"] = os.getcwd()
+    print(p.get_libint_basis())
+
+
+    os.environ["LIBINT_DATA_PATH"] = os.getcwd()
+
+    
+    c = tp.tmat()
+
+
+    c.load("/Users/audunhansen/papers/pao-paper/results/LiH_122018/crystal_reference.npy")
+
+    sblocks = PRI.compute_onebody(p,c,c.coords).reshape(11,c.coords.shape[0], 11).swapaxes(0,1)
+    print(c.coords.shape, sblocks.shape)
+
+    #ssspssp
+
+    #c.blocks = c.blocks[:,np.array([0,1,2,    5,4,3,    6,7,    10,9,8]),:]
+
+    s = tp.tmat()
+    s.load_nparray(sblocks, c.coords)
+
+    smo = c.tT().circulantdot(s.circulantdot(c))
+    for coord in s.coords:
+        print(coord, np.max(np.abs(smo.cget(coord))))
+
+
+    auxbasis = PRI.basis_trimmer(p, "inputs/cc-pvtz-ri.g94", alphacut = .4)
+    f = open("ri-fitbasis.g94", "w")
+    f.write(auxbasis)
+    f.close()
+
+    #print(c.cget([0,0,0]))
+    #print(c.cget([-1,0,0]))
+
+    # test integrals in refcell 
+
+    ib = PRI.integral_builder_static(c,p,attenuation = .2, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=True, extent_thresh=1e-10, robust = False)
+    i0, ishape0 = ib.getorientation([0,0,1],[1,0,0])
+    i1, ishape1 = ib.getorientation([1,0,0],[0,0,1])
+
+    print(i0.cget([0,0,0]).reshape(ishape0) - i1.cget([0,0,0]).T.reshape(ishape1))
+
+    
+
+    
+
+
+#def test_symmetry():
+
+
+
+#test_orthonormality()
+#test_x_(.3) #test lih ao integrals
+

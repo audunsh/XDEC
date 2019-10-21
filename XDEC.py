@@ -900,7 +900,7 @@ class fragment_amplitudes():
                 for mM in np.arange(N_occ):
                     M = self.d_ii.coords[mM]
 
-                    if M[0]>=0: #?
+                    if True: #M[0]>=0: #?
 
                         # Get exchange block coordinates
                         ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM + M) ]
@@ -928,8 +928,12 @@ class fragment_amplitudes():
                             #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
                             #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
 
-                            sequence.append([ddL_M, mM, ddM_M, 1, ddL, mM , ddM,0])  # exchange
-                            sequence.append([ddL_M, mM, ddM_M, 1, ddM, mM_, ddL,1]) # exchange, transposed
+                            #sequence.append([ddL_M, mM, ddM_M, 1, ddL, mM , ddM,0])  # exchange
+                            #sequence.append([ddL_M, mM, ddM_M, 1, ddM, mM_, ddL,1]) # exchange, transposed
+                            
+                            sequence.append([ddL, mM, ddM,   1, ddL, mM, ddM,   1]) # direct
+                            sequence.append([ddL, mM, ddM,   1, ddM, mM, ddL,   0]) # direct, transposed
+
             #print("SEQUENCE")
         #print(sequence)
         self.initialize_blocks(sequence)
@@ -988,13 +992,14 @@ class fragment_amplitudes():
  
                         #print(sq_i[k:l]) 
                         # Integrate here, loop over M
+                        t0 = time.time()
                         I, Ishape = self.ib.getorientation(dL, dM)
 
                         for m in sq_i[k:l]:
                             M = self.d_ii.coords[m[1]]
                             ddL, mM, ddM = m[4], m[5], m[6]
                             #print(self.g_x.shape, ddL, mM, ddM)
-                            #print(dL, M, dM)
+                            #rint("Computing:", dL, M, dM)
                             #print(I.cget(M).shape, Ishape)
                             if m[7] == 0:
                                 if m[3] == 0:
@@ -1018,6 +1023,8 @@ class fragment_amplitudes():
                                     #ddL_, mM_, ddM_ = m[4], m[5], m[6]
                                     self.g_x[:, ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)
                                     n_computed_ex += 1
+                        print("Computed RI-integrals ", dL, dM, " in %.2f seconds." % (time.time()-t0))
+                        #print(sq_i)
 
 
                         k = l*1
@@ -1054,6 +1061,8 @@ class fragment_amplitudes():
         Compute fragment energy
         """
         e_mp2 = 0
+        e_mp2_direct = 0
+        e_mp2_exchange = 0
         N_virt = self.n_virtual_cells
         
         mM = 0 #occupied index only runs over fragment
@@ -1063,25 +1072,39 @@ class fragment_amplitudes():
         for ddL in np.arange(N_virt):
             dL = self.d_ia.coords[ddL]
             dL_i = self.d_ia.cget(dL)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-            
-            for ddM in np.arange(N_virt):
-                dM =  self.d_ia.coords[ddM]
-                dM_i = self.d_ia.cget(dM)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+            # Doublecount? dL == dM
 
-                # Using multiple levels of masking, probably some other syntax could make more sense
-                
-                #g_direct = self.g_d[:,ddL,:,mM, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-                #g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
-                g_direct = self.g_d[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-                g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-               
-                #print(g_direct.shape)
-                #print(g_exchange.shape)
-                #print(ddL, mM, ddM, np.max(np.abs(g_direct)), np.max(np.abs(g_exchange)))
-                #t = self.t2[:,ddL,:,mM, :, ddM, :]#[self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-                t = self.t2[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-                
-                e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+
+
+            for ddM in np.arange(N_virt):
+
+                    dM =  self.d_ia.coords[ddM]
+                    dM_i = self.d_ia.cget(dM)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+
+                    # Using multiple levels of masking, probably some other syntax could make more sense
+                    
+                    g_direct = self.g_d[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
+                    #g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
+                    #g_direct = self.g_d[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
+                    #g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
+                    
+                    g_exchange = self.g_d[:,ddM,:,0, :, ddL, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
+                    #g_exchange = self.g_d[:,ddM,:,mM, :, ddL, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
+                    
+                    #print(g_direct.shape)
+                    #print(g_exchange.shape)
+                    #print(ddL, mM, ddM, np.max(np.abs(g_direct)), np.max(np.abs(g_exchange)))
+                    t = self.t2[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
+                    #t = self.t2[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
+                    #gd2, ex  =np.einsum("iajb,iajb",t,g_direct, optimize = True) , np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+                    #e_mp2_direct += 2*gd2
+                    #e_mp2_exchange += ex
+
+                    #print(np.linalg.norm(self.g_d[:,ddL,:,mM, :, ddM, :].reshape(2*9,2*9).T.reshape(2,9,2,9) - self.g_x[:,ddL,:,mM, :, ddM, :]))
+                    #print("direct, exchange at:", dL, dM, " = ", ddL, ddM, " = ", gd2, ex)# #, np.linalg.norm(self.t2[:,ddL,:,mM, :, ddM, :]),np.linalg.norm(self.g_d[:,ddL,:,mM, :, ddM, :]),np.linalg.norm(self.g_x[:,ddL,:,mM, :, ddM, :]) )
+                    #print(np.max(np.abs(t)), np.max(np.abs(g_direct)), np.max(np.abs(g_exchange)))
+                    e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+        #print("E TOt", e_mp2_direct, e_mp2_exchange)
         return e_mp2
     
     
@@ -1198,8 +1221,11 @@ class fragment_amplitudes():
                                 # For fragments, exchange only required for only M = (0,0,0) 
                                 # EOS always has the two occupied indices in the fragment, i.e. inside the refcell
                                 if np.sum(M**2) == 0:
-                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
-                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
+                                    #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
+                                    #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
+                                    sequence.append([ddL, mmM, ddM,   1, ddL, mmM, ddM,   1]) # direct
+                                    sequence.append([ddL, mmM, ddM,   1, ddM, mmM_, ddL,  0]) # direct, transposed
+
 
 
                                 #self.init_cell(ddL, mmM, ddM)
@@ -1267,9 +1293,12 @@ class fragment_amplitudes():
 
                                 # For fragments, exchange only required for only M = (0,0,0) 
                                 # EOS always has the two occupied indices in the fragment, ie the refcell
-                                if np.sum(M**2) == 0:
-                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0]) # exchange
-                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
+                                if np.abs(mmM) < 1:
+                                    #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0]) # exchange
+                                    #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
+                                    sequence.append([ddL, 0, ddM,   1, ddL, 0, ddM,   1]) # exchange
+                                    sequence.append([ddL, 0, ddM,   1, ddM, 0, ddL,   0]) # exchange, transposed
+
 
 
                                 #self.init_cell(ddL, mmM, ddM)
@@ -1328,8 +1357,11 @@ class fragment_amplitudes():
                                 # For fragments, exchange only required for only M = (0,0,0) 
                                 # EOS always has the two occupied indices in the fragment, ie the refcell
                                 if np.sum(M**2) == 0:
-                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
-                                    sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
+                                    #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
+                                    #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
+                                    sequence.append([ddL, mmM, ddM,   1, ddL, mmM, ddM,   1]) # direct
+                                    sequence.append([ddL, mmM, ddM,   1, ddM, mmM_, ddL,  0]) # direct, transposed
+
 
 
 
@@ -1404,8 +1436,8 @@ class fragment_amplitudes():
                         tnew -= np.einsum("iajKc,Kbc->iajb", self.t2[:, dL, :, M, :, :, :], Fbc)
                         
                         # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                        #Fki = self.f_mo_ii.cget(-1*pair_extent)
-                        #tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
+                        # Fki = self.f_mo_ii.cget(-1*pair_extent)
+                        # tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
                         
 
 
@@ -1427,7 +1459,7 @@ class fragment_amplitudes():
 
 
                         
-
+                        
                         # Conceptually simpler approach
                         # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
                         Fki = self.f_mo_ii.cget(-1*pair_extent)
@@ -1754,9 +1786,11 @@ if __name__ == "__main__":
     if args.disable_static_mem:
         ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust)
     else:
-        ib = PRI.integral_builder_static(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, jpm_screening=args.jpm_screening)
+        ib = PRI.integral_builder_static(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, jpm_screening=args.jpm_screening, JKa_extent= [6,6,6])
     
     print("Number of (J|mn) tensors:", len(ib.cfit.Jmn))
+
+
     
     
 
@@ -1811,7 +1845,7 @@ if __name__ == "__main__":
 
 
     center_fragments = dd.atomic_fragmentation(p, d, 3.0)
-    center_fragments = np.array(center_fragments)[::-1]
+    #center_fragments = np.array(center_fragments)[::-1]
     #center_fragments = [[1], [0]]
 
     print(" ")
@@ -1852,6 +1886,9 @@ if __name__ == "__main__":
         dE_outer = 10
 
         print("Initial fragment energy: %.8f" % E_prev)
+        #print("Target value  (3D Neon): -0.1131957501902151 (single cell)")
+        #print("Target value  (3D Neon): -0.113287565289")
+        
         print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
         print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))        
             
@@ -1859,6 +1896,10 @@ if __name__ == "__main__":
             print("Running fragment optimization for:")
             print(fragment)
             #print("Initial cutoffs:")
+
+            n_virtuals_ = []
+            virtu_cut_  = []
+            
 
             
             while dE_outer>args.fot:
@@ -1894,8 +1935,18 @@ if __name__ == "__main__":
                     print(" ")
                     e_virt.append(E_prev)
                     E_prev = E_new
+
+                    n_virtuals_.append(a_frag.n_virtual_tot)
+                    virtu_cut_.append(a_frag.virtual_cutoff)
                     
                     #print("---")
+                    print("Energy")
+
+                    print(e_virt)
+                    print("Number of virtuals")
+                    print(n_virtuals_)
+                    print("Virtual cutoff distance")
+                    print(virtu_cut_)
                 print("Converged virtual space, expanding occupied space")
                 print(e_virt)
                 #dE = 10
