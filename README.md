@@ -10,7 +10,7 @@
 'module load Boost/1.68.0-intel-2018b-Python-3.6.6'
 'module load Anaconda3/2019.07'
 2. Clone libint:
-'git clone https://github.com/evaleev/libint.git'
+'git clone >https://github.com/evaleev/libint.git'
 2a. From inside libint-folder:
 './autogen.sh'
 2b. Make a build-directory outside of the libint-tree, enter it and run
