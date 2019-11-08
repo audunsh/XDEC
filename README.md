@@ -10,7 +10,7 @@
 'module load Boost/1.68.0-intel-2018b-Python-3.6.6'
 'module load Anaconda3/2019.07'
 2. Clone libint:
-'git clone >https://github.com/evaleev/libint.git'
+'git clone https://github.com/evaleev/libint.git'
 2a. From inside libint-folder:
 './autogen.sh'
 2b. Make a build-directory outside of the libint-tree, enter it and run
@@ -21,4 +21,4 @@
 'git clone https://github.com/pybind/pybind11.git'
 4. Clone the XDEC repository:
 5. Install the libint wrapper:
-'c++ -O3 -Wall -shared -fPIC -std=c++11 lwrap.cpp -o lwrap`python3-config --extension-suffix`  -I/cluster/software/Anaconda3/2019.07/include/python3.7m/ -I/cluster/home/[username]/pybind11/include/ -I/cluster/home/[username]/include -I/cluster/home/[username]/libint_install/include -L/cluster/home/[username]/libint_install/lib -L/cluster/home/[username]/lib -L/usr/local/lib -I/usr/local/include -lm -lgmpxx -lgmp -lint2 '
+'c++ -O3 -Wall -shared -fPIC -std=c++11 lwrap.cpp -o lwrap`python3-config --extension-suffix`  -I/cluster/software/Anaconda3/2019.07/include/python3.7m/ -I/cluster/home/[username]/pybind11/include/ -I/cluster/home/[username]/include -I/cluster/home/[username]/libint_install/include -L/cluster/home/[username]/libint_install/lib -L/cluster/home/[username]/lib -L/usr/local/lib -I/usr/local/include -lm -lgmpxx -lgmp -lint2'
