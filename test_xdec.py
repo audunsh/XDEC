@@ -828,6 +828,68 @@ def test_extent_neon_fcc(attenuation = .4, separation = np.array([0,0,0])):
     
     print(" ")
 
+def test_extent_dproject(attenuation = .4, separation = np.array([0,0,0]), xi0 = 1e-10, xi1 = 1e-3):
+    
+    p = pr.prism("/Users/audunhansen/papers/pao-paper/results/dproject/Crystal/dproject.d12")
+    os.environ["LIBINT_DATA_PATH"] = os.getcwd()
+
+    Nocc = 6
+    
+    coords = tp.lattice_coords([3,3,3])
+    c = tp.tmat()
+
+
+    c.load_nparray(np.ones((coords.shape[0], p.get_n_ao(),p.get_n_ao()), dtype = float), coords)
+    c.blocks *= 0
+
+    c0 = np.zeros((p.get_n_ao(),p.get_n_ao()), dtype = float) #coefficients in refcell
+    c0 = 0*np.eye(p.get_n_ao(), dtype = float)
+    c0[0,0] = 1.0
+    #c0[:,1] = 0.0
+    
+    c0[2,Nocc] = 1.0 #first virtual
+
+    c0[:,2+Nocc] = 1.0 #third virtual
+    c0[:,3+Nocc] = 1.0 #third virtual
+
+    c.blocks[ c.mapping[ c._c2i([0,0,0])]] = c0 #np.eye(p.get_n_ao(), dtype = float)
+
+    c1 = np.zeros((p.get_n_ao(),p.get_n_ao()), dtype = float) #coefficients in refcell
+    c1[0,1] = 1.0 #second occupied
+    c1[:,1+Nocc] = 1.0 #second virtual
+    c1[:,2+Nocc] = 1.0 #third virtual
+    
+    c.blocks[ c.mapping[ c._c2i([-1,0,0])]] = c1 #np.eye(p.get_n_ao(), dtype = float)
+
+
+    # generate fit-basis
+
+    auxbasis = PRI.basis_trimmer(p, "inputs/cc-pvdz-ri.g94", alphacut = .4)
+    f = open("ri-fitbasis.g94", "w")
+    f.write(auxbasis)
+    f.close()
+
+    #print(c.cget([0,0,0]))
+    #print(c.cget([-1,0,0]))
+
+    # test integrals in refcell 
+
+    ib = PRI.integral_builder_static(c,p,attenuation = attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=True, xi0 = xi0, xi1 = xi1)
+    i0, ishape = ib.getorientation([0,0,0],separation)
+    pqRrs_ex = PRI.compute_pqrs_(p, np.array([[0,0,0]]),np.array([[0,0,0]]),np.array([separation]))
+    v = np.arange(p.get_n_ao())
+    #i
+    print("Integral(ao):  ( (000)0, (000)2 | (000) 0 , (000)(0+1+2+3+4+...+N_ao) )")
+    print("Fit         :", i0.cget([0,0,0]).reshape(ishape)[0,0,0,3]) # = (0,2,0,:)_fit
+    print("Exact (1)   :",  np.sum(pqRrs_ex[0,2,0,v])) # = (0,2|0,:) libint
+    print("Exact (2)   :",  np.sum(pqRrs_ex[0,Nocc,0,v])) # = (0,2|0,:) libint
+    #pqRrs_ex = PRI.compute_pqrs_(p, np.array([[0,0,0]]),np.array([[0,0,0]]),np.array([[-1,0,0]]))
+    print("Diff        :",  i0.cget([0,0,0]).reshape(ishape)[0,0,0,3] - np.sum(pqRrs_ex[0,2,0,v]) ) # = (0,2|0,:) libint
+    #print("Diff        :", np.abs( i0.cget([0,0,0]).reshape(ishape)[0,0,1,1]) - np.sum(pqTrs_ex[0,2,0,v]))
+
+    
+    print(" ")
+
 
 
 """
@@ -860,7 +922,7 @@ np.save("fitt_diff_zoom_.npy", Z)
 
 #for i in [0.1,0.2,0.3,0.4,0.5,0.75,1.0,2.0,3.0,4.0,5.0]:
 
-
+"""
 #for i in [.9,.8,.7,.6,.5,.4,.3,.2,.15,.1,.09]:
 for i in [.3,.2,.15,.1,.09]:
     print("================***")
@@ -882,7 +944,7 @@ for i in [.3,.2,.15,.1,.09]:
 #    test_x_lih_ao(attenuation =.5, coulomb_extent = (8,8,8), JKa_extent = (i,i,i))
 
 #test_x_(attenuation = 1.0)
-
+"""
 #i = 7
 
 
@@ -943,3 +1005,4 @@ def test_orthonormality():
 #test_orthonormality()
 #test_x_(.3) #test lih ao integrals
 
+test_extent_dproject(attenuation=0.25, xi0 = 1e-8, xi1 = 1e-5)

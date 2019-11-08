@@ -389,7 +389,7 @@ class tmat():
         
         # Test input data types
         assert(self.coords.dtype == 'int64'),   "tmat: Warning: coords not int64 (dtype: %s)." % self.coords.dtype
-        assert(self.blocks.dtype == 'float64'), "tmat: Warning: blocks not float64 (dtype: %s)." % self.blocks.dtype
+        assert(self.blocks.dtype == 'float64' or self.blocks.dtype == 'float32'), "tmat: Warning: blocks not float64 (dtype: %s)." % self.blocks.dtype
         assert(self.delim.dtype ==  'int64'),   "tmat: Warning: delim not int64 (dtype: %s)." % self.delim.dtype
         
                                                                                     
@@ -450,7 +450,7 @@ class tmat():
             
         self.blocks = blocks
         
-        self.coords = coords
+        self.coords = np.array(coords)
         
         self.domain = np.amax(np.absolute(self.coords), axis=0) + 1 #add zero blocks along edges
         
@@ -652,7 +652,7 @@ class tmat():
             
             self.blocks = np.append(self.blocks,
                                     np.zeros(self.blockshape,
-                                             dtype = float))
+                                             dtype = self.blocks.dtype))
             self.zero_padded = True
             
         # new_shape = (self.coords.shape[0] + 1,
@@ -1251,6 +1251,31 @@ class tmat():
                 ret.blocks[ ret.mapping[ ret._c2i(c1+c2) ] ]+= bb
                 
         return ret
+    
+    #def fft(self):
+
+    def kspace_svd_lowdin(self, screening_threshold = 1e-10):
+        # construct self^-.5
+        n_points = np.max(np.array([n_lattice(self)]), axis = 0)
+        self_k = transform(self, np.fft.fftn, n_points = n_points)
+
+        u = tmat()
+        u.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], self_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        u.blocks*=0.0
+
+        for i in np.arange(len(self_k.blocks)-1):
+            u_,s_,vh_ = np.linalg.svd(self_k.blocks[i])
+
+            screen = s_**-.5>=screening_threshold
+            #print(screen)
+            
+
+
+            u.blocks[i] = np.dot(vh_.T.conj()[:, screen], np.dot(np.diag(s_[screen]**-.5), u_.T.conj())[screen,:])
+
+        u = transform(u, np.fft.ifftn, n_points = n_points, complx = False)
+        return u
+
 
     def kspace_svd(self):
         n_points = np.max(np.array([n_lattice(self)]), axis = 0)
@@ -1283,7 +1308,25 @@ class tmat():
         s = transform(s, np.fft.ifftn, n_points = n_points, complx = False)
         return u,s,vh
 
-    def kspace_svd_solve(self, other, tolerance = 1e-10):
+    def kspace_project_out(self, other):
+        """
+        project out other from self
+        """
+
+        n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
+        self_k = transform(self, np.fft.fftn, n_points = n_points)
+        other_k = transform(other, np.fft.fftn, n_points = n_points)
+
+        for i in np.arange(len(self_k.blocks)-1):
+            self_k.blocks[i] -= other_k.blocks[i]
+
+        
+
+
+
+
+
+    def kspace_svd_solve(self, other, tolerance = 1e-10, complex_precision = np.complex128):
         """
         goes to reciprocal space and solves 
             self \cdot x = other
@@ -1291,22 +1334,26 @@ class tmat():
             u s vh = self
         returns x
         """
+        #print(self.blocks.shape, other.blocks.shape)
 
         n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
+        #print(n_points)
         self_k = transform(self, np.fft.fftn, n_points = n_points)
         other_k = transform(other, np.fft.fftn, n_points = n_points)
 
+        
+
         ret = tmat()
-        ret.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], other_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        ret.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], other_k.blockshape[1]), dtype = complex_precision), self_k.coords, safemode = False)
         #ret = self_k*1.0
         ret.blocks*=0.0
-
+        
 
         
         for i in np.arange(len(self_k.blocks)-1):
             u_,s_,vh_ = np.linalg.svd(self_k.blocks[i])
             b = other_k.blocks[i]
-            t = s_>tolerance
+            t = s_>tolerance #screening
 
             pinv = np.dot(vh_[t,:].conj().T, np.dot(np.diag(s_[t]**-1), u_[:,t].conj().T))
             x = np.dot(pinv, b)
@@ -1332,6 +1379,28 @@ class tmat():
             """
 
             ret.blocks[i] = x #np.linalg.solve(SVH, Ub)
+        ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
+        ret.set_precision(self.blocks.dtype)
+        return ret
+
+    def kspace_cholesky(self):
+        """
+        # 
+        """
+        n_points = n_lattice(self)
+        self_k = transform(self, np.fft.fftn, n_points = n_points)
+
+
+        ret = tmat()
+        ret.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], self.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        #ret = self_k*1.0
+        ret.blocks*=0.0
+
+        #ret.blocks[:-1] = np.einsum("ijk,ikl->ijl", self_k.blocks[:-1], other_k.blocks[:-1], optimize = True)
+
+        for i in np.arange(len(self_k.blocks)-1):
+            ret.blocks[i] = np.linalg.cholesky(self_k.blocks[i])
+
         ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
         return ret
 
@@ -1395,9 +1464,11 @@ class tmat():
 
         ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
         return ret
+    def set_precision(self, precision):
+        self.blocks = np.array(self.blocks, dtype = precision)
 
 
-    def circulantdot(self, other, complx = False):
+    def circulantdot(self, other, complx = False, screening = 1e-10):
         """
         Computes the dot product assuming a circulant matrix structure
         """
@@ -1420,7 +1491,17 @@ class tmat():
             ret.blocks[i] = np.dot(self_k.blocks[i],other_k.blocks[i])
 
         ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
-        return ret
+        
+        if screening is not None:
+            result = tmat()
+            mx = np.max(np.abs(ret.blocks[:-1]), axis = (1,2))>screening
+            result.load_nparray(ret.blocks[:-1][mx], ret.coords[mx])
+            result.set_precision(self.blocks.dtype)
+            #print(np.sum(mx), mx.shape)
+            return result
+        else:
+
+            return ret
 
 
 

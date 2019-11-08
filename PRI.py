@@ -63,16 +63,23 @@ def occ_virt_split(c,p):
     Split matrix c(tmat object) in occupied and virtual columns depending on information contained in p (prism object)
     Returns two tmat objects c_occ and c_virt (typically coefficients)
     """
-    print("virt0:", p.get_nocc()+p.n_core ) 
+    #print("virt0:", p.get_nocc()+p.n_core ) 
     c_virt = tp.tmat()
     c_virt.load_nparray(c.blocks[:-1,:,p.get_nocc()+p.n_core:], c.coords[:], screening = False)
 
-    print("occ:", p.n_core,p.get_nocc()+p.n_core)
+    #print("occ:", p.n_core,p.get_nocc()+p.n_core)
+    #c_occ = tp.tmat()
+    #c_occ.load_nparray(c.blocks[:-1,:,p.n_core:p.get_nocc()+p.n_core], c.coords[:], screening = False)
+    #print(c_occ.blocks.shape)
+    
+    
     c_occ = tp.tmat()
-    c_occ.load_nparray(c.blocks[:-1,:,p.n_core:p.get_nocc()+p.n_core], c.coords[:], screening = False)
+    c_occ.load_nparray(c.blocks[:-1,:,p.n_core:p.get_nocc()+p.n_core], c.coords[:], screening = True)
+    
+    #print(c_occ.blocks.shape)
     return c_occ, c_virt
 
-def get_xyz(p, t = np.array([[0,0,0]])):
+def get_xyz(p, t = np.array([[0,0,0]]), conversion_factor = 0.5291772109200000):
     """
     Generate xyz input file for libint
     Note that Libint automatically converts from angstrom, so we have to preconvert to angstrom
@@ -85,7 +92,7 @@ def get_xyz(p, t = np.array([[0,0,0]])):
     ptable = [None, "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne"]
     sret = "%i\n\n" % len(charge)
     #conversion_factor = 0.5291972108
-    conversion_factor = 0.5291772109200000 #<.-. this one, confirmed in Libint source
+     #<.-. this one, confirmed in Libint source
     #conversion_factor = 0.52917721067 #**-1
     for i in range(len(charge)):
         sret += "%s %.15f %.15f %.15f\n" % (ptable[int(charge[i])],conversion_factor*pos[i][0], conversion_factor*pos[i][1], conversion_factor*pos[i][2])
@@ -317,7 +324,7 @@ def compute_Jmn(p, s, attenuation = 0.0, auxname = "cc-pvdz", coulomb = False, n
         lint.set_integrator_params(attenuation)
     
     vint = np.array(lint.get_pqr(atomsJ, auxname, atomsm, bname, atomsn, bname))
-    #print(vint.shape)
+    #print(vint.shape, nshift)
     
     blockshape = (vint.shape[0], vint.shape[1]*vint.shape[2])
     
@@ -360,7 +367,7 @@ def compute_Jmn(p, s, attenuation = 0.0, auxname = "cc-pvdz", coulomb = False, n
     return Jmn
 
 
-def compute_onebody(p,s, T = np.array([[0,0,0]]), operator = "overlap"):
+def compute_onebody(p,s, T = np.array([[0,0,0]]), operator = "overlap", conversion_factor = .5291772109200000):
     """
     Computes integrals of the type 
         ( 0 p | O^ | T q)
@@ -381,11 +388,11 @@ def compute_onebody(p,s, T = np.array([[0,0,0]]), operator = "overlap"):
     f.close()
     
     f = open(atomsJ, "w")
-    f.write(get_xyz(p))
+    f.write(get_xyz(p, conversion_factor=conversion_factor))
     f.close()
     
     f = open(atomsK, "w")
-    f.write(get_xyz(p, T))
+    f.write(get_xyz(p, T, conversion_factor=conversion_factor))
     f.close()    
     
     lint = li.engine()
@@ -616,7 +623,120 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
     big_tmat = tp.tmat()
     big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
     return big_tmat #return expansion region in form of toeplitz matrix
+
+def estimate_attenuation_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc-pvdz-ri"):
+    """
+    Estimate the attenuation domains as described in algorithm 3 in PRI-notes
+
+    """
+    # Generate a grid of cells
+    coords = tp.lattice_coords([12,12,12]) #assumed max extent
+
+    # Compute distance^2 of cells
+    d2 = np.sum(p.coor2vec(coords)**2, axis = 1)
+
+    # Sort in increasing distance
+    coords = coords[ np.argsort(d2) ]
+
+    # Sort the distances as well
+    d2 = d2[np.argsort(d2)]
+
+    # sort into discrete bins
+    d2_unique = np.unique(d2) #unique distances
+    indices = [] # indices/bins, containing the outermost index at a given distance
+    for i in d2_unique:
+        indices.append(np.sum(d2<=i))
+
+    indices = np.array(indices)
+
+
+    # Determine the cutoff between m-n
+
+    for m in indices:
+        cube = np.zeros((2,3), dtype = int)
+        big_tmat = tp.tmat()
+
+        big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
+
+        Jmnc = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = [coords[m]])
+        #print(m, np.sqrt(d2)[m], np.max(np.abs(Jmnc.blocks[:-1])))
+        if np.max(np.abs(Jmnc.blocks[:-1]))<xi0:
+            #print(m)
+            break
+
+    xi_0_domain = coords[:m]*1
+    xi_domains = []
     
+    # Determine cutoff between J and mn
+    
+    for m in xi_0_domain:
+        
+        
+        for n in indices:
+            cube = np.zeros((2,3), dtype = int)
+            cube[1] = coords[n]
+            
+            big_tmat = tp.tmat()
+
+            big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
+            # coords[m]
+            Jmnc = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = [m])
+            
+            if np.max(np.abs(Jmnc.cget(coords[n])))<xi0:
+                xi_domains.append([m, tp.tmat()])
+                xi_domains[-1][1].load_nparray(np.ones((coords[:n].shape[0], 2,2),dtype = float),  coords[:n])
+                break
+
+    return xi_domains
+
+def estimate_center_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc-pvdz-ri"):
+    """
+    Estimate the attenuation domains as described in algorithm 3 in PRI-notes
+
+    """
+    # Generate a grid of cells
+    coords = tp.lattice_coords([12,12,12]) #assumed max extent
+
+    #print(coords)
+
+    # Compute distance^2 of cells
+    d2 = np.sum(p.coor2vec(coords)**2, axis = 1)
+
+    # Sort in increasing distance
+    coords = coords[ np.argsort(d2) ]
+
+    # Sort the distances as well
+    d2 = d2[np.argsort(d2)]
+
+    # sort into discrete bins
+    d2_unique = np.unique(d2) #unique distances
+    indices = [] # indices/bins, containing the outermost index at a given distance
+    for i in d2_unique:
+        indices.append(np.sum(d2<=i))
+
+    indices = np.array(indices)
+    
+    xi_domains =  tp.tmat()
+    
+    for n in indices:
+        
+        cube = np.zeros((2,3), dtype = int)
+        cube[1] = coords[n]
+        
+        big_tmat = tp.tmat()
+
+        big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
+        
+        Jmnc = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False)
+        
+        if np.max(np.abs(Jmnc.cget(coords[n])))<xi0:
+            
+            xi_domains.load_nparray(np.ones((coords[:n].shape[0], 2,2),dtype = float),  coords[:n])
+            break
+
+    return xi_domains
+
+
 def estimate_attenuation_distance_(p, attenuation = 0.1, c2 = [0,0,0], thresh = 10e-12, auxname = "cc-pvdz-ri"):
     """
     For a given attenuation parameter, basis and lattice geometry, estimate
@@ -663,6 +783,7 @@ def estimate_attenuation_distance_(p, attenuation = 0.1, c2 = [0,0,0], thresh = 
 
     return big_tmat #return expansion region in form of toeplitz matrix
 
+
 #@numba.autojit()
 def contract_occupied(Jmnc2blocks, Jmnc2coords, ccoords, c_occ_blocks, NL, NJ, Nn, Np, Nq, jpm_screening):
     
@@ -703,15 +824,16 @@ def contract_occupied(Jmnc2blocks, Jmnc2coords, ccoords, c_occ_blocks, NL, NJ, N
         
     return Jmnc_tensors, Jmnc_screening
 
+
 class coefficient_fitter_static():
     """
     Coefficient fitting for the integrator, with integrals stored in memory
     """
 
-    def __init__(self, c, p, attenuation, auxname, JK, JKInv, screening_thresh = 1e-12, robust = False, circulant = True, jpm_screening = 1e-10):
-        cube = tp.lattice_coords([3,3,3]) #assumed max twobody AO-extent (subst. C-S Screening)
-        print("WARNING: MINIMAL FITTING DOMAIN")
-        cube = tp.lattice_coords([3,3,3])
+    def __init__(self, c, p, attenuation, auxname, JK, JKInv, screening_thresh = 1e-12, robust = False, circulant = True, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64):
+        #cube = tp.lattice_coords([3,3,3]) #assumed max twobody AO-extent (subst. C-S Screening)
+        #print("WARNING: MINIMAL FITTING DOMAIN")
+        #cube = tp.lattice_coords([3,3,3])
         #cube = np.array([[-1,0,0],[1,0,0],[0,0,0],[0,1,0],[0,-1,0],[0,0,1], [0,0,-1]])
         self.robust = robust
         self.coords = []
@@ -724,25 +846,40 @@ class coefficient_fitter_static():
         self.JKInv = JKInv
         self.circulant = circulant
         self.c_occ, self.c_virt = occ_virt_split(self.c,p)
+        self.float_precision = float_precision
         if self.robust:
             self.Jmnc = []
         #big_tmat = estimate_attenuation_distance_(p, attenuation = attenuation, auxname = auxname, thresh = 1e-5)
-                
-        for c2 in cube:
+        
+
+        xi_domain = estimate_attenuation_domain(p, attenuation = attenuation, xi0 = xi0,  auxname = auxname)
+
+        #for c2 in cube:
+        for i in np.arange(len(xi_domain)):
             # Compute JMN with nsep =  c2
+
+            c2, big_tmat = xi_domain[i]
             
-            big_tmat = estimate_attenuation_distance(p, attenuation = attenuation, c2 = c2, auxname = auxname, thresh = screening_thresh)
+            #big_tmat = estimate_attenuation_distance(p, attenuation = attenuation, c2 = c2, auxname = auxname, thresh = screening_thresh)
             
-            
+                
             
             Jmnc2 = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
+            Jmnc2.set_precision(self.float_precision)
             #Jmnc2 = compute_Jmn(p,self.JK, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
+            self.coords.append(c2)
+            self.Jmn.append( Jmnc2 ) #New formulation without uppercase-transpose
+
+            #print("Jmn fit of dM=:", c2," with extent ",  np.max(np.abs(Jmnc2.coords), axis = 0), " and shape ", Jmnc2.blocks.shape[0], "and max value:", np.max(np.abs(Jmnc2.blocks)))
             
-            if robust:
-                Jmnc2_c = compute_Jmn(p,big_tmat, attenuation = 0.0, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
+
+            print("Intermediate overlaps (LJ|0mNn) with N =", c2, " included with %i blocks and maximum absolute %.2e" % (Jmnc2.blocks.shape[0],np.max(np.abs(Jmnc2.blocks)) ))
+
+            #if robust:
+            #    Jmnc2_c = compute_Jmn(p,big_tmat, attenuation = 0.0, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
 
 
-                
+            """    
             if np.max(np.abs(Jmnc2.blocks))>screening_thresh:
                 
                 print("Jmn fit of dM=:", c2," with extent ",  np.max(np.abs(Jmnc2.coords), axis = 0), " and shape ", Jmnc2.blocks.shape[0], "and max value:", np.max(np.abs(Jmnc2.blocks)))
@@ -751,21 +888,112 @@ class coefficient_fitter_static():
                 self.Jmn.append( Jmnc2 ) #New formulation without uppercase-transpose
                 if self.robust:
                     self.Jmnc.append(Jmnc2_c)
+            """
         self.coords = np.array(self.coords)
         self.c0 = np.argwhere(np.all(self.coords==np.array([0,0,0]), axis = 1))[0][0]
         
         self.Jmnc_tensors = []
         self.Jmnc_screening = []
-        
+
+        self.Jmnc_sparse_tensors = []
+        self.Jmnc_sparse_screening = []
+        total = 0
+        compr = 0
+
+
+
+        # NEW VERSION / ALTERNATE IMPLEMENTATION
 
         t0 = time.time()
         #jpm_screening = 1e-10
+
+        self.virtual_coords = []
+        #self.Jmnc_sparse_tensors.append([])
+        #self.Jmnc_sparse_screening.append([])
+        
+        
+        for coord in np.arange(self.c.coords.shape[0]):
+            # For all offsets in the coefficient matrix
+            
+            
+
+            NL = self.c.coords.shape[0] # Number of cells
+            NJ = self.Jmn[0].blockshape[0] # Number of aux functions
+            self.NJ = self.Jmn[0].blockshape[0]
+            Np = self.c_occ.blockshape[1] # Number of occupieds
+            Nq = self.c_virt.blockshape[1] # Number of virtuals
+            Nn = self.c_occ.blockshape[0] # Number of AO functions
+
+
+            tj = np.zeros((NJ, Np, NL, Nn), dtype = float) #LJpn
+
+            #self.virtual_coords = []
+
+            #print("Contracting occupieds (LJ|0p Mn) for L = ", self.c.coords[coord])
+            
+            for i in np.arange(self.coords.shape[0]):
+                # For all dN offsets in (LJ|0m dN n)
+                
+                Jmnc2 = self.Jmn[i]
+                Jmnc_coords = -self.c.coords - self.coords[i] #HERE - - - 
+                Jmnc2blocks = Jmnc2.cget(Jmnc_coords).reshape(NL, NJ,Nn,Nn )
+                
+                
+
+                occupied_coords = -Jmnc_coords - self.c.coords[coord]
+                
+                cb = self.c_occ.cget(occupied_coords)
+
+                #self.virtual_coords.append(occupied_coords - self.coords[i])
+
+
+                
+
+                for k in np.arange(NL):
+                    b1 = Jmnc2blocks[k].swapaxes(1,2).reshape(NJ*Nn, Nn) #Jn,m
+                    b2 = cb[k] #m,p
+                    tj[:,:,k,:] += np.dot(b1,b2).reshape(NJ, Nn, Np).swapaxes(1,2) #Jn,p->J,p,k,n
+            
+
+            tj = tj.reshape(NJ*Np, NL*Nn) #L J p n -> p J L n -> J p L n
+
+
+            # further delimination
+            screening = []
+            vectors   = []
+
+            indx = np.arange(tj.shape[1])
+
+            for k in np.arange(tj.shape[0]):
+                vindx = np.abs(tj[k,:])>xi1 # screening step, these elements are retained
+                screening.append(indx[vindx])
+                vectors.append( tj[k,vindx] )
+                total += tj.size
+                compr += vectors[-1].size
+            
+
+            self.Jmnc_sparse_tensors.append(vectors)
+            self.Jmnc_sparse_screening.append(screening)
+            print("\r>> Contracted occupieds (LJ|0p Mn) for L = ", self.c.coords[coord], "(%.2f percent complete, compression rate: %.2e)" % (100.0*coord/self.c.coords.shape[0], 100.0*compr/total), end='')
+ 
+        print("Screening-induced sparsity is at %.2e percent." % (100.0*compr/total))
+        
+
+
+
+
+
+
+        """
+
         for i in np.arange(self.coords.shape[0]):
+
+            print("Contracting occupieds (LJ|0p Mn) for M =", self.coords[i])
 
             Jmnc2 = self.Jmn[i]
 
 
-            NL = Jmnc2.coords.shape[0]
+            
             NJ = Jmnc2.blockshape[0] # Number of aux functions
             Np = self.c_occ.blockshape[1] # Number of occupieds
             Nq = self.c_virt.blockshape[1] # Number of virtuals
@@ -776,88 +1004,74 @@ class coefficient_fitter_static():
             self.Jmnc_tensors.append([])
             self.Jmnc_screening.append([])
 
-            Jmnc2blocks = Jmnc2.blocks[:-1].reshape(NL, NJ,Nn,Nn )
+            self.Jmnc_sparse_tensors.append([])
+            self.Jmnc_sparse_screening.append([])
 
-            
-
-
-
-            #Jmnc2blocks.swapaxes(2,3)
-
-            #opath = np.einsum_path("LJmn,Lmp->JpLn", Jmnc2blocks, self.c_occ.cget(-1*Jmnc2.coords), optimize='greedy')
-            #print(opath[1])
-            #tt0 = time.time()
+            # ALTERATION II
+            #Jmnc2blocks = Jmnc2.blocks[:-1].reshape(NL, NJ,Nn,Nn )
 
 
-            #c_occ_blocks = []
-            #for coord in np.arange(c.coords.shape[0]):
-            #    c_occ_blocks.append( self.c_occ.cget(-Jmnc2.coords - self.c.coords[coord]) )
+            Jmnc_coords = -self.c.coords - self.coords[i]
+
+            NL = Jmnc_coords.shape[0]
+            Jmnc2blocks = Jmnc2.cget(Jmnc_coords).reshape(NL, NJ,Nn,Nn )
+
+            self.virtual_coords.append([])
 
 
-            #Jmnc2tensor, screening = contract_occupied(Jmnc2blocks, Jmnc2.coords, c.coords, c_occ_blocks, NL, NJ, Nn, Np, Nq, jpm_screening)
-            #self.Jmnc_tensors.append(Jmnc2tensor)
-            #self.Jmnc_screening.append(screening)
+
             
             
             for coord in np.arange(self.c.coords.shape[0]):
-                #tj = np.einsum("LJmn,Lmp->JpLn", Jmnc2.blocks[:-1].reshape(NL, NJ,Nn,Nn ), self.c_occ.cget(-Jmnc2.coords + self.c.coords[coord]), optimize = True).reshape(NJ*Np, NL*Nn)
-                
-                #tj = np.einsum("LJmn,Lmp->JpLn", Jmnc2blocks, self.c_occ.cget(-Jmnc2.coords - self.c.coords[coord]), optimize = opath[0]).reshape(NJ*Np, NL*Nn)
-                
-                t1 = time.time()
 
-                cb = self.c_occ.cget(-Jmnc2.coords - self.c.coords[coord])
-                
-                
+                # ALTERATION II
+                #
+
+                occupied_coords = -Jmnc_coords - self.c.coords[coord]
+                cb = self.c_occ.cget(occupied_coords)
+                #-Jmnc2.coords - c.coords[coord]
+                # self.c.coords - self.coords[i] - self.c.coords[coord] - self.coords[i]
+                self.virtual_coords[-1].append(occupied_coords - self.coords[i])
+                #self.virtual_coords[-1].append(self.c.coords + self.coords[i] - self.c.coords[coord] )
+
 
                 tj = np.zeros((NJ, Np, NL, Nn), dtype = float) #LJpn
 
-                #t2 = time.time()
-
                 for k in np.arange(NL):
-                    #t3 = time.time()
                     b1 = Jmnc2blocks[k].swapaxes(1,2).reshape(NJ*Nn, Nn) #Jn,m
                     b2 = cb[k] #m,p
-                    #t4 = time.time()
                     tj[:,:,k,:] = np.dot(b1,b2).reshape(NJ, Nn, Np).swapaxes(1,2) #Jn,p->J,p,k,n
-                    #t5 = time.time()
-                    #print("t5-t4 = ",t5-t4)
-                    #print("t4-t3 = ",t4-t3)
-                #t3 = time.time()
-                #print("t3-t2 = ",t3-t2)
+                    
 
                 tj = tj.reshape(NJ*Np, NL*Nn) #L J p n -> p J L n -> J p L n
-                #print(np.max(np.abs(tj - tj2)))
+
+
+                # further delimination
+                screening = []
+                vectors   = []
+
+                indx = np.arange(tj.shape[1])
+
+                for k in np.arange(tj.shape[0]):
+                    vindx = np.abs(tj[k,:])>xi1 # screening step, these elements are retained
+                    screening.append(indx[vindx])
+                    vectors.append( tj[k,vindx] )
+                    total += tj.size
+                    compr += vectors[-1].size
                 
 
-                #tj = contract_occupied(Jmnc2blocks, )
-
-
-                #block = Jmnc2.blocks[:-1].reshape(NL, NJ,Nn,Nn )
-
+                self.Jmnc_sparse_tensors[-1].append(vectors)
+                self.Jmnc_sparse_screening[-1].append(screening)
                 
-                screen = np.max(np.abs(tj), axis = 0)>jpm_screening
 
-
-                
-                self.Jmnc_tensors[-1].append(tj[:, screen])
-
-
-                #print("tj sparsity  :", np.sum(np.abs(tj)>1e-10), tj.size)
-                #print("tj b-sparsity:", np.sum(np.max(np.abs(tj)>1e-10, axis = 0)), tj.shape)
-                self.Jmnc_screening[-1].append(screen)
-                #t4 = time.time()
-                #print("t4-t3 = ",t4-t3)
-                
-            #print("Time.time - tt0 =", time.time() - tt0)
+        print("Screening-induced sparsity is at %.2e percent." % (100.0*compr/total))
+        #del(self.Jmn) # these are obsolete, free up memory
 
         print("Contraction of occupieds:", time.time()-t0)
+        """
+        
     
     
-
-
-
-
     def get(self, coords_q):
         c_occ, c_virt = self.c_occ, self.c_virt
         c = self.c
@@ -865,7 +1079,87 @@ class coefficient_fitter_static():
         Jpq_c = []
         Jpq_c_coulomb = []
 
-        Jpq_coords = self.Jmn[self.c0].coords
+        
+        for i in np.arange(coords_q.shape[0]):
+            # Initialize empty coefficient matrices
+            Jpq_c.append(tp.tmat())
+            Jpq_c[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
+            Jpq_c[-1].blocks *= 0
+
+
+        NL = self.c.coords.shape[0]
+        NJ = self.NJ # Number of aux functions
+        Np = c_occ.blockshape[1] # Number of occupieds
+        Nq = c_virt.blockshape[1] # Number of virtuals
+        Nn = c_occ.blockshape[0] # Number of AO functions
+
+
+
+        
+
+        for j in np.arange(coords_q.shape[0]):
+            for coord in np.arange(c.coords.shape[0]):
+                
+                block_j = np.zeros((NJ*Np, Nq), dtype = float)
+
+                # ALTERATION II
+
+                #cvirt_n = c_virt.cget(self.c.coords + coords_q[j]).reshape(NL*Nn, Nq)
+                cvirt_n = c_virt.cget(self.c.coords - self.c.coords[coord] + coords_q[j]).reshape(NL*Nn, Nq)
+                
+
+                sparse_tensors = self.Jmnc_sparse_tensors[coord]
+                sparse_screening = self.Jmnc_sparse_screening[coord]
+
+                for k in np.arange(NJ*Np):
+                    screen = np.array(sparse_screening[k], dtype = int)
+                    
+                    if(len(screen)>0):
+                        #print(screen)
+                        #print(sparse_tensors[coord][k])
+                        #print(cvirt_n[screen, :])
+
+                        block_j[k, :] = np.dot(sparse_tensors[k], cvirt_n[screen, :])
+                
+
+                block_j.reshape(NJ, Np, Nq)
+                
+                
+                Jpq_c[j].blocks[Jpq_c[j].mapping[ Jpq_c[j]._c2i(c.coords[coord]) ]] =  block_j.reshape(NJ, Np*Nq)
+                
+                
+                
+                Jpq_c[j].blocks[-1] *= 0
+                    #print(Jpq_c[j].blocks[-1])
+            #print("Contraction of virtuals:", time.time()-t0)
+        
+        X = []
+        for i in np.arange(len(Jpq_c)):
+            t0 = time.time()
+            if self.circulant:
+                #X.append(self.JKInv.circulantdot(Jpq_c[i]))
+                #X.append(self.JK.kspace_linear_solve(Jpq_c[i]))
+                #X.append(self.JK.kspace_cholesky_solve(Jpq_c[i]))
+                X.append(self.JK.kspace_svd_solve(Jpq_c[i])) #, complex_precision = np.complex128))
+                #print(X[-1].blocks.dtype)
+            
+            else:
+                X.append(self.JKInv.cdot(Jpq_c[i]))
+            print("Solving for Jpqc:", time.time()-t0)
+
+        return X
+
+
+
+    def _get(self, coords_q):
+        # OBSOLETE
+        c_occ, c_virt = self.c_occ, self.c_virt
+        c = self.c
+        JK = self.JK
+        Jpq_c = []
+        Jpq_c_coulomb = []
+
+        #Jpq_coords = self.Jmn[self.c0].coords
  
         
         for i in np.arange(coords_q.shape[0]):
@@ -877,10 +1171,10 @@ class coefficient_fitter_static():
             Jpq_c[-1].blocks *= 0
             
             
-            if self.robust:
-                Jpq_c_coulomb.append(tp.tmat())
-                Jpq_c_coulomb[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
-                Jpq_c_coulomb[-1].blocks *= 0
+            #if self.robust:
+            #    Jpq_c_coulomb.append(tp.tmat())
+            #    Jpq_c_coulomb[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
+            #    Jpq_c_coulomb[-1].blocks *= 0
 
         
         for i in np.arange(self.coords.shape[0]):
@@ -902,19 +1196,57 @@ class coefficient_fitter_static():
 
             #for coord in np.arange(self.c.coords.shape[0]):
             #    tensors.append(np.einsum("LJmn,Lmp->JpLn", Jmnc2.blocks[:-1].reshape(NL, NJ,Nn,Nn ), c_occ.cget(-Jmnc2.coords + c.coords[coord]), optimize = True))
-            tensors = self.Jmnc_tensors[i]
-            screening = self.Jmnc_screening[i]
+            #tensors = self.Jmnc_tensors[i]
+            #screening = self.Jmnc_screening[i]
             #print(len(screening))
             #print(screening)
+            sparse_tensors = self.Jmnc_sparse_tensors[i]
+            sparse_screening = self.Jmnc_sparse_screening[i]
 
             #t0 = time.time()
             for j in np.arange(coords_q.shape[0]):
                 for coord in np.arange(c.coords.shape[0]):
                     #block_j = np.einsum("JpLn,Lnq->Jpq", tensors[coord], c_virt.cget(-Jmnc2.coords + c.coords[coord] + coords_q[j]), optimize = True)
-                    screen = screening[coord]
+                    #screen = screening[coord]
                     #print(screen.shape)
-                    block_j = np.dot(tensors[coord], c_virt.cget(-Jmnc2.coords - c.coords[coord] + coords_q[j] - c2).reshape(NL*Nn, Nq)[screen,:]).reshape(NJ, Np, Nq)
+                    
+                    
+                    #block_j = np.dot(tensors[coord], c_virt.cget(-Jmnc2.coords - c.coords[coord] + coords_q[j] - c2).reshape(NL*Nn, Nq)[screen,:]).reshape(NJ, Np, Nq)
+                    
+
+                    
+                    # Alternative sparse screening
+                    block_j = np.zeros((NJ*Np, Nq), dtype = float)
+
+                    # ALTERATION II
+
+                    #cvirt_n = c_virt.cget(-Jmnc2.coords - c.coords[coord] + coords_q[j] - c2).reshape(NL*Nn, Nq)
+                    NL = self.virtual_coords[i][coord].shape[0]
+                    #cvirt_n = c_virt.cget(-Jmnc2.coords - c.coords[coord] + coords_q[j]).reshape(NL*Nn, Nq)
+                    cvirt_n = c_virt.cget(self.virtual_coords[i][coord] + coords_q[j]).reshape(NL*Nn, Nq)
+                    
+                    #cvirt_n = c_virt.cget(self.c.coords + coords_q[j]).reshape(NL*Nn, Nq)
+                    
+                    
+
+                    for k in np.arange(NJ*Np):
+                        screen = np.array(sparse_screening[coord][k], dtype = int)
+                        
+                        if(len(screen)>0):
+                            #print(screen)
+                            #print(sparse_tensors[coord][k])
+                            #print(cvirt_n[screen, :])
+
+                            block_j[k, :] = np.dot(sparse_tensors[coord][k], cvirt_n[screen, :])
+                    
+
+                    block_j.reshape(NJ, Np, Nq)
+                    
+                    
                     Jpq_c[j].blocks[Jpq_c[j].mapping[ Jpq_c[j]._c2i(c.coords[coord]) ]] +=  block_j.reshape(NJ, Np*Nq)
+                    
+                    
+                    
                     Jpq_c[j].blocks[-1] *= 0
                     #print(Jpq_c[j].blocks[-1])
             #print("Contraction of virtuals:", time.time()-t0)
@@ -926,7 +1258,8 @@ class coefficient_fitter_static():
                 #X.append(self.JKInv.circulantdot(Jpq_c[i]))
                 #X.append(self.JK.kspace_linear_solve(Jpq_c[i]))
                 #X.append(self.JK.kspace_cholesky_solve(Jpq_c[i]))
-                X.append(self.JK.kspace_svd_solve(Jpq_c[i]))
+                X.append(self.JK.kspace_svd_solve(Jpq_c[i], complex_precision = np.complex64))
+                #print(X[-1].blocks.dtype)
             
             else:
                 X.append(self.JKInv.cdot(Jpq_c[i]))
@@ -934,433 +1267,7 @@ class coefficient_fitter_static():
 
         return X
 
-    def get__(self, coord_q):
-        # Earlier attempt
-        c_occ, c_virt = self.c_occ, self.c_virt
-        #print(self.c.blocks.shape)
-        #print(c_occ.blocks.shape)
-        #print(c_virt.blocks.shape)
-        c = self.c
-        JK = self.JK
-        Jpq_c = []
-        Jpq_c_coulomb = []
 
-        Jpq_coords = self.Jmn[self.c0].coords
-        #print("Jpq_0     :", self.coords[self.c0])
-        #print("Jpq_length:", Jpq_coords.shape[0], c_virt.coords.shape[0], c_occ.coords.shape[0])
-
-        
-        for i in np.arange(coord_q.shape[0]):
-
-            Jpq_c.append(tp.tmat())
-            Jpq_c[-1].load_nparray(np.ones((Jpq_coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  Jpq_coords)
-            Jpq_c[-1].blocks *= 0
-            #print(np.max(np.abs(Jpq_c[-1].blocks)))
-            if self.robust:
-                Jpq_c_coulomb.append(tp.tmat())
-                Jpq_c_coulomb[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
-                Jpq_c_coulomb[-1].blocks *= 0
-
-        
-        for i in np.arange(self.coords.shape[0]):
-            c2 = self.coords[i]
-
-            Jmnc2 = self.Jmn[i] .T()
-
-            # Transform (RJ|mn) -> (RJ|pq)
-
-            NL = Jmnc2.coords.shape[0]
-            NJ = Jmnc2.blockshape[0] # Number of aux functions
-            Np = c_occ.blockshape[1] # Number of occupieds
-            Nq = c_virt.blockshape[1] # Number of virtuals
-            Nn = c_occ.blockshape[0] # Number of AO functions
-            
-
-            # This can be done once and for all when setting up integrals
-
-            t0 = time.time()
-             
-            LJn_m = tp.tmat()
-
-            LJn_m_blocks = Jmnc2.blocks[:-1].reshape(NL, NJ, Nn, Nn)
-
-            #assert(np.linalg.norm(LJn_m[1,1,:,:].T - LJn_m[1,1,:,:])<10e-10), "break"
-            print(np.linalg.norm(LJn_m_blocks[1,1,:,:].T - LJn_m_blocks[1,1,:,:]))
-            LJn_m_blocks = LJn_m_blocks.swapaxes(2,3)
-
-            LJn_m_blocks = LJn_m_blocks.reshape(NL, NJ*Nn, Nn)
-
-            LJn_m.load_nparray(LJn_m_blocks, Jmnc2.coords)
-
-            LJn_p = LJn_m.circulantdot(c_occ).T() #transpose or not?
-
-            t1 = time.time()
-
-            NL = LJn_p.coords.shape[0]
-
-            # Reorganize, prepare for virtuals
-            LJp_n = tp.tmat()
-
-            LJp_n_blocks = LJn_p.blocks[:-1].reshape(NL, NJ, Nn, Np)
-
-            LJp_n_blocks = LJp_n_blocks.swapaxes(2,3)
-
-            LJp_n_blocks = LJp_n_blocks.reshape(NL, NJ*Np, Nn)
-
-            LJp_n.load_nparray(LJp_n_blocks, LJn_p.coords)
-            
-            #LJp_m = LJp_m.T()
-
-            for j in np.arange(coord_q.shape[0]):
-
-                c_virt_trans = c_virt*1.0
-
-                c_virt_trans.blocks[:-1] = c_virt.cget(c_virt.coords + c2 - coord_q[j])
-
-                LJp_q = LJp_n.circulantdot(c_virt_trans) # transpose or not?
-                
-                t2 = time.time()
-
-                #reorganize, finish it
-
-                LJ_pq = tp.tmat()
-
-                LJ_pq_blocks = LJp_q.blocks[:-1]
-                LJ_pq_blocks = LJ_pq_blocks.reshape(NL, NJ, Np*Nq)
-
-                LJ_pq.load_nparray(LJ_pq_blocks, LJp_q.coords)
-
-                #LJ_pq = LJ_pq.T()
-
-                Jpq_c[j] = Jpq_c[j] + LJ_pq.T()
-                print("Jpq_c.blocks.shape:", Jpq_c[j].blocks.shape)
-
-                t3 = time.time()
-
-                print("Time spent on contracting occupieds:", t1-t0)
-                print("Time spent on contracting virtuals :", t2-t1)
-                print("Time spent on rearrangement        :", t3-t2)
-
-
-
-        X = []
-        for i in np.arange(len(Jpq_c)):
-            if self.circulant:
-                #X.append(self.JKInv.circulantdot(Jpq_c[i]))
-                #X.append(self.JK.kspace_linear_solve(Jpq_c[i]))
-                #X.append(self.JK.kspace_cholesky_solve(Jpq_c[i]))
-                X.append(self.JK.kspace_svd_solve(Jpq_c[i]))
-                
-            else:
-                X.append(self.JKInv.cdot(Jpq_c[i]))
-        
-        if self.robust:
-            X_c = []
-            for i in np.arange(len(Jpq_c_coulomb)):
-                X_c.append(Jpq_c_coulomb[i])
-            X = [X, X_c]
-        return X
-
-    def _get(self, coord_q):
-        c_occ, c_virt = self.c_occ, self.c_virt
-        #print(self.c.blocks.shape)
-        #print(c_occ.blocks.shape)
-        #print(c_virt.blocks.shape)
-        c = self.c
-        JK = self.JK
-        Jpq_c = []
-        Jpq_c_coulomb = []
-
-        Jpq_coords = self.Jmn[self.c0].coords
-        #print("Jpq_0     :", self.coords[self.c0])
-        #print("Jpq_length:", Jpq_coords.shape[0], c_virt.coords.shape[0], c_occ.coords.shape[0])
-
-        
-        for i in np.arange(coord_q.shape[0]):
-
-            Jpq_c.append(tp.tmat())
-            Jpq_c[-1].load_nparray(np.ones((Jpq_coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  Jpq_coords)
-            Jpq_c[-1].blocks *= 0
-            #print(np.max(np.abs(Jpq_c[-1].blocks)))
-            if self.robust:
-                Jpq_c_coulomb.append(tp.tmat())
-                Jpq_c_coulomb[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
-                Jpq_c_coulomb[-1].blocks *= 0
-
-        
-        for i in np.arange(self.coords.shape[0]):
-            c2 = self.coords[i]
-            #print(i, c2)
-
-            Jmnc2 = self.Jmn[i]
-            if self.robust:
-                Jmnc2_c = self.Jmnc[i]
-
-            #print("Norm ")
-
-        
-            # We go for maximum vectorization here, for some reason it changes the results ever so slightly - it should not, but it is still far below the FOT.
-            
-            #if i==self.c0:
-
-
-            # Transform (RJ|mn) -> (RJn|m)
-
-
-            """
-            Jpnc2 = Jmnc2*1.0
-            print(Jpnc2.blockshape, Jpnc2.blocks.shape)
-            Jpnc2.blocks = Jpnc2.blocks.reshape(Jpnc2.coords.shape[0]+1, self.JK.blockshape[0],self.c_occ.blockshape[0], self.c_occ.blockshape[0])
-            Jpnc2.blocks = np.swapaxes(Jpnc2.blocks, 2,3) #R,J,n,m
-            Jpnc2.blocks = Jpnc2.blocks.reshape(Jpnc2.coords.shape[0]+1, self.JK.blockshape[0]*self.c_occ.blockshape[0], self.c_occ.blockshape[0]) #R, Jn, m
-
-            Jpnc2 = Jpnc2.circulantdot(c_occ) #R,Jn,p
-
-            Jpnc2.blocks = Jpnc2.blocks.reshape(Jpnc2.coords.shape[0]+1, self.JK.blockshape[0],self.c_occ.blockshape[0], self.c_occ.blockshape[1]) #R,J,n,p
-            Jpnc2.blocks = np.swapaxes(Jpnc2.blocks, 2,3) #R,J,p,n
-
-            Jpnc2.blocks = Jpnc2.blocks.reshape(Jpnc2.coords.shape[0]+1, self.JK.blockshape[0]*self.c_occ.blockshape[1], self.c_occ.blockshape[0]) #R,jp,n
-            """
-            #Contract virtuals
-            
-
-
-
-
-            #Jmnc2_.blocks = np.einsum("RJmn", Jmnc2_.blocks)
-
-
-
-
-            for j in np.arange(coord_q.shape[0]):
-                #t = time.time()
-                C2bo = c_occ.cget(c_virt.coords) # Kmp
-                C2vi = c_virt.cget(c_virt.coords - c2 + coord_q[j]) #Knq
-                #C2bo = c_occ.cget(-c_virt.coords) # Kmp
-                #C2vi = c_virt.cget(-c_virt.coords + c2 - coord_q[j]) #Knq
-                 
-
-                #print(C2bo.max())
-                #print(C2vi.max())
-                
-                C2b = np.einsum("Kmp,Knq->Kmnpq", C2bo, C2vi, optimize = True).reshape(c_virt.coords.shape[0], c_occ.blockshape[0]**2, c_occ.blockshape[1]*c_virt.blockshape[1])
-                
-            
-                # build 
-                #t0 = time.time()
-                #for k in np.arange(Jmnc2.coords.shape[0]):
-                #    bl = np.tensordot(Jmnc2.cget(c_virt.coords + Jmnc2.coords[k]), C2b, axes = ([0,2], [0,1]))
-                #    Jpq_c[j].cset(Jmnc2.coords[k], Jpq_c[j].cget(Jmnc2.coords[k]) + bl)
-                #print(time.time() - t0)
-
-                #print("CCX", C2b.shape)
-                
-                if np.abs(C2b).max()>10e-10:
-                    
-                    #print(C2b.shape, np.abs(C2b).max())
-                    C2 = tp.tmat()
-                    C2.load_nparray(C2b, c_virt.coords, screening = False)
-                    #print("C2max", np.max(np.abs(C2.coords), axis = 0))
-                    #print("Jmnc2", np.max(np.abs(Jmnc2.coords), axis = 0))
-
-                    #print("mx:", C2.cget([0,0,0]).max())
-                    #print("mx:", C2.cget([1,0,0]).max())
-                    #print("mx:", C2.blocks.max())
-                    
-
-
-
-                    #print("t:", time.time()-t)
-
-                    #Cmnpq000 = C2.cget([0,0,0]).reshape(c_occ.blockshape[0],c_occ.blockshape[0],c_occ.blockshape[1],c_virt.blockshape[1])
-                    #print(c2, Cmnpq000.max(),c_occ.cget([0,0,0]).max(), c_virt.cget([0,0,0]).max())
-                    #for ii in np.arange(2):
-                    #    for aa in np.arange(9):
-                    #        print("verif:", ii, aa, Cmnpq000[0,0,ii,aa], c_occ.cget([0,0,0])[0,ii]*c_virt.cget([0,0,0])[0,aa])
-                        
-                
-
-                    
-                    #print(c_occ.)
-                    #print(C2.blocks.shape)
-                    #print(c2, Jmnc2.blocks.shape)
-                    #t = time.time()
-                    #print(Jmnc2.blocks.shape, C2.blocks.shape)
-                    #print(Jmnc2.coords.shape, C2.coords.shape)
-                    #print(np.max(np.abs(Jmnc2.coords), axis = 0))
-                    #print(np.max(np.abs(C2.coords), axis = 0))
-                    #n_points = np.max(np.array([tp.n_lattice(Jmnc2), tp.n_lattice(C2)]), axis = 0) + 1
-                    #print(n_points)
-
-                    #self_k = tp.transform(Jmnc2, np.fft.fftn) #, n_points = n_points)
-                    #other_k = tp.transform(C2, np.fft.fftn) #, n_points = n_points)
-
-
-                    #Jpq_c[j] = Jpq_c[j] + Jmnc2%C2
-
-
-                    
-                    try:
-                        #print("circ")
-                        #t = time.time()
-
-                        # Original
-
-                        contrib = Jmnc2.circulantdot(C2)
-
-                        #contrib = Jpnc2.circulantdot(c_virt.T())
-
-                        #Jpc2.blocks = Jpc2.blocks.reshape(Jpc2.coords.shape[0]+1, self.JK.blockshape[0], self.c_occ.blockshape[1]*self.c_virt.blockshape[1]) #R,jp,n
-            
-
-
-
-                        #print(np.abs((contrib-Jpc2).blocks).max())
-
-                        # Test
-
-                        #contrib = Jmnc2.T().circulantdot(C2)
-
-
-                        #contrib = Jmnc2%C2
-                        #print("Max contrib", np.max(np.abs(contrib.blocks)))
-                        #print(c2, coord_q[j])
-                        Jpq_c[j] = Jpq_c[j] + contrib
-                        #print("Timing:", time.time()-t)
-
-                        # testfunc
-                        #t = time.time()
-                        #JJJ = Jpnc2.circulantdot(c_virt) #R,jp,q
-                        #JJJ.blocks = JJJ.blocks.reshape(Jpnc2.coords.shape[0]+1, self.JK.blockshape[0],self.c_occ.blockshape[1]*self.c_virt.blockshape[1]) #R,j,pq
-                        #print("Timing:", time.time()-t)
-                        
-
-
-                    except:
-                        print("direct")
-                        Jpq_c[j] = Jpq_c[j] + Jmnc2.cdot(C2) #Why doesn't circulantdot work here?
-                    #print("Norm  :", np.linalg.norm(JJJ.cget([0,0,0]) - Jpq_c[j].cget([0,0,0])))
-                    #print(JJJ.cget([0,0,0])[0])
-                    #print( Jpq_c[j].cget([0,0,0])[0] )
-                    #print(Jpq_c[j].cget([0,0,0]))
-                    #print("t:", time.time()-t)
-                    assert(np.max(np.abs(Jpq_c[j].blocks[-1]))==0.0),"error: %.2f" % np.max(np.abs(Jpq_c[j].blocks[-1]))
-
-                    """
-                    for R in Jmnc2.coords:
-                        #print(c2, Jpq_c[j].blocks.shape, np.linalg.norm(Jmnc2.blocks))
-                        #print(np.linalg.norm(Jmnc2.cget([1000,1000,1000])))
-                        #print(np.linalg.norm(c_occ.cget([1000,1000,1000])))
-                        #print(np.linalg.norm(c_virt.cget([1000,1000,1000])))
-
-
-                        contrib = np.einsum("Kjmn,Kmk,Knl->Kjkl", \
-                                Jmnc2.cget(-Jpq_coords + R).reshape(Jpq_coords.shape[0], \
-                                    JK.blockshape[0],c_occ.blockshape[0],c_virt.blockshape[0]),\
-                                        c_occ.cget(Jpq_coords), c_virt.cget(Jpq_coords + c2 + coord_q[j]), \
-                                            optimize = True).reshape(\
-                                                (Jpq_coords.shape[0],JK.blockshape[0],\
-                                                    c_occ.blockshape[1]*c_virt.blockshape[1]))
-                        #print(np.max(np.abs(contrib)))
-                        #print(np.max(np.abs(c_occ.cget(Jpq_coords))))
-                        #print(np.max(np.abs(c_virt.cget(Jpq_coords + c2 + coord_q[j]))))
-                        #print(np.max(np.abs(Jmnc2.cget(Jpq_coords))))
-
-                        #print("---")
-                        Jpq_c[j].blocks[:-1] = Jpq_c[j].cget(-Jpq_coords) + contrib
-                    """
-
-                    """
-                    Jpq_c[j].blocks[:-1] = Jpq_c[j].cget(Jpq_coords) + \
-                        np.einsum("Kjmn,Kmk,Knl->Kjkl", \
-                            Jmnc2.cget(Jpq_coords).reshape(Jpq_coords.shape[0], \
-                                JK.blockshape[0],c_occ.blockshape[0],c_virt.blockshape[0]),\
-                                    c_occ.cget(Jpq_coords), c_virt.cget(Jpq_coords + c2 + coord_q[j]), \
-                                        optimize = True).reshape(\
-                                            (Jpq_coords.shape[0],JK.blockshape[0],\
-                                                c_occ.blockshape[1]*c_virt.blockshape[1]))
-                    """
-                    if self.robust:
-                        Jpq_c_coulomb[j].blocks[:-1] = Jpq_c_coulomb[j].cget(c.coords) + np.einsum("Kjmn,Kmk,Knl->Kjkl", Jmnc2_c.cget(c.coords).reshape(c.coords.shape[0], JK.blockshape[0],c_occ.blockshape[0],c_virt.blockshape[0]), c_occ.cget(c.coords), c_virt.cget(c.coords + c2 + coord_q[j]), optimize = True).reshape((c.coords.shape[0],JK.blockshape[0],c_occ.blockshape[1]*c_virt.blockshape[1]))
-        
-        X = []
-        for i in np.arange(len(Jpq_c)):
-            if self.circulant:
-                #X.append(self.JKInv.circulantdot(Jpq_c[i]))
-                #X.append(self.JK.kspace_linear_solve(Jpq_c[i]))
-                #X.append(self.JK.kspace_cholesky_solve(Jpq_c[i]))
-                X.append(self.JK.kspace_svd_solve(Jpq_c[i]))
-                
-            else:
-                X.append(self.JKInv.cdot(Jpq_c[i]))
-        
-        if self.robust:
-            X_c = []
-            for i in np.arange(len(Jpq_c_coulomb)):
-                X_c.append(Jpq_c_coulomb[i])
-            X = [X, X_c]
-        return X
-
-    def get_old(self, coord_q):
-        c_occ, c_virt = self.c_occ, self.c_virt
-        c = self.c
-        JK = self.JK
-        Jpq_c = []
-        Jpq_c_coulomb = []
-
-        
-        for i in np.arange(coord_q.shape[0]):
-
-            Jpq_c.append(tp.tmat())
-            Jpq_c[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
-            Jpq_c[-1].blocks *= 0
-            if self.robust:
-                Jpq_c_coulomb.append(tp.tmat())
-                Jpq_c_coulomb[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
-                Jpq_c_coulomb[-1].blocks *= 0
-        for i in np.arange(self.coords.shape[0]):
-            c2 = self.coords[i]
-
-            Jmnc2 = self.Jmn[i]
-            if self.robust:
-                Jmnc2_c = self.Jmnc[i]
-
-        
-            # We go for maximum vectorization here, for some reason it changes the results ever so slightly - it should not, but it is still far below the FOT.
-            for j in np.arange(coord_q.shape[0]):
-                
-                Jpq_c[j].blocks[:-1] = Jpq_c[j].cget(c.coords) + \
-                    np.einsum("Kjmn,Kmk,Knl->Kjkl", \
-                         Jmnc2.cget(c.coords).reshape(c.coords.shape[0], \
-                             JK.blockshape[0],c_occ.blockshape[0],c_virt.blockshape[0]),\
-                                  c_occ.cget(c.coords), c_virt.cget(c.coords + c2 + coord_q[j]), \
-                                      optimize = True).reshape(\
-                                          (c.coords.shape[0],JK.blockshape[0],\
-                                              c_occ.blockshape[1]*c_virt.blockshape[1]))
-                   
-                if self.robust:
-                    Jpq_c_coulomb[j].blocks[:-1] = Jpq_c_coulomb[j].cget(c.coords) + np.einsum("Kjmn,Kmk,Knl->Kjkl", Jmnc2_c.cget(c.coords).reshape(c.coords.shape[0], JK.blockshape[0],c_occ.blockshape[0],c_virt.blockshape[0]), c_occ.cget(c.coords), c_virt.cget(c.coords + c2 + coord_q[j]), optimize = True).reshape((c.coords.shape[0],JK.blockshape[0],c_occ.blockshape[1]*c_virt.blockshape[1]))
-            
-
-        X = []
-        for i in np.arange(len(Jpq_c)):
-            if self.circulant:
-                #X.append(self.JKInv.circulantdot(Jpq_c[i]))
-                #X.append(self.JK.kspace_linear_solve(Jpq_c[i]))
-                X.append(self.JK.kspace_cholesky_solve(Jpq_c[i]))
-                #X.append(self.JK.kspace_svd_solve(Jpq_c[i]))
-
-            else:
-                X.append(self.JKInv.cdot(Jpq_c[i]))
-        
-        if self.robust:
-            X_c = []
-            for i in np.arange(len(Jpq_c_coulomb)):
-                X_c.append(Jpq_c_coulomb[i])
-            X = [X, X_c]
-        return X
-
-        
 
 
             
@@ -1540,29 +1447,36 @@ class integral_builder_static():
     RI-integral builder with stored AO-integrals
     For high performance (but high memory demand) 
     """
-    def __init__(self, c,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = False, extent_thresh = 1e-14, robust  = False, ao_screening = 1e-12, inverse_test = True, coulomb_extent = None, JKa_extent = None, jpm_screening = 1e-10):
+    def __init__(self, c,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = False, extent_thresh = 1e-14, robust  = False, ao_screening = 1e-12, inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64):
         self.c = c
         self.p = p
         self.attenuation = attenuation
         self.auxname = auxname
         self.circulant = circulant
         self.robust = robust
+        self.float_precision = float_precision
 
         # Oneshot calculations:
         # build attenuated JK matrix and inverse
         #big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 1e-14, auxname = auxname)
         big_tmat = estimate_attenuation_distance(p, attenuation = self.attenuation, thresh = extent_thresh, auxname = auxname)
         
+        
+        big_tmat = estimate_center_domain(p, attenuation = attenuation, xi0 = xi0, auxname=auxname)
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
         cmax = np.argmax(np.sqrt(np.sum(np.dot(big_tmat.coords,p.lattice)**2, axis = 1)))
+
+        """
         if JKa_extent is not None:
             big_tmat = tp.tmat()
             scoords = tp.lattice_coords(JKa_extent)
             big_tmat.load_nparray(np.ones((scoords.shape[0],2,2), dtype = float), scoords)
+        """
 
         #self.JKa = compute_JK(self.p,self.c, attenuation = attenuation, auxname = auxname)
         self.JKa = compute_JK(self.p,big_tmat, attenuation = attenuation, auxname = auxname)
-        
+        self.JKa.set_precision(self.float_precision)
+        print(self.JKa.blocks.shape)
         print("")
         print("Attenuated coulomb matrix (JKa) computed.")
         print("JKa outer coordinate (should be smaller than %.2e):" % extent_thresh, cmax, big_tmat.coords[cmax], np.max(np.abs(self.JKa.cget(self.JKa.coords[cmax]))))
@@ -1581,6 +1495,7 @@ class integral_builder_static():
         print("")
     
         self.JKinv = invert_JK(self.JKa)
+        self.JKinv.set_precision(self.float_precision)
         #inverse_test = True
         if inverse_test:
             print("JKa inverse computed, checking max deviation from 0 = JKa^-1 JKa - I within extent")
@@ -1624,7 +1539,7 @@ class integral_builder_static():
         
         #print("Coeff fitter static tresh set to 1e-8")
         t0 = time.time()
-        self.cfit = coefficient_fitter_static(c, p, attenuation, auxname, self.JKa, self.JKinv, screening_thresh = ao_screening, robust = robust, circulant = circulant, jpm_screening=jpm_screening)
+        self.cfit = coefficient_fitter_static(c, p, attenuation, auxname, self.JKa, self.JKinv, screening_thresh = ao_screening, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision)
         t1 = time.time()
         print("Spent %.1f s preparing fitting (three index) integrals." % (t1-t0))
         if self.robust:
@@ -1659,6 +1574,7 @@ class integral_builder_static():
             
         #self.JK = compute_JK(p,self.JKa, coulomb=True, auxname = self.auxname)
         self.JK = compute_JK(p,big_tmat, coulomb=True, auxname = self.auxname)
+        self.JK.set_precision(self.float_precision)
 
         print("Coulomb matrix (JK) computed.")
 
@@ -1806,6 +1722,8 @@ if __name__ == "__main__":
     parser.add_argument("-test_ibuild", default = False, action = "store_true", help="Test integral builder")
     parser.add_argument("-basis_truncation", type = float, default = 0.5, help = "Truncate AO-basis function below this threshold." )
     parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
+    
+    
     args = parser.parse_args()
 
     p = pr.prism(args.project_file)

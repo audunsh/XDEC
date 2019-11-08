@@ -58,10 +58,12 @@ def c2_not_in_c1(c1, c2, sort = False):
 
 class pair_fragment_amplitudes():
     # Setup and compute all pair fragments between 0 and M
-    def __init__(self, fragment_amplitudes_1, fragment_amplitudes_2, M):
+    def __init__(self, fragment_amplitudes_1, fragment_amplitudes_2, M, float_precision = np.float64):
         self.M = M
         self.f1 = fragment_amplitudes_1
         self.f2 = fragment_amplitudes_2
+
+        self.float_precision = float_precision
 
         self.f1_occupied_cells = self.f1.d_ii.coords[:self.f1.n_occupied_cells]
         self.f1_virtual_cells = self.f1.d_ia.coords[:self.f1.n_virtual_cells]
@@ -129,9 +131,9 @@ class pair_fragment_amplitudes():
         N_occ = self.d_ii.coords.shape[0]
         N_virt = self.d_ia.coords.shape[0]
         
-        self.t2 = np.zeros((nocc, N_virt, nvirt, N_occ, nocc, N_virt, nvirt), dtype = float)
-        self.g_d = np.zeros((nocc, N_virt, nvirt, N_occ, nocc, N_virt, nvirt), dtype = float)
-        self.g_x = np.zeros((nocc, N_virt, nvirt, N_occ, nocc, N_virt, nvirt), dtype = float)
+        self.t2 = np.zeros((nocc, N_virt, nvirt, N_occ, nocc, N_virt, nvirt), dtype = self.float_precision)
+        self.g_d = np.zeros((nocc, N_virt, nvirt, N_occ, nocc, N_virt, nvirt), dtype = self.float_precision)
+        self.g_x = np.zeros((nocc, N_virt, nvirt, N_occ, nocc, N_virt, nvirt), dtype = self.float_precision)
 
         # Use amplitudes from the two fragments as initial guess, fill in known tensors
         """
@@ -623,11 +625,11 @@ class pair_fragment_amplitudes_():
         N_virt = self.n_virtual_cells    # Number of virtual cells
         
 
-        self.t2 = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = float)
+        self.t2 = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
-        self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = float)
+        self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
-        self.g_x = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = float)
+        self.g_x = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
         # Fill in tensors, initial guess, calculate initial energy
 
@@ -832,10 +834,12 @@ class fragment_amplitudes():
     """
     Class that handles t2 amplitudes with dynamically increasing size
     """
-    def __init__(self, p, wannier_centers, coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0):
+    def __init__(self, p, wannier_centers, coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0, float_precision = np.float64):
         self.p = p #prism object
         self.d = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers) # distance matrix
         
+        self.float_precision = float_precision
+
         #self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[:p.get_nocc()])
         #self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[p.get_nocc():])
         self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[:p.get_nocc()])
@@ -876,11 +880,11 @@ class fragment_amplitudes():
         N_virt = self.n_virtual_cells # Number of virtual cells
         
 
-        self.t2  = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = float)
+        self.t2  = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
-        self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = float)
+        self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
-        self.g_x = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = float)
+        self.g_x = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
         f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
         f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
@@ -894,11 +898,17 @@ class fragment_amplitudes():
 
 
         for ddL in np.arange(N_virt):
+            # In the following, we use symmetry
+            # G(0, :, dL, :, M, :, dM, : ) = G(0, dM, :, -M, :, dL, :).T
+            # Saves some seconds here and there :-)
+            # Still, have to make sure -M is inside the truncated domain -> if-test inside loop
             for ddM in np.arange(ddL, N_virt):
                 dL, dM = self.d_ia.coords[ddL], self.d_ia.coords[ddM]
 
                 for mM in np.arange(N_occ):
                     M = self.d_ii.coords[mM]
+
+                    
 
                     if True: #M[0]>=0: #?
 
@@ -919,7 +929,8 @@ class fragment_amplitudes():
                         #            Calculate these    ex/direct    store here   1=transpose
 
                         sequence.append([ddL, mM, ddM,   0, ddL, mM, ddM,   0]) # direct
-                        sequence.append([ddL, mM, ddM,   0, ddM, mM_, ddL,  1]) # direct, transposed
+                        if mM_<=N_occ: # if the transpose is in the domain
+                            sequence.append([ddL, mM, ddM,   0, ddM, mM_, ddL,  1]) # direct, transposed
 
 
                         # For fragments, exchange only required for only M = (0,0,0) 
@@ -934,8 +945,7 @@ class fragment_amplitudes():
                             sequence.append([ddL, mM, ddM,   1, ddL, mM, ddM,   1]) # direct
                             sequence.append([ddL, mM, ddM,   1, ddM, mM, ddL,   0]) # direct, transposed
 
-            #print("SEQUENCE")
-        #print(sequence)
+            
         self.initialize_blocks(sequence)
 
 
@@ -1015,6 +1025,7 @@ class fragment_amplitudes():
                             if m[7] == 1:
                                 if m[3] == 0:
                                     # Direct contribution
+                                    #print(ddL, mM, ddM, self.g_d.shape)
                                     self.g_d[:, ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)
                                     self.t2[:,  ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)*self.e_iajb**-1
                                     n_computed_di += 1
@@ -1170,15 +1181,15 @@ class fragment_amplitudes():
             if No > self.n_occupied_cells:
                 print("Extending both occupied and virtuals")
                 # Extend tensors in both occupied and virtual direction
-                t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
                 t2new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.t2
                 self.t2 = t2new
 
-                g_d_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                g_d_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
                 g_d_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_d
                 self.g_d = g_d_new
 
-                g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
                 g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
                 self.g_x = g_x_new
 
@@ -1212,7 +1223,8 @@ class fragment_amplitudes():
                                 #            Calculate these    ex/direct    store here   1=transpose
                                 
                                 sequence.append([ddL, mmM, ddM,   0, ddL, mmM, ddM,   0]) # direct
-                                sequence.append([ddL, mmM, ddM,   0, ddM, mmM_, ddL,  1]) # direct, transposed
+                                if mmM_<=No: # if the transpose is in the domain
+                                    sequence.append([ddL, mmM, ddM,   0, ddM, mmM_, ddL,  1]) # direct, transposed
 
 
 
@@ -1243,15 +1255,15 @@ class fragment_amplitudes():
                 print("Extending virtuals.")
                 # Extend tensors in the virtual direction
                 
-                t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
                 t2new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.t2
                 self.t2 = t2new
 
-                g_d_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                g_d_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
                 g_d_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_d
                 self.g_d = g_d_new
 
-                g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
                 g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
                 self.g_x = g_x_new
 
@@ -1284,7 +1296,8 @@ class fragment_amplitudes():
                                 #            Calculate these    ex/direct    store here   1=transpose
                                 
                                 sequence.append([ddL, mmM, ddM,   0, ddL, mmM , ddM,  0]) # direct
-                                sequence.append([ddL, mmM, ddM,   0, ddM, mmM_, ddL,  1]) # direct, transposed
+                                if mmM_<=No: # if the transpose is in the domain
+                                    sequence.append([ddL, mmM, ddM,   0, ddM, mmM_, ddL,  1]) # direct, transposed
 
 
 
@@ -1310,15 +1323,15 @@ class fragment_amplitudes():
             if No > self.n_occupied_cells:
                 print("extending occupied")
                 # Extend tensors in the occupied dimension
-                t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
                 t2new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.t2
                 self.t2 = t2new
 
-                g_d_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                g_d_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
                 g_d_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_d
                 self.g_d = g_d_new
 
-                g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = float)
+                g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
                 g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
                 self.g_x = g_x_new
 
@@ -1352,7 +1365,8 @@ class fragment_amplitudes():
                                 #            Calculate these    ex/direct    store here   1=transpose
                                 
                                 sequence.append([ddL, mmM, ddM,   0, ddL, mmM, ddM,   0]) # direct
-                                sequence.append([ddL, mmM, ddM,   0, ddM, mmM_, ddL,  1]) # direct, transposed
+                                if mM_<=No: # if the transpose is in the domain
+                                    sequence.append([ddL, mmM, ddM,   0, ddM, mmM_, ddL,  1]) # direct, transposed
 
                                 # For fragments, exchange only required for only M = (0,0,0) 
                                 # EOS always has the two occupied indices in the fragment, ie the refcell
@@ -1693,11 +1707,14 @@ if __name__ == "__main__":
     parser.add_argument("-skip_fragment_optimization", default = False, action = "store_true", help = "Skip fragment optimization (for debugging, will run faster but no error estimate.)")
     parser.add_argument("-basis_truncation", type = float, default = 0.1, help = "Truncate AO-basis function below this threshold." )
     parser.add_argument("-ao_screening", type = float, default = 1e-12, help = "Screening of the (J|mn) (three index) integrals.")
-    parser.add_argument("-jpm_screening", type = float, default = 1e-10, help = "Screening of the (J|pn) (three index) integrals.")
-    
+    parser.add_argument("-xi0", type = float, default = 1e-10, help = "Screening of the (J|mn) (three index) integrals.")
+    parser.add_argument("-xi1", type = float, default = 1e-10, help = "Screening of the (J|pn) (three index) integral transform.")
+    parser.add_argument("-float_precision", type = str, default = "np.float64", help = "Floating point precision.")
     parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
     
     args = parser.parse_args()
+
+    args.float_precision = eval(args.float_precision)
 
     # Print run-info to screen
     print("Author : Audun Skau Hansen, audunsh4@gmail.com, 2019")
@@ -1708,21 +1725,26 @@ if __name__ == "__main__":
     print("Input configuration")
     print("_________________________________________________________")
     print("Input files:")
-    print("Geometry + AO basis :", args.project_file)
-    print("Wannier basis       :", args.coefficients)
-    print("Auxiliary basis     :", args.auxbasis)
+    print("Geometry + AO basis    :", args.project_file)
+    print("Wannier basis          :", args.coefficients)
+    print("Auxiliary basis        :", args.auxbasis)
     print(" ")
     print("Screening and approximations:")
-    print("FOT                 :", args.fot)
-    print("Number of core orbs.:", args.n_core, "(frozen)")
-    print("Aux. basis cutoff   :", args.basis_truncation)
-    print("Attenuation         :", args.attenuation)
-    print("Att. truncation     :", args.attenuated_truncation)
-    print("AO basis screening  :", args.ao_screening)
+    print("FOT                    :", args.fot)
+    print("Number of core orbs.   :", args.n_core, "(frozen)")
+    print("Aux. basis cutoff      :", args.basis_truncation)
+    print("Attenuation            :", args.attenuation)
+    print("Float precision        :", args.float_precision)
+    
+    #print("Att. truncation        :", args.attenuated_truncation)
+    #print("AO basis screening     :", args.ao_screening)
+    print("(LJ|0mNn)screening(xi0):", args.xi0)
+    print("(LJ|0pNq)screening(xi1):", args.xi1)
     print(" ")
     print("General settings:")
-    print("Dot-product         :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
-    print("RI fitting          :", ["Non-robust", "Robust"][int(args.robust)])
+    print("Dot-product            :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
+    print("RI fitting             :", ["Non-robust", "Robust"][int(args.robust)])
+
     print("_________________________________________________________")
 
 
@@ -1744,12 +1766,16 @@ if __name__ == "__main__":
     # Wannier coefficients
     c = tp.tmat()
     c.load(args.coefficients)
+    c.set_precision(args.float_precision)
+    print(c.blocks.dtype)
 
+
+    #c.blocks = np.array(c.blocks, dtype = args.float_precision)
     
 
     c_occ, c_virt = PRI.occ_virt_split(c,p)
     
-
+    print(c_occ.blocks.dtype)
     
 
 
@@ -1757,6 +1783,9 @@ if __name__ == "__main__":
     # AO Fock matrix
     f_ao = tp.tmat()
     f_ao.load(args.fock_matrix)
+    f_ao.set_precision(args.float_precision)
+
+
 
     # Compute MO Fock matrix
     #f_mo = c.tT().cdot(f_ao*c, coords = c.coords)
@@ -1786,7 +1815,7 @@ if __name__ == "__main__":
     if args.disable_static_mem:
         ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust)
     else:
-        ib = PRI.integral_builder_static(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, jpm_screening=args.jpm_screening, JKa_extent= [6,6,6])
+        ib = PRI.integral_builder_static(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision)
     
     print("Number of (J|mn) tensors:", len(ib.cfit.Jmn))
 
@@ -1845,7 +1874,7 @@ if __name__ == "__main__":
 
 
     center_fragments = dd.atomic_fragmentation(p, d, 3.0)
-    #center_fragments = np.array(center_fragments)[::-1]
+    center_fragments = np.array(center_fragments)[::-1]
     #center_fragments = [[1], [0]]
 
     print(" ")
@@ -1853,8 +1882,7 @@ if __name__ == "__main__":
     print(center_fragments)
     print(" ")
 
-    print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
-    print(" ")
+    
     
 
     # Converge atomic fragment energies
@@ -1868,7 +1896,7 @@ if __name__ == "__main__":
 
         #ib.fragment = fragment
         t0 = time.time()
-        a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0)
+        a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0, float_precision = args.float_precision)
         print("Frag init:", time.time()-t0)
         
 

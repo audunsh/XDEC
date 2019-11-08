@@ -24,16 +24,16 @@ from time import time
 from copy import deepcopy
 from scipy.linalg import expm
 
-import toeplitz
-import prism as pr
-import post_process as pp
-import wannier_parse as wp
-import annealing_tools as at
-import visuals as vis
+import utils.toeplitz
+import utils.prism as pr
+import utils.post_process as pp
+import utils.wannier_parse as wp
+import utilsannealing_tools as at
+import utils.visuals as vis
 #import modified_pm as mpm
-import orb_functions as of
+import utils.orb_functions as of
 
-from toeplitz import tmat, L2norm
+from utils.toeplitz import tmat, L2norm
 
 
 
