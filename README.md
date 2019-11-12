@@ -12,12 +12,16 @@
 
 > 'module load Anaconda3/2019.07'
 2. Clone libint:
-'git clone https://github.com/evaleev/libint.git'
+> 'git clone https://github.com/evaleev/libint.git'
+
 2a. From inside libint-folder:
 './autogen.sh'
+
 2b. Make a build-directory outside of the libint-tree, enter it and run
 '/path/to/libint/configure CC=gcc CXX=g++ CXXFLAGS="-O3" --with-pic --with-cxxgen-optflags="-O3" --prefix=$HOME/libint_install/
+
 2c. Run 'make', optionally with '-jN' for parallel compilation
+
 2d. Run 'make install' 
 3. Clone Pybind11:
 'git clone https://github.com/pybind/pybind11.git'
