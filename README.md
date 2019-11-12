@@ -18,7 +18,7 @@
 './autogen.sh'
 
 2b. Make a build-directory outside of the libint-tree, enter it and run
-'/path/to/libint/configure CC=gcc CXX=g++ CXXFLAGS="-O3" --with-pic --with-cxxgen-optflags="-O3" --prefix=$HOME/libint_install/
+> '/path/to/libint/configure CC=gcc CXX=g++ CXXFLAGS="-O3" --with-pic --with-cxxgen-optflags="-O3" --prefix=$HOME/libint_install/
 
 2c. Run 'make', optionally with '-jN' for parallel compilation
 
