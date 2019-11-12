@@ -7,7 +7,9 @@
 ## Detailed installation on fram.sigma2.no
 1. Load required modules:
 > 'GMP/6.1.2-GCCcore-8.3.0 => GMP/6.1.2-GCCcore-7.3.0'
+
 > 'module load Boost/1.68.0-intel-2018b-Python-3.6.6'
+
 > 'module load Anaconda3/2019.07'
 2. Clone libint:
 'git clone https://github.com/evaleev/libint.git'
