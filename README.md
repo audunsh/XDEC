@@ -15,7 +15,7 @@
 > 'git clone https://github.com/evaleev/libint.git'
 
 2a. From inside libint-folder:
-'./autogen.sh'
+>'./autogen.sh'
 
 2b. Make a build-directory outside of the libint-tree, enter it and run
 > '/path/to/libint/configure CC=gcc CXX=g++ CXXFLAGS="-O3" --with-pic --with-cxxgen-optflags="-O3" --prefix=$HOME/libint_install/
