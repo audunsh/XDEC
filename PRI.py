@@ -85,14 +85,14 @@ def get_xyz(p, t = np.array([[0,0,0]]), conversion_factor = 0.5291772109200000):
     Note that Libint automatically converts from angstrom, so we have to preconvert to angstrom
     with on of (unknown which) these factors (from https://github.com/evaleev/libint/blob/master/include/libint2/atom.h)
     0.52917721067
-    0.52917721092
+    0.52917721092 <- this one, confirmed in Libint source
     """
     
     pos, charge = p.get_atoms(t)
     ptable = [None, "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne"]
     sret = "%i\n\n" % len(charge)
     #conversion_factor = 0.5291972108
-     #<.-. this one, confirmed in Libint source
+     #
     #conversion_factor = 0.52917721067 #**-1
     for i in range(len(charge)):
         sret += "%s %.15f %.15f %.15f\n" % (ptable[int(charge[i])],conversion_factor*pos[i][0], conversion_factor*pos[i][1], conversion_factor*pos[i][2])
@@ -785,6 +785,7 @@ def estimate_attenuation_distance_(p, attenuation = 0.1, c2 = [0,0,0], thresh = 
 
 
 #@numba.autojit()
+"""
 def contract_occupied(Jmnc2blocks, Jmnc2coords, ccoords, c_occ_blocks, NL, NJ, Nn, Np, Nq, jpm_screening):
     
     Jmnc_tensors = []
@@ -823,6 +824,74 @@ def contract_occupied(Jmnc2blocks, Jmnc2coords, ccoords, c_occ_blocks, NL, NJ, N
         Jmnc_screening.append(screen)
         
     return Jmnc_tensors, Jmnc_screening
+"""
+
+#@numba.jit(parallel=True)
+def contract_occupied(vals):
+    coords, Jmn, c, NL, NJ, Nn, Np, Nq, coord, c_occ = vals
+
+    tj = np.zeros((NJ, Np, NL, Nn), dtype = float) #LJpn
+
+    for i in np.arange(coords.shape[0]):
+        # For all dN offsets in (LJ|0m dN n)
+        
+        Jmnc2 = Jmn[i]
+        Jmnc_coords = -c.coords - coords[i] #HERE - - - 
+        Jmnc2blocks = Jmnc2.cget(Jmnc_coords).reshape(NL, NJ,Nn,Nn )
+        
+        
+
+        occupied_coords = -Jmnc_coords - c.coords[coord]
+        
+        cb = c_occ.cget(occupied_coords)
+        if True:
+            dotk(tj, NL, Jmnc2blocks, NJ, Nn, cb, Np)
+        else:
+            b1 = Jmnc2blocks.swapaxes(2,3).reshape(NL, NJ*Nn, Nn)
+            screening = np.max(np.abs(cb), axis = (1,2))>1e-12
+            NLs = np.sum(screening)
+
+            tjk = np.einsum("LJn,Lnp->LJp",b1[screening], cb[screening], optimize = True).reshape(NLs, NJ, Nn, Np).swapaxes(2,3) #reshape(NLs, NJ*Np, Nn)
+            #print(tjk.shape, tj.shape)
+            indxs = np.arange(NL)[screening]
+            for k in np.arange(NLs):
+                #print(tj[:,:, k, :].shape, k)
+                tj[:,:, indxs[k], :]= tjk[k]
+
+
+            #tj[:,:, np.arange(NL)[screening], :]= tjk
+            #tj[:,:, screening, :] = t
+        
+
+
+        """
+        for k in np.arange(NL):
+            b1 = Jmnc2blocks[k].swapaxes(1,2).reshape(NJ*Nn, Nn) #Jn,m
+            b2 = cb[k] #m,p
+            tj[:,:,k,:] += np.dot(b1,b2).reshape(NJ, Nn, Np).swapaxes(1,2) #Jn,p->J,p,k,n
+        """
+
+    tj = tj.reshape(NJ*Np, NL*Nn) #L J p n -> p J L n -> J p L n
+
+    return tj
+
+
+#def dotaxis(A,B, axisA, axisB):
+#
+#    ret = np.zeros()
+
+
+def dotk(tj, NL, Jmnc2blocks, NJ, Nn, cb, Np):
+    screening = np.max(np.abs(cb), axis = (1,2))>1e-12
+    for k in np.arange(NL)[screening]:
+        b1 = Jmnc2blocks[k].swapaxes(1,2).reshape(NJ*Nn, Nn) #Jn,m
+        b2 = cb[k] #m,p
+
+        tj[:,:,k,:] += np.dot(b1,b2).reshape(NJ, Nn, Np).swapaxes(1,2) #Jn,p->J,p,k,n
+
+
+
+
 
 
 class coefficient_fitter_static():
@@ -855,6 +924,9 @@ class coefficient_fitter_static():
         xi_domain = estimate_attenuation_domain(p, attenuation = attenuation, xi0 = xi0,  auxname = auxname)
 
         #for c2 in cube:
+
+        #dataset = []
+
         for i in np.arange(len(xi_domain)):
             # Compute JMN with nsep =  c2
 
@@ -862,10 +934,47 @@ class coefficient_fitter_static():
             
             #big_tmat = estimate_attenuation_distance(p, attenuation = attenuation, c2 = c2, auxname = auxname, thresh = screening_thresh)
             
+            if True:
+                """
+                Alternative screening approach, somewhat inefficient but avoids premature truncation
+                """  
+                bc = tp.lattice_coords([4,4,4]) #Huge domain, will consume some memory
+                big_tmat = tp.tmat()
+                big_tmat.load_nparray(np.ones((bc.shape[0], 2,2), dtype = float), bc)
+
+                Jmnc2_temp = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
+                Jmnc2_temp.set_precision(self.float_precision)
+
+                screen = np.max(np.abs(Jmnc2_temp.blocks[:-1]), axis = (1,2))>=xi0
+                screen[np.sum(bc**2, axis = 1)==0] = True
+                print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
+
+                Jmnc2 = tp.tmat()
                 
+                Jmnc2.load_nparray(Jmnc2_temp.blocks[:-1][screen], Jmnc2_temp.coords[screen])
+
+
+
+
+            else:
+
+
+
+
+
+
             
-            Jmnc2 = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
-            Jmnc2.set_precision(self.float_precision)
+                Jmnc2 = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
+                Jmnc2.set_precision(self.float_precision)
+            
+
+            #distances_ = np.sum(Jmnc2.coords**2, axis = 1)
+            #dsort = np.argsort(distances_)
+            #distances = distances_[dsort]
+            #dataset.append([])
+
+            
+            
             #Jmnc2 = compute_Jmn(p,self.JK, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
             self.coords.append(c2)
             self.Jmn.append( Jmnc2 ) #New formulation without uppercase-transpose
@@ -911,7 +1020,7 @@ class coefficient_fitter_static():
         #self.Jmnc_sparse_tensors.append([])
         #self.Jmnc_sparse_screening.append([])
         
-        
+        t0 = time.time()
         for coord in np.arange(self.c.coords.shape[0]):
             # For all offsets in the coefficient matrix
             
@@ -924,13 +1033,23 @@ class coefficient_fitter_static():
             Nq = self.c_virt.blockshape[1] # Number of virtuals
             Nn = self.c_occ.blockshape[0] # Number of AO functions
 
-
-            tj = np.zeros((NJ, Np, NL, Nn), dtype = float) #LJpn
-
+            
+            
             #self.virtual_coords = []
 
             #print("Contracting occupieds (LJ|0p Mn) for L = ", self.c.coords[coord])
             
+
+            vals = [self.coords, self.Jmn, self.c, NL, NJ, Nn, Np, Nq, coord, self.c_occ]
+
+            tj = contract_occupied(vals)
+
+            """
+
+            tj = np.zeros((NJ, Np, NL, Nn), dtype = float) #LJpn
+
+
+
             for i in np.arange(self.coords.shape[0]):
                 # For all dN offsets in (LJ|0m dN n)
                 
@@ -948,7 +1067,7 @@ class coefficient_fitter_static():
 
 
                 
-
+                
                 for k in np.arange(NL):
                     b1 = Jmnc2blocks[k].swapaxes(1,2).reshape(NJ*Nn, Nn) #Jn,m
                     b2 = cb[k] #m,p
@@ -956,7 +1075,7 @@ class coefficient_fitter_static():
             
 
             tj = tj.reshape(NJ*Np, NL*Nn) #L J p n -> p J L n -> J p L n
-
+            """
 
             # further delimination
             screening = []
@@ -975,7 +1094,7 @@ class coefficient_fitter_static():
             self.Jmnc_sparse_tensors.append(vectors)
             self.Jmnc_sparse_screening.append(screening)
             print("\r>> Contracted occupieds (LJ|0p Mn) for L = ", self.c.coords[coord], "(%.2f percent complete, compression rate: %.2e)" % (100.0*coord/self.c.coords.shape[0], 100.0*compr/total), end='')
- 
+        print(time.time()-t0)
         print("Screening-induced sparsity is at %.2e percent." % (100.0*compr/total))
         
 

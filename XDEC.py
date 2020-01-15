@@ -1365,7 +1365,7 @@ class fragment_amplitudes():
                                 #            Calculate these    ex/direct    store here   1=transpose
                                 
                                 sequence.append([ddL, mmM, ddM,   0, ddL, mmM, ddM,   0]) # direct
-                                if mM_<=No: # if the transpose is in the domain
+                                if mmM_<=No: # if the transpose is in the domain
                                     sequence.append([ddL, mmM, ddM,   0, ddM, mmM_, ddL,  1]) # direct, transposed
 
                                 # For fragments, exchange only required for only M = (0,0,0) 
@@ -1711,6 +1711,7 @@ if __name__ == "__main__":
     parser.add_argument("-xi1", type = float, default = 1e-10, help = "Screening of the (J|pn) (three index) integral transform.")
     parser.add_argument("-float_precision", type = str, default = "np.float64", help = "Floating point precision.")
     parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
+    parser.add_argument("-virtual_space", type = str, default = None, help = "Alternative representation of virtual space, provided as tmat file." )
     
     args = parser.parse_args()
 
@@ -1774,6 +1775,10 @@ if __name__ == "__main__":
     
 
     c_occ, c_virt = PRI.occ_virt_split(c,p)
+
+    if args.virtual_space is not None:
+        c_virt = tp.tmat()
+        c_virt.load(args.virtual_space)
     
     print(c_occ.blocks.dtype)
     
@@ -1919,7 +1924,10 @@ if __name__ == "__main__":
         
         print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
         print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))        
-            
+        
+        virtual_cutoff_prev = a_frag.virtual_cutoff
+        occupied_cutoff_prev = a_frag.occupied_cutoff
+
         if not args.skip_fragment_optimization:
             print("Running fragment optimization for:")
             print(fragment)
@@ -1939,6 +1947,9 @@ if __name__ == "__main__":
                     print("e_prev:", E_prev)
 
                     #print("--- virtual")
+                    virtual_cutoff_prev = a_frag.virtual_cutoff
+                    occupied_cutoff_prev = a_frag.occupied_cutoff
+
                     t_0 = time.time()
                     a_frag.autoexpand_virtual_space(n_orbs=4)
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
@@ -1975,6 +1986,10 @@ if __name__ == "__main__":
                     print(n_virtuals_)
                     print("Virtual cutoff distance")
                     print(virtu_cut_)
+                a_frag.set_extent(virtual_cutoff_prev, occupied_cutoff_prev)
+
+
+                
                 print("Converged virtual space, expanding occupied space")
                 print(e_virt)
                 #dE = 10
@@ -1998,6 +2013,8 @@ if __name__ == "__main__":
                 #print("---")
 
                 while dE>args.fot:
+                    virtual_cutoff_prev = a_frag.virtual_cutoff
+                    occupied_cutoff_prev = a_frag.occupied_cutoff
 
                     #print("--- occupied")
                     a_frag.autoexpand_occupied_space(n_orbs=6)
@@ -2017,6 +2034,7 @@ if __name__ == "__main__":
                     print(" ")
                     E_prev = E_new
                     #print("---")
+                a_frag.set_extent(virtual_cutoff_prev, occupied_cutoff_prev)
                 dE_outer = np.abs(E_prev_outer - E_prev)
                 print("dE_outer:", dE_outer)
                 E_prev_outer = E_prev
@@ -2032,14 +2050,14 @@ if __name__ == "__main__":
 
 
 
-        #pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([1,0,0]))
-        #print(pair.compute_pair_fragment_energy())
-        #pair.solve()
-        #print("Pair fragment energy for (1,0,0):", pair.compute_pair_fragment_energy())
-        """
+        pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([1,0,0]))
+        print(pair.compute_pair_fragment_energy())
+        pair.solve()
+        print("Pair fragment energy for (1,0,0):", pair.compute_pair_fragment_energy())
+        
         
 
-
+        """
         pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([0,1,0]))
         print(pair.compute_pair_fragment_energy())
         pair.solve()
@@ -2065,9 +2083,16 @@ if __name__ == "__main__":
         print(pair.compute_pair_fragment_energy())
         pair.solve()
         print("Pair fragment energy for (0,0,1):", pair.compute_pair_fragment_energy())
+        """
+
+        for n in np.arange(10):
+            pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([0,0,n]))
+            print(pair.compute_pair_fragment_energy())
+            pair.solve()
+            print("Pair fragment energy for (0,0,%i):" %n, pair.compute_pair_fragment_energy())
 
         #for pair in np.arange(1,10):
         #    print(a_frag.d_ii.coords[pair], "Pair fragment energy:", a_frag.compute_pair_fragment_energy(pair))
         #    print("-0.0000611450091260 (Gustav, 0,1)")
         #print(-0.114393980708, "(3D Neon, fot 0.0001 (Gustav))")
-        """
+        

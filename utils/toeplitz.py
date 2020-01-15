@@ -265,7 +265,8 @@ class tmat():
                  domain = None,
                  delim = None,
                  tolerance = 1e-30,
-                 norm_tolerance=max_norm):
+                 norm_tolerance=max_norm,
+                 screening = True):
         
         self.tolerance = tolerance
         self.norm = norm_tolerance
@@ -273,12 +274,13 @@ class tmat():
         if blocks is not None:
             if blockshape is None:
                 blockshape = blocks[0].shape
-                
-            # Screen out blocks with negligibly small
-            # coefficients
-            coords, blocks = screen(coords, blocks,
-                                    self.norm, self.tolerance)
             
+            if screening is True:
+                # Screen out blocks with negligibly small
+                # coefficients
+                coords, blocks = screen(coords, blocks,
+                                        self.norm, self.tolerance)
+                
         if (coords is not None) and (domain is None):
             try:
                 self.domain = np.amax(np.absolute(coords), axis=0) + 1
@@ -684,6 +686,15 @@ class tmat():
                 self.blocks[i] = self.blocks[i,:,perm_pattern][:,perm_pattern,:]
     
     # Block access, interfacing 
+    def tofull(self, m, coords_L, coords_M):
+        '''
+        Unfold the periodic symmetry 
+        '''
+        ret = np.zeros((m.blockshape[0]*coords_L.shape[0], m.blockshape[1]*coords_M.shape[0]), dtype = float)
+        for L in np.arange(coords_L.shape[0]):
+            for M in np.arange(coords_M.shape[0]):
+                ret[L*m.blockshape[0]:(L+1)*m.blockshape[0], M*m.blockshape[1]:(M+1)*m.blockshape[1]] = m.cget(coords_M[M] - coords_L[L])
+        return ret
     
     def get(self, c):
         '''
@@ -1254,6 +1265,8 @@ class tmat():
     
     #def fft(self):
 
+    #def kspace_svd_inv()
+
     def kspace_svd_lowdin(self, screening_threshold = 1e-10):
         # construct self^-.5
         n_points = np.max(np.array([n_lattice(self)]), axis = 0)
@@ -1440,6 +1453,30 @@ class tmat():
 
         ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
         return ret
+    def kspace_eig(self):
+        n_points = n_lattice(self)
+        self_k = transform(self, np.fft.fftn, n_points = n_points)
+
+        ret_val = tmat()
+        ret_val.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], self_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        ret_val.blocks*=0.0
+
+        ret_vec = tmat()
+        ret_vec.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], self_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        ret_vec.blocks*=0.0
+
+        for i in np.arange(len(self_k.blocks)-1):
+            evals, evecs = np.linalg.eig(self_k.blocks[i])
+            ret_val.blocks[i] = np.diag(evals)
+            ret_vec.blocks[i] = evecs
+        
+        ret_val = transform(ret_val, np.fft.ifftn, n_points = n_points, complx = False)
+        ret_vec = transform(ret_vec, np.fft.ifftn, n_points = n_points, complx = False)
+        
+        return ret_val, ret_vec
+
+
+
 
 
     def kspace_linear_solve(self, other):
@@ -1468,18 +1505,17 @@ class tmat():
         self.blocks = np.array(self.blocks, dtype = precision)
 
 
-    def circulantdot(self, other, complx = False, screening = 1e-10):
+    def circulantdot(self, other, complx = False, screening = None):
         """
         Computes the dot product assuming a circulant matrix structure
         """
 
-        n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
-        #print(np.array(n_lattice(self)))
-        #print(np.array(n_lattice(other)))
-        #print("Npoints:", n_points)
-        self_k = transform(self, np.fft.fftn, n_points = n_points)
-        other_k = transform(other, np.fft.fftn, n_points = n_points)
+        n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0) 
+        
+        self_k = transform(self, np.fft.fftn, n_points = n_points) 
+        other_k = transform(other, np.fft.fftn, n_points = n_points) 
 
+        
         ret = tmat()
         ret.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], other_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
         #ret = self_k*1.0
@@ -1949,17 +1985,17 @@ def array2tmatrix_1d(all_elems, mesh, complx):
         else:
             elems_l = all_elems[m, :, :].real
             
-        if np.amax(np.absolute(elems_l)) > 1e-30:
-            # Store block of Fourier coefficients
-            coords.append(l_vector)
-            blocks.append(elems_l)
+        #if np.amax(np.absolute(elems_l)) > 1e-30:
+        #    # Store block of Fourier coefficients
+        coords.append(l_vector)
+        blocks.append(elems_l)
 
     return tmat(np.array(coords), np.array(blocks),
                 blockshape=(all_elems.shape[1],
-                            all_elems.shape[2]))
+                            all_elems.shape[2]), screening = False)
 
 
-def array2tmatrix_2d(all_elems, mesh, complx):
+def array2tmatrix_2d(all_elems, mesh, complx, screening = True):
     '''
     Given an array with elements all_elems[c1, c2, m, n], where
     'c1' and 'c2' correspond to cell coordinates, 
@@ -1979,6 +2015,7 @@ def array2tmatrix_2d(all_elems, mesh, complx):
     blocks = []
     mesh1 = mesh[0]
     mesh2 = mesh[1]
+    
     # Loop over lattice vectors
     for m1 in range(mesh1.shape[0]):
         for m2 in range(mesh2.shape[0]):
@@ -1988,15 +2025,23 @@ def array2tmatrix_2d(all_elems, mesh, complx):
                 elems_l = all_elems[m1, m2, :, :]
             else:
                 elems_l = all_elems[m1, m2, :, :].real
-                
-            if np.amax(np.absolute(elems_l)) > 1e-30:
+            #if screening:
+            #    if np.amax(np.absolute(elems_l)) > 1e-30:
+            #        # Store block of Fourier coefficients
+            #        coords.append(l_vector)
+            #        blocks.append(elems_l)
+            #else:
                 # Store block of Fourier coefficients
-                coords.append(l_vector)
-                blocks.append(elems_l)
-                
+            coords.append(l_vector)
+            blocks.append(elems_l)
+
+
+    #ret = tmat()
+    #ret.load_nparray(np.array(blocks), np.array(coords),)
+    
     return tmat(np.array(coords), np.array(blocks),
                 blockshape=(all_elems.shape[2],
-                            all_elems.shape[3]))
+                            all_elems.shape[3]), screening = False)
 
 
 def array2tmatrix_3d(all_elems, mesh, complx):
@@ -2072,6 +2117,7 @@ def transform(tmatrix, function, n_points=None, complx=True):
     n_points      : Number of fourier points in each 
                     direction.
     '''
+ 
     if n_points is None:
         n_points = n_lattice(tmatrix)
         
@@ -2092,14 +2138,14 @@ def transform(tmatrix, function, n_points=None, complx=True):
         
     # Do the transform
     all_elems = function(all_elems, n_points, axes=grid_axes)
-    
+
     # Get a lattice vector for each of the periodic dimensions
     l_points = []
     for i in range(n_dims):
         l_points.append((np.round(n_points[i] *
                                   np.fft.fftfreq(n_points[i])) 
         ).astype(int))
-        
+    
     # Return a Fourier-space or inverse Fourier-space
     # Toeplitz matrix
     return array2tmatrix(all_elems, l_points, n_dims, complx) 

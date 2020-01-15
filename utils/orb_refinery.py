@@ -535,6 +535,7 @@ class objective_function():
             #X2mo = C.tT()*X2*C -  C.tT()*xXC*2 +  C.tT()*xxSC
             #Y2mo = C.tT()*Y2*C -  C.tT()*yYC*2 +  C.tT()*yySC
             #Z2mo = C.tT()*Z2*C -  C.tT()*zZC*2 +  C.tT()*zzSC
+
             
             X2mo = C.tT().cdot(X2*C, coords = np.array([[0,0,0]])) -  C.tT().cdot(xXC*2, coords = np.array([[0,0,0]])) +  C.tT().cdot(xxSC, coords = np.array([[0,0,0]]))
             Y2mo = C.tT().cdot(Y2*C, coords = np.array([[0,0,0]])) -  C.tT().cdot(yYC*2, coords = np.array([[0,0,0]])) +  C.tT().cdot(yySC, coords = np.array([[0,0,0]]))
@@ -592,6 +593,10 @@ class objective_function():
             X2mo = C.tT().cdot(X2*C, coords = coords) +  C.tT().cdot(xXC*2, coords = coords) +  C.tT().cdot(xxSC, coords = coords)
             Y2mo = C.tT().cdot(Y2*C, coords = coords) +  C.tT().cdot(yYC*2, coords = coords) +  C.tT().cdot(yySC, coords = coords)
             Z2mo = C.tT().cdot(Z2*C, coords = coords) +  C.tT().cdot(zZC*2, coords = coords) +  C.tT().cdot(zzSC, coords = coords)
+
+            X2.save("X2AO")
+            print("X2 saved")
+            
             
             PSM_objective_function = X2mo  + Y2mo + Z2mo- Xmo**2 - Ymo**2 - Zmo**2
             #print(np.diag(PSM_objective_function.cget([0,0,0])))
@@ -1459,6 +1464,7 @@ if __name__ == "__main__":
             
 
                 XYZ2mo, Xmo, Ymo, Zmo, wcenters = of.foster_boys(C, S)
+
                 #for n in PFM_tensor:
                 #    print(n)
                 np.save(project_folder_f + "/PSM_tensors.npy", np.array([XYZ2mo, Xmo, Ymo, Zmo, wcenters]))

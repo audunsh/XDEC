@@ -24,8 +24,12 @@ import sympy as syp
 import numpy as np
 import subprocess as sp
 
-import utils.crystal_interface as ci
-import utils.sympy_basis as sb
+try:
+    import crystal_interface as ci
+    import sympy_basis as sb
+except:
+    import utils.crystal_interface as ci
+    import utils.sympy_basis as sb
 
 
 from ast import literal_eval
@@ -208,6 +212,7 @@ class prism():
         if l==1:
             return np.array([0,1,2])
             #return np.array([1,2,0])
+            #return np.array([2,0,1]) #z,x,y <- goes for ethylene for some reason, inconsistent with manuals
         if l==2:
             return np.array([4, 2, 0, 1, 3])
         if l==3:
