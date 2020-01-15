@@ -379,6 +379,7 @@ if __name__ == "__main__":
 #####################################################""")
 
     #Locate executables for crystal and Cryapi
+    os.environ["LIBINT_DATA_PATH"] = os.getcwd() 
     try:
         crystal_exe_path = os.environ['CRYSTAL_EXE_PATH']
     except:
@@ -501,7 +502,7 @@ if __name__ == "__main__":
 
         #XYZ2mo, Xmo, Ymo, Zmo, wcenters = of.foster_boys(C,S) #spreads, x,y,z, centers
         #spreads = np.sqrt(np.diag(L0_psm))
-        np.save(folder + "/spreads_psm1.npy", spreads)
+        np.save(folder + "/spreads_psm1.npy", wspreads)
         np.save(folder + "/centers_psm1.npy", wcenters)
         
     if not args.setup:

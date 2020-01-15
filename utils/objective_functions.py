@@ -9,7 +9,7 @@ import sys
 
 #import lwrap.lwrap as lwrap
 #sys.path.append(os.path.realpath('../lwrap/'))
-sys.path.insert(0,'../lwrap')
+#sys.path.insert(0,'../lwrap')
 import lwrap.lwrap as lwrap
 
 import matplotlib.pyplot as plt
@@ -356,10 +356,11 @@ def centers_spreads(c, p,coords, m= 1):
     f_psm1 = lambda tens : np.sum(np.diag(tens[0].cget([0,0,0]) - tens[1].cget([0,0,0])**2 - tens[2].cget([0,0,0])**2 - tens[3].cget([0,0,0])**2)**m) # PSM-m objective function
 
     spreads_ = lambda tens : np.diag(tens[0].cget([0,0,0]) - tens[1].cget([0,0,0])**2 - tens[2].cget([0,0,0])**2 - tens[3].cget([0,0,0])**2)
-    spreads = spreads_(tensors)
+    
 
 
     tensors = [R2mo, Xmo, Ymo, Zmo]
+    spreads = spreads_(tensors)
     #X = tensors
     #print(np.diag(X[0].cget([0,0,0]) - X[1].cget([0,0,0])**2 - X[2].cget([0,0,0])**2 - X[3].cget([0,0,0])**2))
     #print(f_psm1(tensors))
