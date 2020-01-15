@@ -2,8 +2,10 @@
 
 import numpy as np
 import argparse
-import prism as pr
-import toeplitz as tp
+import utils.prism as pr
+import utils.toeplitz as tp
+
+import utils.objective_functions as of
 
 try:
     import orb_refinery as oref
@@ -491,12 +493,16 @@ if __name__ == "__main__":
     # Compute centers and spreads of psm1 functions
     if not args.skip_local:
         # Compute locality measures
-        of = oref.objective_function(P)
-        XYZ2mo, Xmo, Ymo, Zmo, wcenters = of.foster_boys(C,S) #spreads, x,y,z, centers
-        L0_psm = (XYZ2mo - Xmo**2 - Ymo**2 - Zmo**2).cget([0,0,0])
-        spreads = np.sqrt(np.diag(L0_psm))
+        #of = oref.objective_function(P)
+        wcenters, wspreads = objective_functions.centers_spreads(c_occ, p, s.coords, m=1)
+        #spreads = lambda tens : np.diag(tens[0].cget([0,0,0]) - tens[1].cget([0,0,0])**2 - tens[2].cget([0,0,0])**2 - tens[3].cget([0,0,0])**2)
+        #spreads = spreads(tensors)
+
+
+        #XYZ2mo, Xmo, Ymo, Zmo, wcenters = of.foster_boys(C,S) #spreads, x,y,z, centers
+        #spreads = np.sqrt(np.diag(L0_psm))
         np.save(folder + "/spreads_psm1.npy", spreads)
-        np.save(folder + "/centers_psm1.npy", wcenters.T)
+        np.save(folder + "/centers_psm1.npy", wcenters)
         
     if not args.setup:
         print("##                                                 ##")
