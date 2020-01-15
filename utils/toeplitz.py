@@ -575,7 +575,7 @@ class tmat():
     def load(self, infile, safemode = True):
         # Load toeplitz matrix from infile
         
-        coords, blocks, domain = np.load(infile)
+        coords, blocks, domain = np.load(infile, allow_pickle=True)
         
         # Screen out blocks with negligibly small
         # coefficients
