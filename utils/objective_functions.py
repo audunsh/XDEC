@@ -10,7 +10,7 @@ import sys
 #import lwrap.lwrap as lwrap
 #sys.path.append(os.path.realpath('../lwrap/'))
 sys.path.insert(0,'../lwrap')
-import lwrap #.lwrap as lwrap
+import lwrap.lwrap as lwrap
 
 import matplotlib.pyplot as plt
 
