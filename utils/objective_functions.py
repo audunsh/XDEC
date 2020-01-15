@@ -62,9 +62,9 @@ def psm_m(c, p,coords, m= 1):
                                             xyzname_, bname))
     
     s0b = PRI.compute_onebody(p,c,coords)
-    s0 = tp.tmat()
+    #s0 = tp.tmat()
     #s0.load_nparray(s0b.reshape(coords.shape[0], p.get_n_ao(), p.get_n_ao()), coords)
-    s0.load("/Users/audunhansen/papers/globopt-paper/results/ethylene/S_crystal.npy")
+    #s0.load("/Users/audunhansen/papers/globopt-paper/results/ethylene/S_crystal.npy")
 
     #C = np.fromfile("/Users/audunhansen/papers/globopt-paper/results/aa/lcm_orbitals.u")[2:].reshape((508,508)).T[:, 22+66:] # (fortran is column major)
     #C = np.fromfile("/Users/audunhansen/papers/globopt-paper/results/aa/cmo_orbitals.u")[2:].reshape((508,508)).T[:, 22:66] # (fortran is column major)
