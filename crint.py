@@ -494,7 +494,7 @@ if __name__ == "__main__":
     if not args.skip_local:
         # Compute locality measures
         #of = oref.objective_function(P)
-        wcenters, wspreads = of.centers_spreads(C, p, s.coords, m=1)
+        wcenters, wspreads = of.centers_spreads(C, P, S.coords, m=1)
         #spreads = lambda tens : np.diag(tens[0].cget([0,0,0]) - tens[1].cget([0,0,0])**2 - tens[2].cget([0,0,0])**2 - tens[3].cget([0,0,0])**2)
         #spreads = spreads(tensors)
 
