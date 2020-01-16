@@ -19,6 +19,10 @@ import domdef as dd
 import PRI 
 import time
 
+"""
+Functions to aid the mapping of blocks in tensors
+"""
+
 def mapgen(vex1, vex2):
     """
     returns a matrix where vex1[ ret_indx[i,j] ] = vex1[i] - vex2[j]
@@ -833,6 +837,31 @@ class pair_fragment_amplitudes_():
 class fragment_amplitudes():
     """
     Class that handles t2 amplitudes with dynamically increasing size
+    Input parameters:
+        p               = prism object
+        wannier_centers 
+        coords
+        fragment        = an index array of the relevant occupied orbitals in the refcell
+        ib              = PRI integral builder instance
+        f_mo_pp         = Diagonal elements in the fock matrix 
+        virtual_cutoff  = distance cutoff of virtual space
+        occupied_cutoff = distance cutoff of occupied space
+        float_precision = bit precision to use in arrays
+
+    Methods
+        init_amplitudes()   - make initial guess of amplitudes and define arrays to contain them
+        initialize_blocks() - helper method for init_amplitudes()  that computes the relevant blocks in an optimized way
+        compute_energy()    - compute energy in entire Amplitude Orbital Space (AOS)
+        compute_fragmentt_energy() - compute energy where both occupied indices are located on the fragment.
+        init_cell_batch()   - 
+        init_cell()         -  Initialize tensors in cell ( 0 i , dL a | M j , dM b )
+        autoexpand_virtual_space() - includes n more of the closest virtuals into the excitation domain
+        autoexpand_occupied_space() - includfes n more of the closest occupied into the excitation domain
+        set_extent()        - grows tensors and computes the required elements
+        print_configuration_space_data() - prints to screen the current exitation domains
+        solve()             - Converges the amplitudes using MP2
+
+
     """
     def __init__(self, p, wannier_centers, coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0, float_precision = np.float64):
         self.p = p #prism object
@@ -863,6 +892,7 @@ class fragment_amplitudes():
         #print(self.d_ia.coords)
 
         self.init_amplitudes()
+    
     def init_amplitudes(self):
         """
         Initialize the amplitudes using the MP2-like starting guess
@@ -947,11 +977,6 @@ class fragment_amplitudes():
 
             
         self.initialize_blocks(sequence)
-
-
-
-
-
 
     def initialize_blocks(self, sequence):
         #print("Initialization sequence:")
@@ -1043,8 +1068,6 @@ class fragment_amplitudes():
                 j = i*1
         print(n_computed_di)
         print(n_computed_ex)
-  
-
 
     def compute_energy(self):
         """
@@ -1118,15 +1141,11 @@ class fragment_amplitudes():
         #print("E TOt", e_mp2_direct, e_mp2_exchange)
         return e_mp2
     
-    
-
     def init_cell_batch(self, coords):
         """
         Could perhaps save some seconds when initializing new cells
         """
         pass
-
-
 
     def init_cell(self, ddL, mmM, ddM):
         """
@@ -1151,7 +1170,6 @@ class fragment_amplitudes():
         #print("Increasing virtual cutoff:", self.virtual_cutoff, "->", new_cut)
         self.set_extent(new_cut, self.occupied_cutoff)
     
-
     def autoexpand_occupied_space(self, n_orbs = 10):
         """
         Include n_orbs more orbitals in the occupied extent
@@ -1160,8 +1178,6 @@ class fragment_amplitudes():
         #print("Increasing occupied cutoff:", self.occupied_cutoff, "->", new_cut)
         self.set_extent(self.virtual_cutoff, new_cut)
         
-
-    
     def set_extent(self, virtual_cutoff, occupied_cutoff):
         """
         Set extent of local domain
@@ -1505,173 +1521,9 @@ class fragment_amplitudes():
                 print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
                 break
 
+    def solve_MP2PAO(self, norm_thresh = 1e-10):
+        pass
 
-class attenuation_tuner():
-    def __init__(self, p, args):
-        
-        # Generate BT - identity matrix, small cutoff
-        c = tp.tmat()
-        c.load_nparray(np.ones((3,p.get_n_ao(), p.get_n_ao()), dtype =float),tp.lattice_coords([1,0,0]))
-        c.blocks[:-1] = 0.0
-        c.cset([0,0,0], np.eye(p.get_n_ao()))
-
-        c_occ, c_virt = PRI.occ_virt_split(c,p)
-        
-        ib_ao = PRI.integral_builder_ao(c,p,attenuation = 1.2, auxname="ri-fitbasis", circulant=args.circulant, robust = args.robust)
-
-        # AO Fock matrix
-        f_ao = tp.tmat()
-        f_ao.load(args.fock_matrix)
-
-        # Compute MO Fock matrix
-        f_mo = c.tT().cdot(f_ao*c, coords = c.coords)
-
-        f_mo_aa = c_virt.tT().cdot(f_ao*c_virt, coords = c.coords)
-        f_mo_ii = c_occ.tT().cdot(f_ao*c_occ, coords = c.coords)
-
-
-
-        # Compute energy denominator
-        f_aa = f_mo.cget([0,0,0])[np.arange(p.get_nocc(),p.get_n_ao()), np.arange(p.get_nocc(),p.get_n_ao())]
-        f_ii = f_mo.cget([0,0,0])[np.arange(p.get_nocc()),np.arange(p.get_nocc()) ]
-        
-        e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
-
-
-        # Wannier centers
-        wcenters = np.load(args.wcenters)*0
-
-
-        d = dd.build_distance_matrix(p, tp.lattice_coords([6,6,6]), wcenters, wcenters)
-        for cc in d.coords:
-            d.cset(cc, np.zeros_like(d.cget(cc))+np.sqrt(np.sum(cc**2)))
-        
-
-
-        
-
-
-
-        center_fragment = dd.atomic_fragmentation(p, d, 3.0)[0]
-        omegas = np.exp(np.linspace(np.log(0.15),np.log(10),10))
-
-        errors = []
-        for i in np.arange(10):
-            omega = omegas[-(i+1)]
-            #print(omega)
-            ib_ri = PRI.integral_builder(c,p,attenuation =omega, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust)
-            
-
-            #print(ib_ri.getcell([0,0,0], [0,0,0], [0,0,0]))
-            #print(ib_ao.getcell([0,0,0], [0,0,0], [0,0,0]))
-
-            print(omega, np.linalg.norm(ib_ri.getcell([0,0,0], [0,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [0,0,0], [0,0,0])), np.max(np.abs(ib_ri.getcell([0,0,0], [0,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [0,0,0], [0,0,0]))))
-
-            print(omega, np.linalg.norm(ib_ri.getcell([0,0,0], [1,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [1,0,0], [0,0,0])), np.max(np.abs(ib_ri.getcell([0,0,0], [1,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [1,0,0], [0,0,0]))))
-            
-            #print( (ib_ri.getcell([0,0,0], [0,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [0,0,0], [0,0,0]) )[0,:,0,:] )
-            #print( (ib_ri.getcell([0,0,0], [1,0,0], [0,0,0]) - ib_ao.getcell([0,0,0], [1,0,0], [0,0,0]) )[0,:,0,:] )
-
-            print( ib_ri.getcell([0,0,0], [0,0,0], [0,0,0])[0,:,0,:] )
-            print( ib_ao.getcell([0,0,0], [0,0,0], [0,0,0])[0,:,0,:] )
-            
-            print( ib_ri.getcell([0,0,0], [1,0,0], [0,0,0])[0,:,0,:] )
-            print( ib_ao.getcell([0,0,0], [1,0,0], [0,0,0])[0,:,0,:] )
-            err = []
-            err.append(ib_ri.getcell([0,0,0], [0,0,0], [0,0,0])[0,:,0,:])
-            err.append(ib_ao.getcell([0,0,0], [0,0,0], [0,0,0])[0,:,0,:])
-            err.append(ib_ri.getcell([0,0,0], [1,0,0], [0,0,0])[0,:,0,:])
-            err.append(ib_ao.getcell([0,0,0], [1,0,0], [0,0,0])[0,:,0,:])
-
-            errors.append(err)
-            #a_frag_ao=fragment_amplitudes(p, wcenters, c.coords, center_fragment, ib_ao, f_mo_ii, f_mo_aa, virtual_cutoff = 10.0, occupied_cutoff = 1.0)
-            
-            #a_frag_ri=fragment_amplitudes(p, wcenters, c.coords, center_fragment, ib_ri, f_mo_ii, f_mo_aa, virtual_cutoff = 10.0, occupied_cutoff = 1.0)
-
-            #a_frag_ao.solve()
-            #a_frag_ri.solve()
-
-            #ao_energy = a_frag_ao.compute_fragment_energy()
-            #ri_energy = a_frag_ri.compute_fragment_energy()
-
-            #print(omega, ao_energy, ri_energy)
-            np.save("errors_per_orb_cc_pvtz.npy", np.array(errors))
-        
-
-
-
-
-
-
-
-
-
-
-
-
-def converge_fragment_amplitudes(t2, G_direct, f_mo_ii, f_mo_aa, di_virt, di_occ, fragment,p):
-    """
-    Solve MP2 equations for the given fragment, return amplitudes
-    
-    Input parameters
-
-     t2     - array containing initial guess amplitudes
-
-    This function is obsolete, just used for debugging purposes
-
-    """
-    nocc = p.get_nocc()
-
-
-    virtual_extent = di_virt.coords
-    pair_extent = di_occ.coords
-
-    vp_indx = mapgen(virtual_extent, pair_extent)
-    pp_indx = mapgen(pair_extent, pair_extent)
-
-    for ti in np.arange(100):
-        #t2_new = np.zeros((nocc, ndom,  nvirt, pdom, nocc, ndom, nvirt), dtype = float)
-        t2_new = np.zeros_like(t2)
-        for dL in np.arange(di_virt.coords.shape[0]):
-            for dM in np.arange(di_virt.coords.shape[0]): 
-                for M in np.arange(di_occ.coords.shape[0]):
-                    tnew = -G_direct[:, dL, :, M, :, dM, :]
-
-                  
-
-                    # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{Li,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
-                    Fac = f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                    #tb = t2[:, :, :, M, :, dM, :][di_occ.cget(di_occ.coords[M])[:,0]]
-                    tnew -= np.einsum("iKcjb,Kac->iajb", t2[:, :, :, M, :, dM, :], Fac)
-
-                    # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
-                    Fbc = f_mo_aa.cget(virtual_extent - virtual_extent[dM])
-                    tnew -= np.einsum("iajKb,Kbc->iajb", t2[:, dL, :, M, :, :, :], Fbc)
-                    
-                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                    
-                    Fki = f_mo_ii.cget(-1*pair_extent)
-                    tnew += np.einsum("Kkajb,Kki->iajb",t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
-                    
-                    # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
-                    
-                    Fkj = f_mo_ii.cget(-1*pair_extent + pair_extent[M])
-                    tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
-
-                    
-                    # + \left(t^{\Delta L a, \Delta Mb}_{L'k,Mj}\right)_{n}\varepsilon^{\Delta L a, \Delta Mb}_{0i,Mj},
-                    #tnew += t2[:, dL, :, M, :, dM, :] #*E[:,dL,:,M,:,dM,:]**-1
-
-                    t2_new[:, dL, :, M, :, dM, :] = tnew*e_iajb**-1
-        #print("Residual norm: ")
-        t2 -= t2_new
-        rnorm = np.linalg.norm(t2_new)
-        if rnorm<1e-10:
-
-            print("Converged in %i itertions with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
-            break
-    return t2
-    
 
 
 
@@ -1700,7 +1552,7 @@ if __name__ == "__main__":
     parser.add_argument("wcenters", type = str, help="Wannier centers")
     parser.add_argument("-attenuation", type = float, default = 1.2, help = "Attenuation paramter for RI")
     parser.add_argument("-fot", type = float, default = 0.001, help = "fragment optimization treshold")
-    parser.add_argument("-circulant",default = False, action = "store_true", help = "fragment optimization treshold")
+    parser.add_argument("-circulant", type = bool, default = True, help = "Use circulant dot-product.")
     parser.add_argument("-robust", default = False, action = "store_true", help = "Enable Dunlap robust fit for improved integral accuracy.")
     parser.add_argument("-disable_static_mem", default = False, action = "store_true", help = "Recompute AO integrals for new fitting sets.")
     parser.add_argument("-n_core", type = int, default = 0, help = "Number of core orbitals (the first n_core orbitals will not be correlated).")
@@ -1909,9 +1761,6 @@ if __name__ == "__main__":
         
         print(" ")
         a_frag.solve()
-
-        #np.save("direct0_01.npy", a_frag.g_d)
-        #np.save("exchag0_01.npy", a_frag.g_x)
         
         # Converge to fot
         E_prev_outer = a_frag.compute_fragment_energy()
@@ -2055,35 +1904,6 @@ if __name__ == "__main__":
         pair.solve()
         print("Pair fragment energy for (1,0,0):", pair.compute_pair_fragment_energy())
         
-        
-
-        """
-        pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([0,1,0]))
-        print(pair.compute_pair_fragment_energy())
-        pair.solve()
-        print("Pair fragment energy for (0,1,0):",pair.compute_pair_fragment_energy())
-        
-        pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([0,0,1]))
-        print(pair.compute_pair_fragment_energy())
-        pair.solve()
-        print("Pair fragment energy for (0,0,1):", pair.compute_pair_fragment_energy())
-
-        pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([-1,0,0]))
-        print(pair.compute_pair_fragment_energy())
-        pair.solve()
-        print("Pair fragment energy for (1,0,0):", pair.compute_pair_fragment_energy())
-
-
-        pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([0,-1,0]))
-        print(pair.compute_pair_fragment_energy())
-        pair.solve()
-        print("Pair fragment energy for (0,1,0):",pair.compute_pair_fragment_energy())
-        
-        pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([0,0,-1]))
-        print(pair.compute_pair_fragment_energy())
-        pair.solve()
-        print("Pair fragment energy for (0,0,1):", pair.compute_pair_fragment_energy())
-        """
 
         for n in np.arange(10):
             pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([0,0,n]))
@@ -2091,8 +1911,4 @@ if __name__ == "__main__":
             pair.solve()
             print("Pair fragment energy for (0,0,%i):" %n, pair.compute_pair_fragment_energy())
 
-        #for pair in np.arange(1,10):
-        #    print(a_frag.d_ii.coords[pair], "Pair fragment energy:", a_frag.compute_pair_fragment_energy(pair))
-        #    print("-0.0000611450091260 (Gustav, 0,1)")
-        #print(-0.114393980708, "(3D Neon, fot 0.0001 (Gustav))")
         
