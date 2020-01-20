@@ -181,6 +181,14 @@ def get_zero_tmat(cutoffs, blockshape):
     coords = np.array(lattice_coords(cutoffs), dtype = int)
     
     return setup_zero_tmat(coords, blockshape)
+
+def get_identity_tmat(N):
+    coords = np.array([[0,0,0], [1,0,0]])
+    blocks = np.zeros((coords.shape[0], N,N))
+    blocks[0] = np.eye(N)
+    I = tmat()
+    I.load_nparray(blocks, coords)
+    return I
     
 def setup_zero_tmat(coords, blockshape):
     blocks = np.zeros((len(coords), blockshape[0], blockshape[1]),
