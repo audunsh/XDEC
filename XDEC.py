@@ -1646,6 +1646,7 @@ if __name__ == "__main__":
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 
             # Append virtual centers to the list of centers
             wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
@@ -1659,6 +1660,11 @@ if __name__ == "__main__":
             print(wcenters)
             
 >>>>>>> parent of dd30c00... PAO solver
+=======
+            wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
+            print(wcenters)
+            
+>>>>>>> parent of dd30c00... PAO solver
 
             
 
@@ -1667,6 +1673,7 @@ if __name__ == "__main__":
             c_virt.load(args.virtual_space)
             
     
+<<<<<<< HEAD
 
     
     
@@ -1675,6 +1682,16 @@ if __name__ == "__main__":
    
     
 
+=======
+
+    
+    
+    
+
+   
+    
+
+>>>>>>> parent of dd30c00... PAO solver
 
     
     # AO Fock matrix
