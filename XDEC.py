@@ -1644,8 +1644,10 @@ if __name__ == "__main__":
             p.n_core = args.n_core
             s_virt = c_virt.tT().circulantdot( s.circulantdot( c_virt ))
 
+
+            # Append virtual centers to the list of centers
             wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
-            print(wcenters)
+            
             
 
             
