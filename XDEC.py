@@ -1630,7 +1630,7 @@ if __name__ == "__main__":
     c = tp.tmat()
     c.load(args.coefficients)
     c.set_precision(args.float_precision)
-    print(c.blocks.dtype)
+
 
 
     #c.blocks = np.array(c.blocks, dtype = args.float_precision)
@@ -1644,54 +1644,16 @@ if __name__ == "__main__":
             p.n_core = args.n_core
             s_virt = c_virt.tT().circulantdot( s.circulantdot( c_virt ))
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-
             # Append virtual centers to the list of centers
             wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
-            
-            
-=======
-    print(c_occ.blocks.dtype)
->>>>>>> dd30c00e3f8911065db78cd7edbea4230057105a
-=======
-            wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
             print(wcenters)
-            
->>>>>>> parent of dd30c00... PAO solver
-=======
-            wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
-            print(wcenters)
-            
->>>>>>> parent of dd30c00... PAO solver
-
-            
 
         else:
             c_virt = tp.tmat()
             c_virt.load(args.virtual_space)
             
     
-<<<<<<< HEAD
 
-    
-    
-    
-
-   
-    
-
-=======
-
-    
-    
-    
-
-   
-    
-
->>>>>>> parent of dd30c00... PAO solver
 
     
     # AO Fock matrix
