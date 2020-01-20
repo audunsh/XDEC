@@ -372,6 +372,146 @@ def centers_spreads(c, p,coords, m= 1):
 
 
     
+def conventional_paos(c,p, s = None, orthonormalize = False):
+    """
+    Concstruct the PAOs according to 
+    """
+    p.n_core = 0
+    c_occ, c_virt = PRI.occ_virt_split( c, p)
+
+    
+
+    coords = c.coords
+
+    ts = (p.get_n_ao(), coords.shape[0], p.get_n_ao() ) #shape
+
+    lint = lwrap.engine()
+
+    lint.set_operator_emultipole()
+
+
+
+    xyzname = "temp_geom.xyz"
+    xyzfile = open(xyzname, "w")
+    xyzfile.write(PRI.get_xyz(p, conversion_factor = 0.5291772109200000))
+    xyzfile.close()
+
+    xyzname_ = "temp_geom_0.xyz"
+    xyzfile_ = open(xyzname_, "w")
+    xyzfile_.write(PRI.get_xyz(p, coords, conversion_factor = 0.5291772109200000))
+    xyzfile_.close()
+
+
+
+
+
+    basis = p.get_libint_basis()
+    bname = "temp_basis"
+    bfile = open(bname + ".g94", "w")
+    bfile.write(basis)
+    bfile.close()
+
+    lint.setup_pq(xyzname, bname, 
+                    xyzname_, bname)
+    vint = np.array(lint.get_pq_multipole(xyzname, bname, 
+                                            xyzname_, bname))
+    
+    #sb = PRI.compute_onebody(p,c,coords)
+
+
+
+    sb = vint[:,:,0].reshape(ts).swapaxes(0,1)
+    xb, yb, zb = vint[:,:,1].reshape(ts).swapaxes(0,1), vint[:,:,2].reshape(ts).swapaxes(0,1), vint[:,:,3].reshape(ts).swapaxes(0,1)
+    xxb, yyb,zzb = vint[:,:,4].reshape(ts).swapaxes(0,1), vint[:,:,7].reshape(ts).swapaxes(0,1), vint[:,:,9].reshape(ts).swapaxes(0,1)
+    
+    s = tp.tmat()
+    s.load_nparray(sb, coords)
+    
+
+    x = tp.tmat()
+    x.load_nparray(xb, coords)
+    y = tp.tmat()
+    y.load_nparray(yb, coords)
+    z = tp.tmat()
+    z.load_nparray(zb, coords)
+
+    xx = tp.tmat()
+    xx.load_nparray(xxb, coords)
+    yy = tp.tmat()
+    yy.load_nparray(yyb, coords)
+    zz = tp.tmat()
+    zz.load_nparray(zzb, coords)
+
+
+    
+
+
+
+
+
+
+    d = c_occ.circulantdot(c_occ.tT())*2
+
+
+    
+    c_pao = d.circulantdot(s)
+
+    c_pao.blocks*=-.5 #.5
+    
+    
+    c_pao.blocks[ c_pao.mapping[ c_pao._c2i([0,0,0]) ] ] += np.eye(c_pao.blockshape[0])
+    
+    
+    smo_ov = c_occ.tT().circulantdot(s.circulantdot(c_pao))
+    print("Circulant PAO test:", np.max(np.abs(smo_ov.blocks)))
+
+
+    norms = np.diag(c_pao.tT().circulantdot(s.circulantdot(c_pao)).cget([0,0,0]))
+
+
+    c_pao_screened_blocks = c_pao.blocks[:-1, :, norms>1e-2]
+    c_pao_screened_coords = c_pao.coords
+
+    c_pao = tp.tmat()
+    c_pao.load_nparray(c_pao_screened_blocks, c_pao_screened_coords)
+
+    norms = np.diag(c_pao.tT().circulantdot(s.circulantdot(c_pao)).cget([0,0,0]))
+
+    #normalize
+    for i in np.arange(len(norms)):
+        c_pao.blocks[:,:,i] = c_pao.blocks[:,:,i]/np.sqrt(norms[i])
+
+
+
+    # Compute centers
+
+    SC = s.circulantdot(c_pao)
+
+    
+   
+            
+    lattice = p.lattice
+
+    xSC = SC.cscale(0, lattice)
+    ySC = SC.cscale(1, lattice)
+    zSC = SC.cscale(2, lattice)
+
+    XC = x.circulantdot(c_pao)
+    YC = y.circulantdot(c_pao)
+    ZC = z.circulantdot(c_pao)
+
+    Xmo = c_pao.tT().circulantdot(XC) - c_pao.tT().circulantdot(xSC)
+    Ymo = c_pao.tT().circulantdot(YC) - c_pao.tT().circulantdot(ySC)
+    Zmo = c_pao.tT().circulantdot(ZC) - c_pao.tT().circulantdot(zSC)
+    
+    wcenters_x = np.diag(Xmo.cget([0,0,0]))
+    wcenters_y = np.diag(Ymo.cget([0,0,0]))
+    wcenters_z = np.diag(Zmo.cget([0,0,0]))
+    
+    wcenters = np.array([wcenters_x, wcenters_y, wcenters_z]).T
+
+
+    return s, c_pao, wcenters
 
 
 

@@ -14,6 +14,8 @@ import utils.toeplitz as tp
 
 import lwrap.lwrap as li # Libint wrapper
 
+import utils.objective_functions as of
+
 import utils.prism as pr
 import domdef as dd
 import PRI 
@@ -761,6 +763,9 @@ class pair_fragment_amplitudes_():
         pp_indx = mapgen(pair_extent, pair_extent)
 
         for ti in np.arange(100):
+
+
+
             t2_new = np.zeros_like(self.t2)
             for dL in np.arange(self.n_virtual_cells):
                 dLv = self.d_ia.coords[dL]
@@ -787,6 +792,10 @@ class pair_fragment_amplitudes_():
                         # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
                         Fbc = self.f1.f_mo_aa.cget(virtual_extent - virtual_extent[dM])
                         tnew -= np.einsum("iajKb,Kbc->iajb", self.t2[:, dL, :, M, :, :, :], Fbc)
+
+
+
+                        
                         
                         # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
                         #vpdL = mapgen(virtual_extent-Mv, pair_extent)
@@ -1603,6 +1612,9 @@ if __name__ == "__main__":
     p = pr.prism(args.project_file)
     p.n_core = args.n_core
 
+    # Wannier centers
+    wcenters = np.load(args.wcenters)[p.n_core:]
+
 
     # Fitting basis
     auxbasis = PRI.basis_trimmer(p, args.auxbasis, alphacut = args.basis_truncation)
@@ -1627,10 +1639,28 @@ if __name__ == "__main__":
     c_occ, c_virt = PRI.occ_virt_split(c,p)
 
     if args.virtual_space is not None:
-        c_virt = tp.tmat()
-        c_virt.load(args.virtual_space)
+        if args.virtual_space == "pao":
+            s, c_virt, wcenters_virt = of.conventional_paos(c,p)
+            p.n_core = args.n_core
+            s_virt = c_virt.tT().circulantdot( s.circulantdot( c_virt ))
+
+            wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
+            print(wcenters)
+            
+
+            
+
+        else:
+            c_virt = tp.tmat()
+            c_virt.load(args.virtual_space)
+            
     
-    print(c_occ.blocks.dtype)
+
+    
+    
+    
+
+   
     
 
 
@@ -1660,8 +1690,8 @@ if __name__ == "__main__":
     e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
 
 
-    # Wannier centers
-    wcenters = np.load(args.wcenters)[p.n_core:]
+    
+    
 
 
 
