@@ -39,7 +39,7 @@ def mapgen(vex1, vex2):
 
 def intersection3s(coords1, coords2):
     """
-    Returns the intersection 3-vectors between two sets of (N,3) arrays
+    Returns the intersection of 3-vectors between two sets of (N,3) arrays
     """
     distance = np.sum((coords1[:,None] - coords2[None,:])**2, axis = 2)
     
@@ -48,7 +48,7 @@ def intersection3s(coords1, coords2):
 
 def c2_not_in_c1(c1, c2, sort = False):
     """
-    Returns the 3-vectors in c2 not present in c1
+    Returns the 3-vectors in c2 which are not present in c1
     """
     distance = np.sum((c1[:,None] - c2[None,:])**2, axis = 2)
     
@@ -63,10 +63,11 @@ def c2_not_in_c1(c1, c2, sort = False):
 class pair_fragment_amplitudes():
     # Setup and compute all pair fragments between 0 and M
     def __init__(self, fragment_amplitudes_1, fragment_amplitudes_2, M, float_precision = np.float64):
-        self.M = M
+        self.M = M # Translation of fragment 2
         self.f1 = fragment_amplitudes_1
         self.f2 = fragment_amplitudes_2
 
+        # Option for low precision (memory saving)
         self.float_precision = float_precision
 
         self.f1_occupied_cells = self.f1.d_ii.coords[:self.f1.n_occupied_cells]
@@ -602,13 +603,6 @@ class pair_fragment_amplitudes_():
         #print(np.sum((self.coords_occupied-self.M)**2, axis = 1)==0)
         self.mM = np.arange(self.coords_occupied.shape[0])[np.sum((self.coords_occupied-self.M)**2, axis = 1)==0][0]
         self.mM_ = np.arange(self.coords_occupied.shape[0])[np.sum((self.coords_occupied+self.M)**2, axis = 1)==0][0]
-        
-        #print(self.M, self.coords_occupied[self.mM], self.mM)
-        #print(-self.M, self.coords_occupied[self.mM_], self.mM_)
-
-        #print("Pair fragment occupied coordinates:")
-        #print(self.coords_occupied)
-        #print(self.coords_virtual)
 
         self.vv_indx = mapgen(self.coords_virtual, self.coords_virtual)
 
@@ -1522,6 +1516,10 @@ class fragment_amplitudes():
                 break
 
     def solve_MP2PAO(self, norm_thresh = 1e-10):
+        """
+        Solving the MP2 equations for a non-orthogonal virtual space
+        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
+        """
         pass
 
 
@@ -1897,18 +1895,26 @@ if __name__ == "__main__":
             print(" ")
             print(" ")
 
+        # Outline of pair fragment calcs
 
+        pair_coords = tp.lattice_coords([10,10,10])
+        pair_coords = pair_coords[np.argsort(np.sum(pair_coords**2, axis = 1))[1:]] #Sort in increasing order
+        pair_total = 0
+        for c in pair_coords:
 
-        pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([1,0,0]))
-        print(pair.compute_pair_fragment_energy())
-        pair.solve()
-        print("Pair fragment energy for (1,0,0):", pair.compute_pair_fragment_energy())
-        
-
-        for n in np.arange(10):
-            pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([0,0,n]))
-            print(pair.compute_pair_fragment_energy())
+            pair = pair_fragment_amplitudes(a_frag, a_frag, M = c)
+            #print(pair.compute_pair_fragment_energy())
             pair.solve()
-            print("Pair fragment energy for (0,0,%i):" %n, pair.compute_pair_fragment_energy())
+            p_energy = pair.compute_pair_fragment_energy()
+            pair_total += 2*p_energy
+            print("Pair fragment energy for ",c," is ", p_energy, " (total: ", pair_total + E_new, " )")
+            
+        
+     
+        #for n in np.arange(10):
+        #    pair = pair_fragment_amplitudes(a_frag, a_frag, M = np.array([0,0,n]))
+        #    print(pair.compute_pair_fragment_energy())
+        #    pair.solve()
+        #    print("Pair fragment energy for (0,0,%i):" %n, pair.compute_pair_fragment_energy())
 
         

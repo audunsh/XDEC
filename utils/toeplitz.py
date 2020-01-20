@@ -35,6 +35,10 @@ def c2_not_in_c1(c1, c2, sort = False):
         c2_ret = c2_ret[np.argsort(np.sum(c2_ret**2, axis = 1))]
         return c2_ret
 
+def c2_union_c1(c1,c2, sort = False):
+    dc = c2_not_in_c1(c1,c2)
+    return np.append(c1, dc, axis = 0)
+
 def test_tmat(t):
     '''
     This function tests an instance of tmat:
@@ -199,7 +203,7 @@ def screen(coords, blocks, norm, tolerance):
     screened_blocks = []
     for i in range(n):
         
-        if (norm(blocks[i]) > tolerance) or \
+        if (np.max(np.abs(blocks[i])) > tolerance) or \
            (coords[i] == [0, 0, 0]).all():
             
             screened_coords.append(coords[i].tolist())
@@ -207,11 +211,29 @@ def screen(coords, blocks, norm, tolerance):
             
     return np.array(screened_coords, dtype=int), \
         np.array(screened_blocks, dtype=blocks.dtype)
+
+def screen_(coords, blocks, norm, tolerance = 1e-14):
+    screening = np.zeros(blocks.shape[0], dtype = np.bool)
+    screening = np.max(np.abs(blocks), axis = (1,2))>tolerance
+    z0 = np.argwhere(np.sum(coords**2, axis = 1)==0)
+    screening[z0] = True
+    screening[-1] = True
+    return coords[screening[:-1]],blocks[screening]
+
+
+def screen__(coords, blocks, norm, tolerance = 1e-14):
+    #screening = np.zeros(coords.shape[0], dtype = np.bool)
+    screening = np.max(np.abs(blocks[:-1]), axis = (1,2))>tolerance
+    z0 = np.argwhere(np.sum(coords**2, axis = 1)==0)
+    screening[z0] = True
+    #screening[-1] = True
+    return coords[screening],blocks[:-1][screening]
         
 def screen_tmat(m, tolerance = 1e-14):
-    
-    coords, blocks = screen(m.coords, m.blocks, L2norm, tolerance)
-    return tmat(coords, blocks)
+    #coords, blocks = screen(m.coords, m.blocks, L2norm, tolerance)
+    #ret = tp.tmat()
+    mx = np.max(np.abs(m.blocks[:-1]), axis = (1,2))>tolerance
+    return tmat(m.coords[mx], m.blocks[:-1][mx])
 
 def merge_blocks(tmatrix1, tmatrix2, axis):
     '''
@@ -648,7 +670,7 @@ class tmat():
         # Store "sequential address" of block to corresponding "mapped address"
         # So that a lookop in mapping will return address of block in the sequential (and "dense") storage
         if self.zero_padded:
-            self.zero_block = self.blocks.shape[0]
+            self.zero_block = self.blocks.shape[0] - 1
         else:
             self.zero_block = self.blocks.shape[0] #a block outside the dense
             
@@ -1092,9 +1114,11 @@ class tmat():
             ret.blocks[ret.mapping[prod_indx_flat[block_indices]]] += ret_addblocks
             
         # Screen out negligible blocks
+        
         ret.coords, ret.blocks = \
             screen(ret.coords, ret.blocks, ret.norm,
                    ret.tolerance)
+        
         
         # Update the object after the screening
         ret.zero_padded = False
@@ -1504,8 +1528,27 @@ class tmat():
     def set_precision(self, precision):
         self.blocks = np.array(self.blocks, dtype = precision)
 
-
     def circulantdot(self, other, complx = False, screening = None):
+        """
+        memory-easy circulant product
+        """
+        npt = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0) 
+        mk = screen_tmat(transform(self, np.fft.fftn, n_points = npt))
+        nk = screen_tmat(transform(other, np.fft.fftn, n_points = npt))
+        #mk = transform(m, np.fft.fftn, n_points = npt)
+        #nk = transform(n, np.fft.fftn, n_points = npt)
+        c = c2_union_c1(mk.coords, nk.coords)
+        mk = mk.cget(c) #overwrite deliberately to save mem
+        nk = nk.cget(c) 
+        rb = np.zeros((c.shape[0], mk.shape[1], nk.shape[2]), dtype = complex)
+        for i in np.arange(c.shape[0]):
+            rb[i] = np.dot(mk[i], nk[i])
+        del(mk)
+        del(nk)
+        return screen_tmat(transform(tmat(c, rb), np.fft.ifftn, n_points = npt, complx = False))
+        
+
+    def circulantdot_(self, other, complx = False, screening = None):
         """
         Computes the dot product assuming a circulant matrix structure
         """
@@ -1513,6 +1556,8 @@ class tmat():
         n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0) 
         
         self_k = transform(self, np.fft.fftn, n_points = n_points) 
+        #if screening is not None:
+        #    self_k = 
         other_k = transform(other, np.fft.fftn, n_points = n_points) 
 
         
@@ -2077,10 +2122,10 @@ def array2tmatrix_3d(all_elems, mesh, complx):
                 else:
                     elems_l = all_elems[m1, m2, m3, :, :].real
                     
-                if np.amax(np.absolute(elems_l)) > 1e-30:
-                    # Store block of Fourier coefficients
-                    coords.append(l_vector)
-                    blocks.append(elems_l)
+                #if np.amax(np.absolute(elems_l)) > 1e-30:
+                #    # Store block of Fourier coefficients
+                coords.append(l_vector)
+                blocks.append(elems_l)
                     
     return tmat(np.array(coords), np.array(blocks),
                 blockshape=(all_elems.shape[3],
