@@ -268,6 +268,7 @@ def centers_spreads(c, p,coords, m= 1):
 
     #print(s.blocks.shape)
     #print(c.blocks.shape)
+    
 
     #x2 = tp.tmat()
     #x2.load("/Users/audunhansen/papers/pao-paper/results/X2ao.npy")
@@ -310,12 +311,14 @@ def centers_spreads(c, p,coords, m= 1):
     xXC = XC.cscale(0, lattice)
     yYC = YC.cscale(1, lattice)
     zZC = ZC.cscale(2, lattice)
+    
 
     
     Xmo = c.tT().circulantdot(XC) - c.tT().circulantdot(xSC)
     Ymo = c.tT().circulantdot(YC) - c.tT().circulantdot(ySC)
     Zmo = c.tT().circulantdot(ZC) - c.tT().circulantdot(zSC)
     #print(np.diag(Xmo.cget([0,0,0])))
+
     
     wcenters_x = np.diag(Xmo.cget([0,0,0]))
     wcenters_y = np.diag(Ymo.cget([0,0,0]))

@@ -1536,15 +1536,15 @@ class tmat():
     def set_precision(self, precision):
         self.blocks = np.array(self.blocks, dtype = precision)
 
-    def circulantdot(self, other, complx = False, screening = None):
+    def circulantdot_(self, other, complx = False, screening = None):
         """
         memory-easy circulant product
         """
         npt = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0) 
         mk = screen_tmat(transform(self, np.fft.fftn, n_points = npt))
         nk = screen_tmat(transform(other, np.fft.fftn, n_points = npt))
-        #mk = transform(m, np.fft.fftn, n_points = npt)
-        #nk = transform(n, np.fft.fftn, n_points = npt)
+        #mk = transform(self, np.fft.fftn, n_points = npt)
+        #nk = transform(other, np.fft.fftn, n_points = npt)
         c = c2_union_c1(mk.coords, nk.coords)
         mk = mk.cget(c) #overwrite deliberately to save mem
         nk = nk.cget(c) 
@@ -1556,7 +1556,7 @@ class tmat():
         return screen_tmat(transform(tmat(c, rb), np.fft.ifftn, n_points = npt, complx = False))
         
 
-    def circulantdot_(self, other, complx = False, screening = None):
+    def circulantdot(self, other, complx = False, screening = None):
         """
         Computes the dot product assuming a circulant matrix structure
         """
