@@ -1430,7 +1430,7 @@ class fragment_amplitudes():
             return self.solve_MP2PAO(norm_thresh, s_virt = s_virt)
         else:
             return self.solve_MP2(norm_thresh)
-        
+
 
 
     def solve_MP2(self, norm_thresh = 1e-10):
@@ -1681,7 +1681,7 @@ if __name__ == "__main__":
     parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
     parser.add_argument("-virtual_space", type = str, default = None, help = "Alternative representation of virtual space, provided as tmat file." )
     parser.add_argument("-solver", type = str, default = "mp2", help = "Solver model." )
-    
+
     args = parser.parse_args()
 
     args.float_precision = eval(args.float_precision)
@@ -1762,16 +1762,16 @@ if __name__ == "__main__":
         else:
             c_virt = tp.tmat()
             c_virt.load(args.virtual_space)
-            
-    
+
+
     if args.solver != "mp2":
         s = PRI.compute_overlap_matrix(p, c.coords)
         smo_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
-        
-    
 
-    
-    
+
+
+
+
     # AO Fock matrix
     f_ao = tp.tmat()
     f_ao.load(args.fock_matrix)
