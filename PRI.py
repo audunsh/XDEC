@@ -404,6 +404,46 @@ def compute_onebody(p,s, T = np.array([[0,0,0]]), operator = "overlap", conversi
     vint = np.array(lint.get_pq(atomsJ, bname, atomsK, bname))
     return vint
 
+def compute_overlap_matrix(p, T = np.array([[0,0,0]]), conversion_factor = .5291772109200000):
+    """
+    Computes integrals of the type 
+        ( 0 p | O^ | T q)
+    for all coordinates T provided in t. 
+    The operator O^ is provided as a string, see available operators below
+    (More are easily available from libint, needs some small extra functions in lwrap)
+
+    """
+    atomsJ = "atoms_J.xyz"
+    atomsK = "atoms_K.xyz"
+    
+    bname = "temp_basis"
+
+    basis = os.environ["LIBINT_DATA_PATH"] + "/%s.g94" % bname
+    
+    f = open(basis, "w")
+    f.write(p.get_libint_basis())
+    f.close()
+    
+    f = open(atomsJ, "w")
+    f.write(get_xyz(p, conversion_factor=conversion_factor))
+    f.close()
+    
+    f = open(atomsK, "w")
+    f.write(get_xyz(p, T, conversion_factor=conversion_factor))
+    f.close()    
+    
+    lint = li.engine()
+    
+    lint.set_operator_overlap()
+    
+    lint.setup_pq(atomsJ, bname, atomsK, bname)
+    vint = np.array(lint.get_pq(atomsJ, bname, atomsK, bname))
+    vint = vint.reshape((p.get_n_ao(), T.shape[0], p.get_n_ao())).swapaxes(0,1)
+    print(vint.shape)
+    s = tp.tmat()
+    s.load_nparray(vint, T)
+    return s
+
 def compute_JK(p, s, attenuation = 1, auxname = "cc-pvdz", coulomb = False):
     """
     Computes integrals of the type ( 0 J | T K )
@@ -738,13 +778,13 @@ def estimate_attenuation_distance_(p, attenuation = 0.1, c2 = [0,0,0], thresh = 
 def contract_occupied(vals):
     coords, Jmn, c, NL, NJ, Nn, Np, Nq, coord, c_occ = vals
 
-    tj = np.zeros((NJ, Np, NL, Nn), dtype = float) #LJpn
+    tj = np.zeros((NJ, Np, NL, Nn), dtype = float) # LJpn
 
     for i in np.arange(coords.shape[0]):
-        # For all dN offsets in (LJ|0m dN n)
+        # For all dN offsets in (LJ|0 m dN n)
         
         Jmnc2 = Jmn[i]
-        Jmnc_coords = -c.coords - coords[i] #HERE - - - 
+        Jmnc_coords = -c.coords - coords[i] # HERE
         Jmnc2blocks = Jmnc2.cget(Jmnc_coords).reshape(NL, NJ,Nn,Nn )
         
         
@@ -925,6 +965,7 @@ class coefficient_fitter_static():
 
             self.Jmnc_sparse_tensors.append(vectors)
             self.Jmnc_sparse_screening.append(screening)
+            
             print("\r>> Contracted occupieds (LJ|0p Mn) for L = ", self.c.coords[coord], "(%.2f percent complete, compression rate: %.2e)" % (100.0*coord/self.c.coords.shape[0], 100.0*compr/total), end='')
         print(time.time()-t0)
         print("Screening-induced sparsity is at %.2e percent." % (100.0*compr/total))

@@ -1425,7 +1425,15 @@ class fragment_amplitudes():
         print("%i virtual orbitals included in fragment." % self.n_virtual_tot)
         print("%i occupied orbitals included in fragment." % self.n_occupied_tot)
 
-    def solve(self, norm_thresh = 1e-10):
+    def solve(self, norm_thresh = 1e-10, eqtype = "mp2"):
+        if eqtype == "mp2_nonorth":
+            return self.solve_MP2PAO(norm_thresh)
+        else:
+            return self.solve_MP2(norm_thresh)
+        
+
+
+    def solve_MP2(self, norm_thresh = 1e-10):
         """
         Converge fragment (AOS) amplitudes within occupied and virtual extents 
         """
@@ -1571,6 +1579,7 @@ if __name__ == "__main__":
     parser.add_argument("-float_precision", type = str, default = "np.float64", help = "Floating point precision.")
     parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
     parser.add_argument("-virtual_space", type = str, default = None, help = "Alternative representation of virtual space, provided as tmat file." )
+    parser.add_argument("-solver", type = str, default = "mp2", help = "Solver model." )
     
     args = parser.parse_args()
 
@@ -1643,6 +1652,7 @@ if __name__ == "__main__":
             s, c_virt, wcenters_virt = of.conventional_paos(c,p)
             p.n_core = args.n_core
             s_virt = c_virt.tT().circulantdot( s.circulantdot( c_virt ))
+            args.solver = "mp2_nonorth"
 
             # Append virtual centers to the list of centers
             wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
@@ -1653,8 +1663,13 @@ if __name__ == "__main__":
             c_virt.load(args.virtual_space)
             
     
+    if args.solver != "mp2":
+        s = PRI.compute_overlap_matrix(p, c.coords)
+        smo_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
+        
+    
 
-
+    
     
     # AO Fock matrix
     f_ao = tp.tmat()
