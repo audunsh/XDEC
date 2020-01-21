@@ -1425,9 +1425,9 @@ class fragment_amplitudes():
         print("%i virtual orbitals included in fragment." % self.n_virtual_tot)
         print("%i occupied orbitals included in fragment." % self.n_occupied_tot)
 
-    def solve(self, norm_thresh = 1e-10, eqtype = "mp2"):
+    def solve(self, norm_thresh = 1e-10, eqtype = "mp2", s_virt = None):
         if eqtype == "mp2_nonorth":
-            return self.solve_MP2PAO(norm_thresh)
+            return self.solve_MP2PAO(norm_thresh, s_virt = s_virt)
         else:
             return self.solve_MP2(norm_thresh)
         
@@ -1532,7 +1532,7 @@ class fragment_amplitudes():
                 print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
                 break
 
-    def solve_MP2PAO(self, norm_thresh = 1e-10):
+    def solve_MP2PAO(self, norm_thresh = 1e-10, s_virt = None):
         """
         Solving the MP2 equations for a non-orthogonal virtual space
         (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
@@ -1549,7 +1549,7 @@ class fragment_amplitudes():
         virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
         pair_extent = self.d_ii.coords[:self.n_occupied_cells]
 
-        self.s_pao = tp.get_identity_tmat(self.p.get_nvirt())
+        self.s_pao = s_virt 
 
         f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
         f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
@@ -1942,7 +1942,7 @@ if __name__ == "__main__":
 
 
                     t_1 = time.time()
-                    a_frag.solve()
+                    a_frag.solve(eqtype = args.solver)
                     t_2 = time.time()
                     E_new = a_frag.compute_fragment_energy()
                     t_3 = time.time()
@@ -1982,7 +1982,7 @@ if __name__ == "__main__":
                 print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                 print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
-                a_frag.solve()
+                a_frag.solve(eqtype = args.solver)
                 E_new = a_frag.compute_fragment_energy()
 
                 #a_frag.print_configuration_space_data()
@@ -2005,7 +2005,7 @@ if __name__ == "__main__":
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
-                    a_frag.solve()
+                    a_frag.solve(eqtype = args.solver)
                     E_new = a_frag.compute_fragment_energy()
 
                     #a_frag.print_configuration_space_data()
