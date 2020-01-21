@@ -1549,15 +1549,15 @@ class fragment_amplitudes():
         virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
         pair_extent = self.d_ii.coords[:self.n_occupied_cells]
 
-        self.s_pao = s_virt 
+        self.s_pao = s_virt
 
         f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
         f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
         s_aa = np.diag(self.s_pao.cget([0,0,0]))
         f_ij = f_ii[:,None] + f_ii[None,:]
         sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(5),np.ones(5))
-        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(5),np.ones(5))
+        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
         f_iajb = sfs - fs_ab - fs_ba
 
         for ti in np.arange(100):
@@ -1602,9 +1602,9 @@ class fragment_amplitudes():
 
                         # Perform contractions
                         Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                        Fdb = self.f_mo_aa.cget(virtual_extent - virtual_extent[dM])
+                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
                         Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
-                        Sdb = self.s_pao.cget(virtual_extent - virtual_extent[dM])
+                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
 
                         # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
                         t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :])
@@ -1764,9 +1764,9 @@ if __name__ == "__main__":
             c_virt.load(args.virtual_space)
 
 
-    if args.solver != "mp2":
-        s = PRI.compute_overlap_matrix(p, c.coords)
-        smo_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
+
+    s = PRI.compute_overlap_matrix(p, c.coords)
+    smo_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
 
 
 
@@ -1895,7 +1895,7 @@ if __name__ == "__main__":
 
 
         print(" ")
-        a_frag.solve()
+        a_frag.solve(eqtype = args.solver,s_virt=smo_virt)
 
         # Converge to fot
         E_prev_outer = a_frag.compute_fragment_energy()
@@ -1942,7 +1942,7 @@ if __name__ == "__main__":
 
 
                     t_1 = time.time()
-                    a_frag.solve(eqtype = args.solver)
+                    a_frag.solve(eqtype = args.solver,s_virt=smo_virt)
                     t_2 = time.time()
                     E_new = a_frag.compute_fragment_energy()
                     t_3 = time.time()
@@ -1982,7 +1982,7 @@ if __name__ == "__main__":
                 print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                 print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
-                a_frag.solve(eqtype = args.solver)
+                a_frag.solve(eqtype = args.solver,s_virt=smo_virt)
                 E_new = a_frag.compute_fragment_energy()
 
                 #a_frag.print_configuration_space_data()
@@ -2005,7 +2005,7 @@ if __name__ == "__main__":
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
-                    a_frag.solve(eqtype = args.solver)
+                    a_frag.solve(eqtype = args.solver,s_virt=smo_virt)
                     E_new = a_frag.compute_fragment_energy()
 
                     #a_frag.print_configuration_space_data()
