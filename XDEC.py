@@ -1430,7 +1430,7 @@ class fragment_amplitudes():
             return self.solve_MP2PAO(norm_thresh, s_virt = s_virt)
         else:
             return self.solve_MP2(norm_thresh)
-
+        
 
 
     def solve_MP2(self, norm_thresh = 1e-10):
@@ -1549,15 +1549,15 @@ class fragment_amplitudes():
         virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
         pair_extent = self.d_ii.coords[:self.n_occupied_cells]
 
-        self.s_pao = s_virt
+        self.s_pao = s_virt 
 
         f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
         f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
         s_aa = np.diag(self.s_pao.cget([0,0,0]))
         f_ij = f_ii[:,None] + f_ii[None,:]
         sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(5),np.ones(5))
+        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(5),np.ones(5))
         f_iajb = sfs - fs_ab - fs_ba
 
         for ti in np.arange(100):
@@ -1602,9 +1602,9 @@ class fragment_amplitudes():
 
                         # Perform contractions
                         Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
+                        Fdb = self.f_mo_aa.cget(virtual_extent - virtual_extent[dM])
                         Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
-                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
+                        Sdb = self.s_pao.cget(virtual_extent - virtual_extent[dM])
 
                         # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
                         t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :])
@@ -1681,7 +1681,7 @@ if __name__ == "__main__":
     parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
     parser.add_argument("-virtual_space", type = str, default = None, help = "Alternative representation of virtual space, provided as tmat file." )
     parser.add_argument("-solver", type = str, default = "mp2", help = "Solver model." )
-
+    
     args = parser.parse_args()
 
     args.float_precision = eval(args.float_precision)
@@ -1752,6 +1752,7 @@ if __name__ == "__main__":
         if args.virtual_space == "pao":
             s, c_virt, wcenters_virt = of.conventional_paos(c,p)
             p.n_core = args.n_core
+            p.set_nvirt(c_virt.blocks.shape[2])
             s_virt = c_virt.tT().circulantdot( s.circulantdot( c_virt ))
             args.solver = "mp2_nonorth"
 
@@ -1762,16 +1763,17 @@ if __name__ == "__main__":
         else:
             c_virt = tp.tmat()
             c_virt.load(args.virtual_space)
-
-
-
+            p.set_nvirt(c_virt.blocks.shape[2])
+            
+    
+    #if args.solver != "mp2":
     s = PRI.compute_overlap_matrix(p, c.coords)
-    smo_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
+    s_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
+        
+    
 
-
-
-
-
+    
+    
     # AO Fock matrix
     f_ao = tp.tmat()
     f_ao.load(args.fock_matrix)
@@ -1807,7 +1809,7 @@ if __name__ == "__main__":
     if args.disable_static_mem:
         ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust)
     else:
-        ib = PRI.integral_builder_static(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision)
+        ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision)
 
     print("Number of (J|mn) tensors:", len(ib.cfit.Jmn))
 
@@ -1895,7 +1897,7 @@ if __name__ == "__main__":
 
 
         print(" ")
-        a_frag.solve(eqtype = args.solver,s_virt=smo_virt)
+        a_frag.solve(eqtype = args.solver, s_virt = s_virt)
 
         # Converge to fot
         E_prev_outer = a_frag.compute_fragment_energy()
@@ -1942,7 +1944,7 @@ if __name__ == "__main__":
 
 
                     t_1 = time.time()
-                    a_frag.solve(eqtype = args.solver,s_virt=smo_virt)
+                    a_frag.solve(eqtype = args.solver, s_virt = s_virt)
                     t_2 = time.time()
                     E_new = a_frag.compute_fragment_energy()
                     t_3 = time.time()
@@ -1982,7 +1984,7 @@ if __name__ == "__main__":
                 print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                 print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
-                a_frag.solve(eqtype = args.solver,s_virt=smo_virt)
+                a_frag.solve(eqtype = args.solver, s_virt = s_virt)
                 E_new = a_frag.compute_fragment_energy()
 
                 #a_frag.print_configuration_space_data()
@@ -2005,7 +2007,7 @@ if __name__ == "__main__":
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
-                    a_frag.solve(eqtype = args.solver,s_virt=smo_virt)
+                    a_frag.solve(eqtype = args.solver)
                     E_new = a_frag.compute_fragment_energy()
 
                     #a_frag.print_configuration_space_data()

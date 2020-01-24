@@ -164,6 +164,10 @@ class prism():
             print("READ:Libint not yet implemented")
         if filename.split(".")[-1] == "xyz":
             pass
+
+        # set number of virtuals
+        self.set_nvirt()
+        
             
 
             
@@ -749,10 +753,16 @@ class prism():
     def get_nocc(self):
         #returns n occupied, rhf
         return int(np.sum(self.charges)/2) - self.n_core
+
+    def set_nvirt(self, n_virt = None):
+        if n_virt is None:
+            self.n_virt = self.get_n_ao()-self.get_nocc() -self.n_core
+        else:
+            self.n_virt = n_virt
         
     def get_nvirt(self):
         #returns n occupied, rhf
-        return self.get_n_ao()-self.get_nocc() -self.n_core
+        return self.n_virt
         
     def get_n_ao(self):
         N_ao = 0

@@ -776,7 +776,7 @@ def estimate_attenuation_distance_(p, attenuation = 0.1, c2 = [0,0,0], thresh = 
 
 
 def contract_occupied(vals):
-    coords, Jmn, c, NL, NJ, Nn, Np, Nq, coord, c_occ = vals
+    coords, Jmn, NL, NJ, Nn, Np, Nq, coord, c_occ = vals
 
     tj = np.zeros((NJ, Np, NL, Nn), dtype = float) # LJpn
 
@@ -784,12 +784,12 @@ def contract_occupied(vals):
         # For all dN offsets in (LJ|0 m dN n)
         
         Jmnc2 = Jmn[i]
-        Jmnc_coords = -c.coords - coords[i] # HERE
+        Jmnc_coords = -c_occ.coords - coords[i] # HERE
         Jmnc2blocks = Jmnc2.cget(Jmnc_coords).reshape(NL, NJ,Nn,Nn )
         
         
 
-        occupied_coords = -Jmnc_coords - c.coords[coord]
+        occupied_coords = -Jmnc_coords - c_occ.coords[coord]
         
         cb = c_occ.cget(occupied_coords)
         if True:
@@ -846,18 +846,20 @@ class coefficient_fitter_static():
 
     """
 
-    def __init__(self, c, p, attenuation, auxname, JK, JKInv, screening_thresh = 1e-12, robust = False, circulant = True, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64):
+    def __init__(self, c_occ,c_virt, p, attenuation, auxname, JK, JKInv, screening_thresh = 1e-12, robust = False, circulant = True, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64):
         self.robust = robust
         self.coords = []
         self.Jmn = []
         self.attenuation = attenuation
         self.screening_thresh = screening_thresh
         self.p = p
-        self.c = c
+        #self.c = c
         self.JK = JK
         self.JKInv = JKInv
         self.circulant = circulant
-        self.c_occ, self.c_virt = occ_virt_split(self.c,p)
+        #self.c_occ, self.c_virt = occ_virt_split(self.c,p)
+        self.c_occ = c_occ
+        self.c_virt = c_virt
         self.float_precision = float_precision
         if self.robust:
             self.Jmnc = []
@@ -929,12 +931,12 @@ class coefficient_fitter_static():
 
         
         t0 = time.time()
-        for coord in np.arange(self.c.coords.shape[0]):
+        for coord in np.arange(self.c_occ.coords.shape[0]):
             # For all offsets in the coefficient matrix
             
             
 
-            NL = self.c.coords.shape[0] # Number of cells
+            NL = self.c_occ.coords.shape[0] # Number of cells
             NJ = self.Jmn[0].blockshape[0] # Number of aux functions
             self.NJ = self.Jmn[0].blockshape[0]
             Np = self.c_occ.blockshape[1] # Number of occupieds
@@ -944,7 +946,7 @@ class coefficient_fitter_static():
             
             
 
-            vals = [self.coords, self.Jmn, self.c, NL, NJ, Nn, Np, Nq, coord, self.c_occ]
+            vals = [self.coords, self.Jmn, NL, NJ, Nn, Np, Nq, coord, self.c_occ]
 
             tj = contract_occupied(vals)
 
@@ -966,7 +968,7 @@ class coefficient_fitter_static():
             self.Jmnc_sparse_tensors.append(vectors)
             self.Jmnc_sparse_screening.append(screening)
             
-            print("\r>> Contracted occupieds (LJ|0p Mn) for L = ", self.c.coords[coord], "(%.2f percent complete, compression rate: %.2e)" % (100.0*coord/self.c.coords.shape[0], 100.0*compr/total), end='')
+            print("\r>> Contracted occupieds (LJ|0p Mn) for L = ", self.c_occ.coords[coord], "(%.2f percent complete, compression rate: %.2e)" % (100.0*coord/self.c_occ.coords.shape[0], 100.0*compr/total), end='')
         print(time.time()-t0)
         print("Screening-induced sparsity is at %.2e percent." % (100.0*compr/total))
         
@@ -974,7 +976,7 @@ class coefficient_fitter_static():
     
     def get(self, coords_q):
         c_occ, c_virt = self.c_occ, self.c_virt
-        c = self.c
+        #c = self.c
         JK = self.JK
         Jpq_c = []
         Jpq_c_coulomb = []
@@ -983,11 +985,11 @@ class coefficient_fitter_static():
         for i in np.arange(coords_q.shape[0]):
             # Initialize empty coefficient matrices
             Jpq_c.append(tp.tmat())
-            Jpq_c[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
+            Jpq_c[-1].load_nparray(np.ones((c_occ.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c_occ.coords)
             Jpq_c[-1].blocks *= 0
 
 
-        NL = self.c.coords.shape[0]
+        NL = self.c_occ.coords.shape[0]
         NJ = self.NJ # Number of aux functions
         Np = c_occ.blockshape[1] # Number of occupieds
         Nq = c_virt.blockshape[1] # Number of virtuals
@@ -998,14 +1000,14 @@ class coefficient_fitter_static():
         
 
         for j in np.arange(coords_q.shape[0]):
-            for coord in np.arange(c.coords.shape[0]):
+            for coord in np.arange(c_occ.coords.shape[0]):
                 
                 block_j = np.zeros((NJ*Np, Nq), dtype = float)
 
                 # ALTERATION II
 
                 #cvirt_n = c_virt.cget(self.c.coords + coords_q[j]).reshape(NL*Nn, Nq)
-                cvirt_n = c_virt.cget(self.c.coords - self.c.coords[coord] + coords_q[j]).reshape(NL*Nn, Nq)
+                cvirt_n = c_virt.cget(self.c_occ.coords - self.c_occ.coords[coord] + coords_q[j]).reshape(NL*Nn, Nq)
                 
 
                 sparse_tensors = self.Jmnc_sparse_tensors[coord]
@@ -1025,7 +1027,7 @@ class coefficient_fitter_static():
                 block_j.reshape(NJ, Np, Nq)
                 
                 
-                Jpq_c[j].blocks[Jpq_c[j].mapping[ Jpq_c[j]._c2i(c.coords[coord]) ]] =  block_j.reshape(NJ, Np*Nq)
+                Jpq_c[j].blocks[Jpq_c[j].mapping[ Jpq_c[j]._c2i(c_occ.coords[coord]) ]] =  block_j.reshape(NJ, Np*Nq)
                 
                 
                 
@@ -1054,7 +1056,7 @@ class coefficient_fitter_static():
     def _get(self, coords_q):
         # OBSOLETE
         c_occ, c_virt = self.c_occ, self.c_virt
-        c = self.c
+        #c = self.c
         JK = self.JK
         Jpq_c = []
         Jpq_c_coulomb = []
@@ -1304,8 +1306,9 @@ class integral_builder_static():
     RI-integral builder with stored AO-integrals
     For high performance (but high memory demand) 
     """
-    def __init__(self, c,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = False, extent_thresh = 1e-14, robust  = False, ao_screening = 1e-12, inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64):
-        self.c = c
+    def __init__(self, c_occ, c_virt,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = False, extent_thresh = 1e-14, robust  = False, ao_screening = 1e-12, inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64):
+        self.c_occ = c_occ
+        self.c_virt = c_virt
         self.p = p
         self.attenuation = attenuation
         self.auxname = auxname
@@ -1396,7 +1399,7 @@ class integral_builder_static():
         
         #print("Coeff fitter static tresh set to 1e-8")
         t0 = time.time()
-        self.cfit = coefficient_fitter_static(c, p, attenuation, auxname, self.JKa, self.JKinv, screening_thresh = ao_screening, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision)
+        self.cfit = coefficient_fitter_static(self.c_occ, self.c_virt, p, attenuation, auxname, self.JKa, self.JKinv, screening_thresh = ao_screening, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision)
         t1 = time.time()
         print("Spent %.1f s preparing fitting (three index) integrals." % (t1-t0))
         if self.robust:
