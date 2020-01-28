@@ -515,7 +515,55 @@ class prism():
         Z2 = np.mean((Z_)**2, axis = 0)
         Z = np.mean(Z_, axis = 0)
         return Z,Z2, Zabs #, Z2
+
+    #@numba.jit(nopython=True, parallel=True)
+    def evaluate_weighted_doi_at(self, Ca, Cb, x,y,z, weights, coord = None):
+        """
+        Evaluate 
+            \int_{R^3} \varphi_p^2 \varphi_q^2 dr
+        in 
+            r = xi + yj + zk
+        """
+        lbasis = self.get_lambda_basis()
+        lattice = self.lattice
         
+        #Tc = np.dot(coord, lattice)
+        Z = np.zeros((x.shape[0],Ca.cget([0,0,0]).shape[1]), dtype = float)
+        if coord is not None:
+            Z_ = np.zeros((x.shape[0],Ca.cget([0,0,0]).shape[1]), dtype = float)
+            #print(Z.shape, Z_.shape)
+        for c in np.arange(len(Ca.coords)):
+            Ta = -np.dot(Ca.coords[c], lattice)
+            Cmu = Ca.cget(Ca.coords[c])
+            if coord is not None:
+                Cmu_ = Cb.cget(Ca.coords[c] + coord)
+            for mu in np.arange(len(lbasis)):
+                ta = lbasis[mu][1]
+                #print(ta, Ta)
+                #print(lbasis[mu][0](x,y,z))
+                #@numba.autojit(parallel = True)
+                lb = lbasis[mu][0](x-ta[0]-Ta[0], y-ta[1]-Ta[1], z-ta[2]-Ta[2])
+                
+                Cm = Cmu[mu,:]
+                
+                #print(lb.shape)
+                #print(Cm.shape)
+                
+                Z += Cm*lb[:, None]
+                if coord is not None:
+                    #print(Z_.shape)
+                    Cm_ = Cmu_[mu,:]
+                    Z_ += Cm_*lb[:, None]
+        #print("1")
+        if coord is None:
+            Z_ = Z*1.0
+        #Z = Z**2
+        Z_ = Z[:,None,:]*Z_[:,:,None]
+        #Z = np.mean(Z_, axis = 0)
+        Zabs = np.sum(np.abs(Z_)*weights[:,None,None], axis = 0)
+        Z2 = np.sum((Z_)**2*weights[:,None,None], axis = 0)
+        Z = np.sum(Z_*weights[:,None,None], axis = 0)
+        return Z,Z2, Zabs #, Z2
 
     def evaluate_overlap(self, mu, nu, coord, x,y,z):
         """

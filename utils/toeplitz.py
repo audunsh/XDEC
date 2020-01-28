@@ -205,6 +205,7 @@ def screen(coords, blocks, norm, tolerance):
     coords        : Coordinates. A Numpy array of size (N, 3)
     blocks        : Elements corresponding to 'coords'. 
                     A Numpy array of size (N, n1, n2)
+    WARNING: This routine assumes coincidence in the coords and blocks arrays
     '''
     n = coords.shape[0]
     screened_coords = []
@@ -240,8 +241,10 @@ def screen__(coords, blocks, norm, tolerance = 1e-14):
 def screen_tmat(m, tolerance = 1e-14):
     #coords, blocks = screen(m.coords, m.blocks, L2norm, tolerance)
     #ret = tp.tmat()
-    mx = np.max(np.abs(m.blocks[:-1]), axis = (1,2))>tolerance
-    return tmat(m.coords[mx], m.blocks[:-1][mx])
+    mblocks = m.cget(m.coords)
+    mx = np.max(np.abs(mblocks), axis = (1,2))>tolerance
+
+    return tmat(m.coords[mx], mblocks[mx])
 
 def merge_blocks(tmatrix1, tmatrix2, axis):
     '''
@@ -305,9 +308,10 @@ class tmat():
             if blockshape is None:
                 blockshape = blocks[0].shape
             
-            if screening is True:
+            if screening:
                 # Screen out blocks with negligibly small
                 # coefficients
+                # NOTE: screening on this level assumes coincidental coords and blocks
                 coords, blocks = screen(coords, blocks,
                                         self.norm, self.tolerance)
                 
@@ -452,7 +456,7 @@ class tmat():
         
         savearray = np.zeros(3, dtype = object)
         savearray[0] = self.coords
-        savearray[1] = self.blocks[:len(self.coords)] #avoid storing appended zero-block
+        savearray[1] = self.cget(self.coords) #avoid storing zero blocks, ensure coincidence
         savearray[2] = self.domain 
         #self.delim
         
@@ -462,7 +466,7 @@ class tmat():
         '''
         Save blocks and coordinates in separate files.
         '''
-        np.save(file_blocks, self.blocks[:self.coords.shape[0]])
+        np.save(file_blocks, self.cget(self.coords))
         np.save(file_coords, self.coords)
     
 
@@ -476,6 +480,7 @@ class tmat():
         
         # Screen out blocks with negligibly small
         # coefficients
+        # NOTE: Screening on this level assumes coincidental coords and blocks
         if screening:
            coords, blocks = screen(coords, blocks,
                                    self.norm, self.tolerance)
@@ -609,6 +614,7 @@ class tmat():
         
         # Screen out blocks with negligibly small
         # coefficients
+        # NOTE: coincidence assumed
         self.coords, self.blocks = screen(coords, blocks,
                                           self.norm, self.tolerance)
         
@@ -1123,11 +1129,13 @@ class tmat():
             
         # Screen out negligible blocks
         
-        ret.coords, ret.blocks = \
-            screen(ret.coords, ret.blocks, ret.norm,
-                   ret.tolerance)
+        ret = screen_tmat(ret, ret.tolerance)
+        #ret.coords, ret.blocks = \
+        #    screen(ret.coords, ret.blocks, ret.norm,
+        #           ret.tolerance)
         
         
+        """
         # Update the object after the screening
         ret.zero_padded = False
         ret.domain = \
@@ -1136,6 +1144,7 @@ class tmat():
         ret.blockshape = ret.blocks[0].shape
         ret.indices = ret._c2i(ret.coords)
         ret.map_blocks()
+        """
         
         return ret
     
@@ -1584,7 +1593,7 @@ class tmat():
         if screening is not None:
             result = tmat()
             mx = np.max(np.abs(ret.blocks[:-1]), axis = (1,2))>screening
-            result.load_nparray(ret.blocks[:-1][mx], ret.coords[mx])
+            result.load_nparray(ret.cget(ret.coords)[mx], ret.coords[mx])
             result.set_precision(self.blocks.dtype)
             #print(np.sum(mx), mx.shape)
             return result
