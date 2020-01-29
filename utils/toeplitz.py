@@ -1061,9 +1061,9 @@ class tmat():
 
           C(L) = \sum_M A^M * B^L - M)
         
-        where L and M are cell coordinates. Here the definition
+        where L and M are cell coordinates. Here, the definition
         
-          C^L2 - L1) \equiv \overline{C}^(L1, L2) 
+          C^{L2 - L1} \equiv \overline{C}^(L1, L2) 
         
         is used.
         '''
@@ -1545,7 +1545,7 @@ class tmat():
     def set_precision(self, precision):
         self.blocks = np.array(self.blocks, dtype = precision)
 
-    def circulantdot_(self, other, complx = False, screening = None):
+    def circulantdot(self, other, complx = False, screening = None):
         """
         memory-easy circulant product
         """
@@ -1565,7 +1565,7 @@ class tmat():
         return screen_tmat(transform(tmat(c, rb), np.fft.ifftn, n_points = npt, complx = False))
         
 
-    def circulantdot(self, other, complx = False, screening = None):
+    def circulantdot_(self, other, complx = False, screening = None):
         """
         Computes the dot product assuming a circulant matrix structure
         """
