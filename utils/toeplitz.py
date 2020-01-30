@@ -238,11 +238,12 @@ def screen__(coords, blocks, norm, tolerance = 1e-14):
     #screening[-1] = True
     return coords[screening],blocks[:-1][screening]
         
-def screen_tmat(m, tolerance = 1e-14):
+def screen_tmat(m, tolerance = 1e-30):
     #coords, blocks = screen(m.coords, m.blocks, L2norm, tolerance)
     #ret = tp.tmat()
     mblocks = m.cget(m.coords)
     mx = np.max(np.abs(mblocks), axis = (1,2))>tolerance
+    mx[np.sum(m.coords**2)==0] = True
 
     return tmat(m.coords[mx], mblocks[mx])
 
@@ -1545,7 +1546,7 @@ class tmat():
     def set_precision(self, precision):
         self.blocks = np.array(self.blocks, dtype = precision)
 
-    def circulantdot_(self, other, complx = False, screening = None):
+    def circulantdot(self, other, complx = False, screening = None):
         """
         memory-easy circulant product
         """
@@ -1565,7 +1566,7 @@ class tmat():
         return screen_tmat(transform(tmat(c, rb), np.fft.ifftn, n_points = npt, complx = False))
         
 
-    def circulantdot(self, other, complx = False, screening = None):
+    def circulantdot_(self, other, complx = False, screening = None):
         """
         Computes the dot product assuming a circulant matrix structure
         """
