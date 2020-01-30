@@ -1437,6 +1437,8 @@ class fragment_amplitudes():
         """
         Converge fragment (AOS) amplitudes within occupied and virtual extents
         """
+        print ('########### solver ##############')
+        print ('########### solver ##############')
         nocc = self.p.get_nocc()
 
         virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
@@ -1544,12 +1546,15 @@ class fragment_amplitudes():
         print ('########### PAO_SOLVER_I ##############')
         print ('########### PAO_SOLVER_I ##############')
         print ('########### PAO_SOLVER_I ##############')
+        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
+
         nocc = self.p.get_nocc()
 
         virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
         pair_extent = self.d_ii.coords[:self.n_occupied_cells]
 
         self.s_pao = s_virt
+        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
 
         f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
         f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
@@ -1569,8 +1574,8 @@ class fragment_amplitudes():
             for C in np.arange(self.n_virtual_cells):
                 for D in np.arange(self.n_virtual_cells):
                     for J in np.arange(self.n_occupied_cells):
-                        Fjk = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
-                        beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kjk->icjd",self.t2[:,C,:,:,:,D,:],Fjk)
+                        Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
+                        beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",self.t2[:,C,:,:,:,D,:],Fkj)
 
                         Fik = self.f_mo_ii.cget(pair_extent)
 
@@ -1606,21 +1611,30 @@ class fragment_amplitudes():
                         Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
                         Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
 
+                        #print ('dL: ', dL)
+                        #print ('dM: ', dM)
+                        #print ('M: ', M)
+
+
                         # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
                         t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :])
                         tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
+                        #print (np.linalg.norm(tnew))
 
                         # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
                         t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, self.t2[:, :, :, M, :, :, :])
                         tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac)
+                        #print (np.linalg.norm(tnew))
 
                         # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
                         t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :])
                         tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
+                        #print (np.linalg.norm(tnew))
 
                         # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
                         t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :])
                         tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
+                        #print (np.linalg.norm(tnew))
 
 
                         t2_mapped = np.zeros_like(tnew).ravel()
@@ -1629,7 +1643,7 @@ class fragment_amplitudes():
                         t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
 
 
-            self.t2 -= t2_new
+            self.t2 -= 0.1*t2_new
             rnorm = np.linalg.norm(t2_new)
             if rnorm<norm_thresh:
                 print ()
@@ -1767,7 +1781,7 @@ if __name__ == "__main__":
 
 
     #if args.solver != "mp2":
-    s = PRI.compute_overlap_matrix(p, c.coords)
+    s = PRI.compute_overlap_matrix(p, tp.lattice_coords([10,10,10]))
     s_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
 
 
@@ -1893,10 +1907,19 @@ if __name__ == "__main__":
         a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0, float_precision = args.float_precision)
         print("Frag init:", time.time()-t0)
 
-
-
-
+        print ('NORM g_d',np.linalg.norm(a_frag.g_d))
+        print ('NORM 2*g_d',np.linalg.norm(2*a_frag.g_d))
+        print (a_frag.g_d.shape)
+        #np.save('g_d_mp2',a_frag.g_d)
         print(" ")
+        s_virt_init = tp.get_identity_tmat(a_frag.p.get_nvirt())
+
+        #a_frag.solve(eqtype = args.solver, s_virt = s_virt_init)
+
+        a_frag.t2 *=0.1
+
+        print(a_frag.compute_fragment_energy())
+        a_frag.solve(eqtype = args.solver, s_virt = s_virt_init)
         a_frag.solve(eqtype = args.solver, s_virt = s_virt)
 
         # Converge to fot
