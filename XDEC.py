@@ -3,7 +3,7 @@
 
 import numpy as np
 
-import ad
+#import ad
 
 import os
 
@@ -2116,7 +2116,7 @@ class fragment_amplitudes():
                 break
 
 
-    def solve_MP2PAO(self, norm_thresh = 1e-10, s_virt = None):
+    def solve_MP2PAO(self, norm_thresh = 1e-10, s_virt = None, n_diis=4):
         """
         Solving the MP2 equations for a non-orthogonal virtual space
         (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
@@ -2150,7 +2150,8 @@ class fragment_amplitudes():
         fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
         fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
         f_iajb = sfs - fs_ab - fs_ba
-        t2_old = np.zeros_like(self.t2)
+
+        DIIS = diis(n_diis)
 
         for ti in np.arange(1000):
             print ('Iteration no.: ', ti)
@@ -2230,25 +2231,15 @@ class fragment_amplitudes():
 
                         t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
 
+            self.t2 -= 0.3*t2_new
+            self.t2 = DIIS.advance(self.t2,t2_new)
 
-
-            norm_R_old = np.linalg.norm(self.comp_R(self.t2,self.s_pao))
-            alpha = 0.01
-            for i in np.linspace(0.01,1.0,20):
-                t2 =  i*(self.t2 - (t2_new)) + (1-i)*self.t2 ##+ 0.2*t2_old)
-                norm_R = np.linalg.norm(self.comp_R(t2,self.s_pao))
-                if norm_R < norm_R_old:
-                    alpha = i
-                norm_R_old = norm_R
-
-            print ('ALPHA: ',alpha)
-            self.t2 =  alpha*(self.t2 - (t2_new)) + (1-alpha)*self.t2
             rnorm = np.linalg.norm(t2_new)
             ener = self.compute_fragment_energy()
             print ('R norm: ',rnorm)
             print ('Energy: ',ener)
-            print ('dE: ',ener-ener_old)
-            ener_old = ener
+            #print ('dE: ',ener-ener_old)
+            #ener_old = ener
             if rnorm<norm_thresh:
                 print ()
                 print ('##############')
@@ -2266,34 +2257,73 @@ class diis():
         self.t = np.zeros(N, dtype = object)
         self.err = np.zeros(N, dtype = object)
 
-    def advance(self, t_i, err_i):
-        self.t[self.i % self.N] = t_i.ravel()
-        self.err[self.i % self.N] = err_i.ravel()
 
+    def advance(self, t_i, err_i):
         if self.i<self.N:
+            self.t[self.i] = t_i.ravel()
+            self.err[self.i] = err_i.ravel()
             self.i += 1
-            return t_i + err_i #remember add damping
+            return t_i #remember add damping
+
+        self.err = np.roll(self.err,-1)
+        self.t = np.roll(self.t,-1)
+        self.err[-1] = err_i.ravel()
+        self.t[-1] = t_i.ravel()
 
         self.build_b()
 
-        w = np.linalg.inv(self.b)[:, -1]
+        w = np.linalg.pinv(self.b)[:, -1]
 
-        ret = np.zeros(self.shape, dtype = float)
-        for i in np.arange(len(w)):
+        ret = np.zeros(t_i.shape, dtype = float)
+        err = np.zeros(t_i.shape, dtype = float)
+
+        print ('SUM COEFFS: ',np.sum(w))
+        for i in np.arange(len(w)-1):
             ret += w[i] * self.t[i].reshape(t_i.shape)
+            err += w[i] * self.err[i].reshape(err_i.shape)
+
+
+        self.i += 1
         return ret
 
 
+    def advance__(self, t_i, err_i):
+        if self.i<self.N:
+            self.t[self.i % self.N] = t_i.ravel()
+            self.err[self.i % self.N] = err_i.ravel()
+            self.i += 1
+            return t_i - 0.3*err_i #remember add damping
+
+
+        self.build_b()
+
+        w = np.linalg.pinv(self.b)[:, -1]
+
+        ret = np.zeros(t_i.shape, dtype = float)
+        err = np.zeros(t_i.shape, dtype = float)
+        for i in np.arange(len(w)-1):
+            ret += w[i] * self.t[i].reshape(t_i.shape)
+            err += w[i] * self.err[i].reshape(err_i.shape)
+        self.t[self.i % self.N] = ret.ravel()
+        self.err[self.i % self.N] = err_i.ravel()
+        self.i += 1
+        return ret
 
 
     def build_b(self):
+        N = self.N
         b = np.zeros((N+1,N+1))
-        b[:N,N] = -np.ones(N)
-        b[N,:N] = -np.ones(N)
+        b[:N,N] = np.ones(N)
+        b[N,:N] = np.ones(N)
         for i in np.arange(N):
             for j in np.arange(i,N):
-                b[i,j] = np.dot(err[i],err[j])
+                b[i,j] = np.dot(self.err[i],self.err[j])
                 b[j,i] = b[i,j]
+
+        eigvals = np.linalg.eigvals(b)
+        print ('MAX eigval: ',np.max(eigvals))
+        print ('MIN eigval: ',np.min(eigvals))
+        print ('RATIO eigval: ',np.max(eigvals)/np.min(eigvals))
         self.b = b
 
 
