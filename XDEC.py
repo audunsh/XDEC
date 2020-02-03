@@ -1496,15 +1496,6 @@ class fragment_amplitudes():
         for dL in np.arange(self.n_virtual_cells):
             dLv = self.d_ia.coords[dL]
             dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-    def solve_MP2(self, norm_thresh = 1e-10):
-        """
-        Converge fragment (AOS) amplitudes within occupied and virtual extents
-        """
-        print ('########### solver ##############')
-        print ('########### solver ##############')
-        nocc = self.p.get_nocc()
-
             for dM in np.arange(self.n_virtual_cells):
                 dMv = self.d_ia.coords[dM]
                 dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
