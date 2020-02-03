@@ -2287,7 +2287,14 @@ class diis():
 
 
     def build_b(self):
-        pass
+        b = np.zeros((N+1,N+1))
+        b[:N,N] = -np.ones(N)
+        b[N,:N] = -np.ones(N)
+        for i in np.arange(N):
+            for j in np.arange(i,N):
+                b[i,j] = np.dot(err[i],err[j])
+                b[j,i] = b[i,j]
+        self.b = b
 
 
 
