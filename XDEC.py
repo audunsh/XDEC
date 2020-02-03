@@ -2267,12 +2267,22 @@ class diis():
         self.err = np.zeros(N, dtype = object)
 
     def advance(self, t_i, err_i):
-        self.t[self.i % self.N] = t_i
-        self.err[self.i % self.N] = err_i
+        self.t[self.i % self.N] = t_i.ravel()
+        self.err[self.i % self.N] = err_i.ravel()
 
         if self.i<self.N:
             self.i += 1
             return t_i + err_i #remember add damping
+
+        self.build_b()
+
+        w = np.linalg.inv(self.b)[:, -1]
+
+        ret = np.zeros(self.shape, dtype = float)
+        for i in np.arange(len(w)):
+            ret += w[i] * self.t[i].reshape(t_i.shape)
+        return ret
+
 
 
 
