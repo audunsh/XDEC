@@ -2278,7 +2278,7 @@ class diis():
 
         w = np.linalg.inv(self.b)[:, -1]
 
-        ret = np.zeros(self.shape, dtype = float)
+        ret = np.zeros(t_i.shape, dtype = float)
         for i in np.arange(len(w)):
             ret += w[i] * self.t[i].reshape(t_i.shape)
         return ret
