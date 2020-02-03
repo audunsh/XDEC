@@ -2116,7 +2116,7 @@ class fragment_amplitudes():
                 break
 
 
-    def solve_MP2PAO(self, norm_thresh = 1e-10, s_virt = None, n_diis=4):
+    def solve_MP2PAO(self, norm_thresh = 1e-10, s_virt = None, n_diis=32):
         """
         Solving the MP2 equations for a non-orthogonal virtual space
         (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
@@ -2287,7 +2287,7 @@ class diis():
         return ret
 
 
-    def advance__(self, t_i, err_i):
+    def advance_old(self, t_i, err_i):
         if self.i<self.N:
             self.t[self.i % self.N] = t_i.ravel()
             self.err[self.i % self.N] = err_i.ravel()
