@@ -408,6 +408,7 @@ if __name__== "__main__":
     parser.add_argument("-nsteps", type = int, default = 40000, help="Number of annealing steps.")
     parser.add_argument("-stepsize", type = float, default = 0.005, help="Stepsize of rotations.")
     parser.add_argument("-save", type = str, default = "c_new", help="Name of the savefile for the optimized set.")
+    parser.add_argument("-compute_locality", type = bool, default = False, help = "Compute locality measures.")
 
 
     
@@ -425,6 +426,16 @@ if __name__== "__main__":
     st.blocks*=0
 
     spreads = lambda tens : np.diag(tens[0].cget([0,0,0]) - tens[1].cget([0,0,0])**2 - tens[2].cget([0,0,0])**2 - tens[3].cget([0,0,0])**2)
+
+    if args.compute_locality:
+        # Compute locality measures
+        c_occ, c_virt = PRI.occ_virt_split(c, p)
+        
+        centers, spreads = objective_functions.centers_spreads(c, p,c.coords, m= 1)
+        print("Centers:")
+        print(centers)
+        print("Spreads:")
+        print(spreads)
 
     if args.objective == "psm-1k":
         #tensors, assembler = 
