@@ -372,6 +372,49 @@ def centers_spreads(c, p,coords, m= 1):
 
 
 
+def overlap_matrix(p, coords = None, thresh = 1e-10):
+    # Compute overlap matrix to some given thresh
+
+    if coords is None:
+        coords = tp.lattice_coords([10,10,10]) # Compute first, screen afterwards
+
+    xyzname = "temp_geom.xyz"
+    xyzfile = open(xyzname, "w")
+    xyzfile.write(PRI.get_xyz(p, conversion_factor = 0.5291772109200000))
+    xyzfile.close()
+
+    xyzname_ = "temp_geom_0.xyz"
+    xyzfile_ = open(xyzname_, "w")
+    xyzfile_.write(PRI.get_xyz(p, coords, conversion_factor = 0.5291772109200000))
+    xyzfile_.close()
+
+    ts = (p.get_n_ao(), coords.shape[0], p.get_n_ao() ) #shape
+
+    lint = lwrap.engine()
+
+    lint.set_operator_overlap()
+
+
+    basis = p.get_libint_basis()
+    bname = "temp_basis"
+    bfile = open(bname + ".g94", "w")
+    bfile.write(basis)
+    bfile.close()
+
+    lint.setup_pq(xyzname, bname, 
+                    xyzname_, bname)
+    sb = np.array(lint.get_pq(xyzname, bname, xyzname_, bname)).reshape(ts).swapaxes(0,1)
+ 
+
+    # Screen out elements below thresh, warn if edge elements
+    screen = np.max(np.abs(sb), axis = (1,2))>thresh
+
+    ret = tp.tmat()
+    ret.load_nparray(sb[screen], coords[screen])
+
+    return ret
+
+
 
 
     

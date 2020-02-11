@@ -2639,9 +2639,20 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     args.float_precision = eval(args.float_precision)
+    import sys
+    
+    git_hh = sp.Popen(['git' , 'rev-parse', 'HEAD'], shell=False, stdout=sp.PIPE, cwd = sys.path[0])
+
+    git_hh = git_hh.communicate()[0].strip()
 
     # Print run-info to screen
-    print("Author : Audun Skau Hansen, audunsh4@gmail.com, 2019")
+    print("Git rev : ", git_hh)
+    print("Authors : Audun Skau Hansen (a.s.hansen@kjemi.uio.no) ")
+    print("          Einar Aurbakken")
+    print(" ")
+    print("  0o Hylleraas Centre for Quantum Molecular Sciences")
+    print("                       UiO 2020")
+
 
     import sys
     #print("Git rev:", sp.check_output(['git', 'rev-parse', 'HEAD'], cwd=sys.path[0]))
@@ -2666,9 +2677,9 @@ if __name__ == "__main__":
     print("(LJ|0pNq)screening(xi1):", args.xi1)
     print(" ")
     print("General settings:")
-    print("Dot-product            :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
-    print("RI fitting             :", ["Non-robust", "Robust"][int(args.robust)])
-
+    print("Virtual space          :", args.virtual_space)
+    #print("Dot-product            :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
+    #print("RI fitting             :", ["Non-robust", "Robust"][int(args.robust)])
     print("_________________________________________________________")
 
 
@@ -2676,8 +2687,8 @@ if __name__ == "__main__":
     p = pr.prism(args.project_file)
     p.n_core = args.n_core
 
-    # Wannier centers
-    wcenters = np.load(args.wcenters)[p.n_core:]
+    # Compute overlap matrix
+    s = of.overlap_matrix(p)
 
 
     # Fitting basis
@@ -2695,6 +2706,11 @@ if __name__ == "__main__":
     c.load(args.coefficients)
     c.set_precision(args.float_precision)
 
+    # Load wannier centers
+    
+    wcenters, spreads = of.centers_spreads(c, p, s.coords)
+    wcenters = wcenters[p.n_core:] #remove core orbitals
+    #wcenters = np.load(args.wcenters)[p.n_core:]
 
 
     #c.blocks = np.array(c.blocks, dtype = args.float_precision)
@@ -2704,7 +2720,7 @@ if __name__ == "__main__":
 
     if args.virtual_space is not None:
         if args.virtual_space == "pao":
-            s, c_virt, wcenters_virt = of.conventional_paos(c,p)
+            s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
             p.n_core = args.n_core
             p.set_nvirt(c_virt.blocks.shape[2])
             s_virt = c_virt.tT().circulantdot( s.circulantdot( c_virt ))
@@ -2714,7 +2730,7 @@ if __name__ == "__main__":
             wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
             print(wcenters)
         elif args.virtual_space == "paodot":
-            s, c_virt, wcenters_virt = of.conventional_paos(c,p)
+            s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
             p.n_core = args.n_core
             p.set_nvirt(c_virt.blocks.shape[2])
             s_virt = c_virt.tT().circulantdot( s.circulantdot( c_virt ))
@@ -2731,7 +2747,7 @@ if __name__ == "__main__":
 
 
     #if args.solver != "mp2":
-    s = PRI.compute_overlap_matrix(p, tp.lattice_coords([10,10,10]))
+    #s = PRI.compute_overlap_matrix(p, tp.lattice_coords([10,10,10]))
     s_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
 
 
@@ -2850,7 +2866,7 @@ if __name__ == "__main__":
     occ_cut = 6.0
 
     for fragment in center_fragments:
-        d_ia = build_weight_matrix(p, c, s.coords)
+        #d_ia = build_weight_matrix(p, c, s.coords)
 
         #ib.fragment = fragment
         t0 = time.time()

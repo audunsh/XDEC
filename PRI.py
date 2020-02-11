@@ -663,7 +663,7 @@ def estimate_attenuation_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc
         big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
 
         Jmnc = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = [coords[m]])
-        print("mn-screen:", m, coords[m], np.sqrt(d2)[m], np.max(np.abs(Jmnc.blocks[:-1])))
+        #print("mn-screen:", m, coords[m], np.sqrt(d2)[m], np.max(np.abs(Jmnc.blocks[:-1])))
         if np.max(np.abs(Jmnc.blocks[:-1]))<xi0:
             #print(m)
             break
@@ -685,7 +685,7 @@ def estimate_attenuation_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc
             big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
             # coords[m]
             Jmnc = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = [m])
-            print("J-mn-screen:", m, coords[n], np.max(np.abs(Jmnc.cget(coords[n]))))
+            #print("J-mn-screen:", m, coords[n], np.sqrt(np.sum(p.coor2vec(coords[n])**2)), np.max(np.abs(Jmnc.cget(coords[n]))))
 
             if np.max(np.abs(Jmnc.cget(coords[n])))<xi0:
                 xi_domains.append([m, tp.tmat()])
