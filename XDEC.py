@@ -1489,8 +1489,8 @@ class fragment_amplitudes():
     def solve(self, norm_thresh = 1e-10, eqtype = "mp2", s_virt = None):
         if eqtype == "mp2_nonorth":
             return self.solve_MP2PAO(norm_thresh, s_virt = s_virt)
-        elif eqtype == "steepdesc":
-            return self.solve_MP2PAO_steepdesc(norm_thresh, s_virt = s_virt)
+        elif eqtype == "paodot":
+            return self.solve_MP2PAO_DOT(norm_thresh, s_virt = s_virt)
         elif eqtype == "ls":
             return self.solve_MP2PAO_ls(norm_thresh, s_virt = s_virt)
         else:
@@ -2219,8 +2219,8 @@ class fragment_amplitudes():
                         t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :],optimize=opt)
                         tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)
                         tc2 = time.time()
-                        print ('Contr.time1: ',tc2-tc1)
-                        print ('NORM1: ',np.linalg.norm(np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)))
+                        #print ('Contr.time1: ',tc2-tc1)
+                        #print ('NORM1: ',np.linalg.norm(np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)))
                         tc3 = time.time()
                         #print (np.linalg.norm(tnew))
                         nC, na, nc = Fac.shape
@@ -2237,8 +2237,8 @@ class fragment_amplitudes():
 
                         FTS_i_a_j_b = np.dot(FT_aij_Dd, S_Dd_b).reshape((na,ni,nj,nd)).swapaxes(0,1)
                         tc4 = time.time()
-                        print ('Contr.time2: ',tc4-tc3)
-                        print ('NORM2: ',np.linalg.norm(FTS_i_a_j_b))
+                        #print ('Contr.time2: ',tc4-tc3)
+                        #print ('NORM2: ',np.linalg.norm(FTS_i_a_j_b))
 
 
 
@@ -2341,9 +2341,14 @@ class fragment_amplitudes():
                 for D in np.arange(self.n_virtual_cells):
                     for J in np.arange(self.n_occupied_cells):
                         Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
-                        beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",self.t2[:,C,:,:,:,D,:],Fkj,optimize=opt)
-
                         Fik = self.f_mo_ii.cget(pair_extent)
+
+                        ni, nc, nJ, nj, nd = self.t2[:,C,:,:,:,D,:].shape
+
+                        T_icd_Kk = self.t2[:,C,:,:,:,D,:].swapaxes(3,4).swapaxes(2,3).reshape((ni*nc*nd,nJ*nj))
+                        F_Kk_j = Fkj.reshape((nJ*nj,nj))
+                        beta1[:,C,:,J,:,D,:] = np.dot(T_icd_Kk,F_Kk_j).reshape((ni,nc,nd,nj)).swapaxes(2,3)
+
 
                         J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
                         C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
@@ -2352,7 +2357,11 @@ class fragment_amplitudes():
                         nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
                              (J_range>=0)*(C_J>=0)*(D_J>=0)
 
-                        beta2[:,C,:,J,:,D,:] = np.einsum("Kkcjd,Kik->icjd",self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:],Fik[nz],optimize=opt)
+                        nI,ni,nc,nj,nd = self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:].shape
+
+                        T_Kk_cjd = self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:].reshape((nI*ni,nc*nj*nd))
+                        F_i_Kk = Fik[nz].swapaxes(0,1).reshape((ni,nI*ni))
+                        beta2[:,C,:,J,:,D,:] = np.dot(F_i_Kk,T_Kk_cjd).reshape((ni,nc,nj,nd))
 
             t1 = time.time()
 
@@ -2378,63 +2387,47 @@ class fragment_amplitudes():
                         Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
                         Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
 
-                        #print ('dL: ', dL)
-                        #print ('dM: ', dM)
-                        #print ('M: ', M)
-
                         ni, nC, nc, nj, nD, nd = self.t2[:, :, :, M, :, :, :].shape
-                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :],optimize=opt)
-                        tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)
-                        print ('NORM1: ',np.linalg.norm(np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)))
-                        #print (np.linalg.norm(tnew))
-
-                        #ts =
-                        F_a_Cc = Fac.swapaxes(0,1).reshape((nc, nC*nc)) # F(C,a,c) -> F(a,Cc)
-
                         t_Cc_ijDd = self.t2[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
+                        S_a_Cc = Sac.swapaxes(0,1).reshape((nc, nC*nc)) # F(C,a,c) -> F(a,Cc)
+                        S_Dd_b = Sdb.reshape(nD*nd, nd)
+
+
+                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
+                        F_a_Cc = Fac.swapaxes(0,1).reshape((nc, nC*nc)) # F(C,a,c) -> F(a,Cc)
 
                         FT_a_ijDd = np.dot(F_a_Cc, t_Cc_ijDd)
                         FT_aij_Dd = FT_a_ijDd.reshape((nc*ni*nj, nD*nd))
 
-                        S_Dd_b = Sdb.reshape(nD*nd, nd)
-
-                        FTS_i_a_j_b = np.dot(FT_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
-                        print ('NORM2: ',np.linalg.norm(FTS_i_a_j_b))
+                        tnew -= np.dot(FT_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
 
 
                         # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
-                        #t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, self.t2[:, :, :, M, :, :, :],optimize=opt)
-                        #tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac,optimize=opt)
+                        F_Dd_b = Fdb.reshape(nD*nd, nd)
 
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, self.t2[:, :, :, M, :, :, :],optimize=opt)
-                        tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Fdb,optimize=opt)
-                        #print (np.linalg.norm(tnew))
+                        ST_a_ijDd = np.dot(S_a_Cc, t_Cc_ijDd)
+                        ST_aij_Dd = ST_a_ijDd.reshape((nc*ni*nj, nD*nd))
 
-                        S_a_Cc = Fac.swapaxes(0,1).reshape((nc, nC*nc)) # F(C,a,c) -> F(a,Cc)
-
-                        t_Cc_ijDd = self.t2[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
-
-                        FT_a_ijDd = np.dot(F_a_Cc, t_Cc_ijDd)
-                        FT_aij_Dd = FT_a_ijDd.reshape((nc*ni*nj, nD*nd))
-
-                        S_Dd_b = Sdb.reshape(nD*nd, nd)
-
-                        FTS_i_a_j_b = np.dot(FT_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
-
-
-
+                        tnew -= np.dot(ST_aij_Dd, F_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
 
 
                         # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :],optimize=opt)
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)
-                        #print (np.linalg.norm(tnew))
+                        B1_Cc_ijDd = beta1[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
+
+                        B1T_a_ijDd = np.dot(S_a_Cc, B1_Cc_ijDd)
+                        B1T_aij_Dd = B1T_a_ijDd.reshape((nc*ni*nj, nD*nd))
+
+                        tnew += np.dot(B1T_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
+
 
                         # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :],optimize=opt)
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)
-                        #print (np.linalg.norm(tnew))
+                        B2_Cc_ijDd = beta2[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
+
+                        B2T_a_ijDd = np.dot(S_a_Cc, B2_Cc_ijDd)
+                        B2T_aij_Dd = B2T_a_ijDd.reshape((nc*ni*nj, nD*nd))
+
+                        tnew += np.dot(B2T_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
+
 
 
                         t2_mapped = np.zeros_like(tnew).ravel()
@@ -2720,12 +2713,12 @@ if __name__ == "__main__":
             # Append virtual centers to the list of centers
             wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
             print(wcenters)
-        elif args.virtual_space == "ls":
+        elif args.virtual_space == "paodot":
             s, c_virt, wcenters_virt = of.conventional_paos(c,p)
             p.n_core = args.n_core
             p.set_nvirt(c_virt.blocks.shape[2])
             s_virt = c_virt.tT().circulantdot( s.circulantdot( c_virt ))
-            args.solver = "ls"
+            args.solver = "paodot"
 
             # Append virtual centers to the list of centers
             wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
