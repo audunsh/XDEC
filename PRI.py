@@ -1046,6 +1046,9 @@ class coefficient_fitter_static():
         for i in np.arange(len(Jpq_c)):
             t0 = time.time()
             if self.circulant:
+                """
+                A range of methods has been tested, the svd_solve seems to be fastest and stable
+                """
                 #X.append(self.JKInv.circulantdot(Jpq_c[i]))
                 #X.append(self.JK.kspace_linear_solve(Jpq_c[i]))
                 #X.append(self.JK.kspace_cholesky_solve(Jpq_c[i]))
@@ -1059,122 +1062,6 @@ class coefficient_fitter_static():
         return X
 
 
-
-    def _get(self, coords_q):
-        # OBSOLETE
-        c_occ, c_virt = self.c_occ, self.c_virt
-        #c = self.c
-        JK = self.JK
-        Jpq_c = []
-        Jpq_c_coulomb = []
-
-        #Jpq_coords = self.Jmn[self.c0].coords
-
-
-        for i in np.arange(coords_q.shape[0]):
-
-            Jpq_c.append(tp.tmat())
-            Jpq_c[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
-
-            #Jpq_c[-1].load_nparray(np.ones((Jpq_coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  Jpq_coords)
-            Jpq_c[-1].blocks *= 0
-
-
-            #if self.robust:
-            #    Jpq_c_coulomb.append(tp.tmat())
-            #    Jpq_c_coulomb[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
-            #    Jpq_c_coulomb[-1].blocks *= 0
-
-
-        for i in np.arange(self.coords.shape[0]):
-            c2 = self.coords[i]
-
-            Jmnc2 = self.Jmn[i]
-
-            NL = Jmnc2.coords.shape[0]
-            NJ = Jmnc2.blockshape[0] # Number of aux functions
-            Np = c_occ.blockshape[1] # Number of occupieds
-            Nq = c_virt.blockshape[1] # Number of virtuals
-            Nn = c_occ.blockshape[0] # Number of AO functions
-
-
-            #Jp_Ln = tp.tmat()
-            #Jp_Ln.load_nparray(np.zeros((NL, NJ*Np, Nn*NL)))
-
-            #tensors = []
-
-            #for coord in np.arange(self.c.coords.shape[0]):
-            #    tensors.append(np.einsum("LJmn,Lmp->JpLn", Jmnc2.blocks[:-1].reshape(NL, NJ,Nn,Nn ), c_occ.cget(-Jmnc2.coords + c.coords[coord]), optimize = True))
-            #tensors = self.Jmnc_tensors[i]
-            #screening = self.Jmnc_screening[i]
-            #print(len(screening))
-            #print(screening)
-            sparse_tensors = self.Jmnc_sparse_tensors[i]
-            sparse_screening = self.Jmnc_sparse_screening[i]
-
-            #t0 = time.time()
-            for j in np.arange(coords_q.shape[0]):
-                for coord in np.arange(c.coords.shape[0]):
-                    #block_j = np.einsum("JpLn,Lnq->Jpq", tensors[coord], c_virt.cget(-Jmnc2.coords + c.coords[coord] + coords_q[j]), optimize = True)
-                    #screen = screening[coord]
-                    #print(screen.shape)
-
-
-                    #block_j = np.dot(tensors[coord], c_virt.cget(-Jmnc2.coords - c.coords[coord] + coords_q[j] - c2).reshape(NL*Nn, Nq)[screen,:]).reshape(NJ, Np, Nq)
-
-
-
-                    # Alternative sparse screening
-                    block_j = np.zeros((NJ*Np, Nq), dtype = float)
-
-                    # ALTERATION II
-
-                    #cvirt_n = c_virt.cget(-Jmnc2.coords - c.coords[coord] + coords_q[j] - c2).reshape(NL*Nn, Nq)
-                    NL = self.virtual_coords[i][coord].shape[0]
-                    #cvirt_n = c_virt.cget(-Jmnc2.coords - c.coords[coord] + coords_q[j]).reshape(NL*Nn, Nq)
-                    cvirt_n = c_virt.cget(self.virtual_coords[i][coord] + coords_q[j]).reshape(NL*Nn, Nq)
-
-                    #cvirt_n = c_virt.cget(self.c.coords + coords_q[j]).reshape(NL*Nn, Nq)
-
-
-
-                    for k in np.arange(NJ*Np):
-                        screen = np.array(sparse_screening[coord][k], dtype = int)
-
-                        if(len(screen)>0):
-                            #print(screen)
-                            #print(sparse_tensors[coord][k])
-                            #print(cvirt_n[screen, :])
-
-                            block_j[k, :] = np.dot(sparse_tensors[coord][k], cvirt_n[screen, :])
-
-
-                    block_j.reshape(NJ, Np, Nq)
-
-
-                    Jpq_c[j].blocks[Jpq_c[j].mapping[ Jpq_c[j]._c2i(c.coords[coord]) ]] +=  block_j.reshape(NJ, Np*Nq)
-
-
-
-                    Jpq_c[j].blocks[-1] *= 0
-                    #print(Jpq_c[j].blocks[-1])
-            #print("Contraction of virtuals:", time.time()-t0)
-
-        X = []
-        for i in np.arange(len(Jpq_c)):
-            t0 = time.time()
-            if self.circulant:
-                #X.append(self.JKInv.circulantdot(Jpq_c[i]))
-                #X.append(self.JK.kspace_linear_solve(Jpq_c[i]))
-                #X.append(self.JK.kspace_cholesky_solve(Jpq_c[i]))
-                X.append(self.JK.kspace_svd_solve(Jpq_c[i], complex_precision = np.complex64))
-                #print(X[-1].blocks.dtype)
-
-            else:
-                X.append(self.JKInv.cdot(Jpq_c[i]))
-            print("Solving for Jpqc:", time.time()-t0)
-
-        return X
 
 
 
@@ -1212,15 +1099,19 @@ class integral_builder_static():
         # Oneshot calculations:
         # build attenuated JK matrix and inverse
         #big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 1e-14, auxname = auxname)
-        big_tmat = estimate_attenuation_distance(p, attenuation = self.attenuation, thresh = extent_thresh, auxname = auxname)
+        #big_tmat = estimate_attenuation_distance(p, attenuation = self.attenuation, thresh = extent_thresh, auxname = auxname)
 
 
-        big_tmat = estimate_center_domain(p, attenuation = attenuation, xi0 = xi0, auxname=auxname)
-
-        bc = tp.lattice_coords([5,5,5])
+        #big_tmat = estimate_center_domain(p, attenuation = attenuation, xi0 = xi0, auxname=auxname)
+        if p.cperiodicity=="POLYMER":
+            bc = tp.lattice_coords([5,0,0])
+        if p.cperiodicity=="SLAB":
+            bc = tp.lattice_coords([5,5,0])
+        if p.cperiodicity=="CRYSTAL":
+            bc = tp.lattice_coords([5,5,5])
+        
         big_tmat = tp.tmat()
         big_tmat.load_nparray(np.ones((bc.shape[0], 2,2)), bc)
-
 
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
         cmax = np.argmax(np.sqrt(np.sum(np.dot(big_tmat.coords,p.lattice)**2, axis = 1)))
@@ -1235,7 +1126,7 @@ class integral_builder_static():
         #self.JKa = compute_JK(self.p,self.c, attenuation = attenuation, auxname = auxname)
         self.JKa = compute_JK(self.p,big_tmat, attenuation = attenuation, auxname = auxname)
         self.JKa.set_precision(self.float_precision)
-        print(self.JKa.blocks.shape)
+        #print(self.JKa.blocks.shape)
         print("")
         print("Attenuated coulomb matrix (JKa) computed.")
         print("JKa outer coordinate (should be smaller than %.2e):" % extent_thresh, cmax, big_tmat.coords[cmax], np.max(np.abs(self.JKa.cget(self.JKa.coords[cmax]))))

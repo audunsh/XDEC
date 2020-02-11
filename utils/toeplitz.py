@@ -1400,6 +1400,7 @@ class tmat():
 
         n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
         #print(n_points)
+        #print(other.coords)
         self_k = transform(self, np.fft.fftn, n_points = n_points)
         other_k = transform(other, np.fft.fftn, n_points = n_points)
 
