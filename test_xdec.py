@@ -813,7 +813,7 @@ def test_extent_neon_fcc(attenuation = .4, separation = np.array([0,0,0])):
 
     # test integrals in refcell 
 
-    ib = PRI.integral_builder_static(c,p,attenuation = attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=True, extent_thresh=1e-10, robust = False)
+    ib = PRI.integral_builder_static(c,c,p,attenuation = attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=True, extent_thresh=1e-10, robust = False)
     i0, ishape = ib.getorientation([0,0,0],separation)
     pqRrs_ex = PRI.compute_pqrs_(p, np.array([[0,0,0]]),np.array([[0,0,0]]),np.array([separation]))
     v = np.arange(p.get_n_ao())
@@ -1004,5 +1004,5 @@ def test_orthonormality():
 
 #test_orthonormality()
 #test_x_(.3) #test lih ao integrals
-
-test_extent_dproject(attenuation=0.25, xi0 = 1e-8, xi1 = 1e-5)
+test_extent_neon_fcc(attenuation = .4, separation = np.array([0,0,0]))
+#test_extent_dproject(attenuation=0.25, xi0 = 1e-8, xi1 = 1e-5)

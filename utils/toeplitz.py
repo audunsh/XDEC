@@ -913,7 +913,7 @@ class tmat():
     def inv(self):
         # BT inversion through FFT - blockwise inversion - IFFT
         # Mathematical details may be found in notes
-        n_points = 2*np.array(n_lattice(self))
+        n_points = np.array(n_lattice(self))
         JKk = transform(self, np.fft.fftn, n_points = n_points)
         JKk_inv = JKk*1.0
 
@@ -921,10 +921,17 @@ class tmat():
         #    JKk_k = np.linalg.inv(JKk.cget(k))
         #    
         #    JKk_inv.cset(k, JKk_k)
-        JK_inv.blocks[:-1] = np.linalg.inv(JKk.blocks)
-        JK_inv_direct = transform(JKk_inv, np.fft.ifftn, n_points = n_points, complx = False)
+        #JK_inv.blocks[:-1] = np.linalg.pinv(JKk.blocks)
 
-        return JK_inv_direct 
+        Jkb = np.linalg.pinv(JKk.cget(JKk.coords))
+
+        ret = tmat()
+        ret.load_nparray(Jkb, JKk.coords, safemode = False) #avoid complex complaint
+
+
+        ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
+
+        return ret 
 
     def check_inversion_condition(self):
         pass
@@ -1398,16 +1405,19 @@ class tmat():
 
         
 
-        ret = tmat()
-        ret.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], other_k.blockshape[1]), dtype = complex_precision), self_k.coords, safemode = False)
-        #ret = self_k*1.0
-        ret.blocks*=0.0
+        #et = tmat()
+        #ret.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], other_k.blockshape[1]), dtype = complex_precision), self_k.coords, safemode = False)
+        #ret.blocks*=0.0
         
 
+        rb = np.ones((self_k.coords.shape[0],self_k.blockshape[0], other_k.blockshape[1]), dtype = complex_precision)
+
         
-        for i in np.arange(len(self_k.blocks)-1):
-            u_,s_,vh_ = np.linalg.svd(self_k.blocks[i])
-            b = other_k.blocks[i]
+        for i in np.arange(self_k.coords.shape[0]):
+            ci = self_k.coords[i]
+            u_,s_,vh_ = np.linalg.svd(self_k.cget(ci))
+            b = other_k.cget(ci)
+
             t = s_>tolerance #screening
 
             pinv = np.dot(vh_[t,:].conj().T, np.dot(np.diag(s_[t]**-1), u_[:,t].conj().T))
@@ -1433,7 +1443,11 @@ class tmat():
             Ub  = np.dot(U.conj().T, other_k.blocks[i])
             """
 
-            ret.blocks[i] = x #np.linalg.solve(SVH, Ub)
+            rb[i] = x #np.linalg.solve(SVH, Ub)
+        
+        ret = tmat()
+        ret.load_nparray(rb, self_k.coords, safemode = False)
+
         ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
         ret.set_precision(self.blocks.dtype)
         return ret

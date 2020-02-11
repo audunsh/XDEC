@@ -869,7 +869,7 @@ class fragment_amplitudes():
 
 
     """
-    def __init__(self, p, wannier_centers, coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0, float_precision = np.float64):
+    def __init__(self, p, wannier_centers, coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0, float_precision = np.float64, d_ia = None):
         self.p = p #prism object
         self.d = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers) # distance matrix
 
@@ -878,7 +878,13 @@ class fragment_amplitudes():
         #self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[:p.get_nocc()])
         #self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[p.get_nocc():])
         self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[:p.get_nocc()])
-        self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[p.get_nocc():])
+        if d_ia is None:
+            self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[p.get_nocc():])
+        else:
+            self.d_ia = d_ia
+
+        
+        
 
         self.fragment = fragment
 
@@ -2549,7 +2555,52 @@ class diis():
 
 
 
+def build_weight_matrix(p, c, coords, fragment = None):
+    # Compute PAOs w/ positions
+    s, c_pao, wcenters_pao = of.conventional_paos(c, p)
+    
+    # Split wannier space
+    c_occ, c_virt = PRI.occ_virt_split(c,p)
+    
+    # Associate every PAO with a occupied orbital
+    # Compute occupied positions
+    c_occ_centers, c_occ_spreads = of.centers_spreads(c_occ, p,coords, m= 1)
+    print("nocc :", c_occ.blocks.shape[2])
+    print("nvirt:", c_virt.blocks.shape[2])
+    # This will be removed, provided on input
+    #d = dd.build_distance_matrix(p, np.array([[0,0,0]]), c_occ_centers, c_occ_centers)
+    #fragment = dd.atomic_fragmentation(p, d, 3.0)[0]
+    #print("Fragm:", fragment[0])
+    
+    # Compute occupied - pao distance in refcell
+    d_im = np.sum((c_occ_centers[:, None] - wcenters_pao[None,:])**2, axis = 2)
+    
+    #print(d_im)
+    #pao_map = np.argmin(d_im, axis = 0)
+    #print(pao_map.shape)
+    #print(pao_map)
+    
+    
+    
+    w = c_pao.tT().cdot(s.cdot(c_virt), coords = coords)
+    #wblocks = np.sum(w.blocks**2, axis = 1)
+    #print(wblocks.shape)
+    
+    #wblocks = np.zeros((w.blocks.shape[0]-1,c_occ.blocks.shape[2], c_virt.blocks.shape[2]), dtype = float)
+    #wblocks[:, :,np.arange(c_virt.blocks.shape[2])] = 
+    wblocks = np.sum(w.cget(w.coords)**2, axis = 1)[:,:,None]*np.ones(c_occ.blocks.shape[2], dtype = float)[None, None, :]
+    
+    wblocks = wblocks.swapaxes(1,2)
+    wblocks = wblocks**-.5
+    print(wblocks.shape)
 
+    sort = np.argsort(np.min(wblocks, axis = (1,2)))
+    
+
+    
+    d_ia = tp.tmat()
+    d_ia.load_nparray(wblocks[sort], w.coords[sort])
+    return d_ia
 
 
 
@@ -2806,23 +2857,26 @@ if __name__ == "__main__":
     occ_cut = 6.0
 
     for fragment in center_fragments:
-
+        d_ia = build_weight_matrix(p, c, s.coords)
 
         #ib.fragment = fragment
         t0 = time.time()
+        #a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0, float_precision = args.float_precision, d_ia = d_ia)
+        
         a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0, float_precision = args.float_precision)
+        
         print("Frag init:", time.time()-t0)
 
-        print ('NORM g_d',np.linalg.norm(a_frag.g_d))
-        print ('NORM 2*g_d',np.linalg.norm(2*a_frag.g_d))
-        print (a_frag.g_d.shape)
+        #print ('NORM g_d',np.linalg.norm(a_frag.g_d))
+        #print ('NORM 2*g_d',np.linalg.norm(2*a_frag.g_d))
+        #print (a_frag.g_d.shape)
         #np.save('g_d_mp2',a_frag.g_d)
-        print(" ")
+        #print(" ")
         s_virt_init = tp.get_identity_tmat(a_frag.p.get_nvirt())
 
         #a_frag.solve(eqtype = args.solver, s_virt = s_virt_init)
 
-        a_frag.t2 *=0.1
+        #a_frag.t2 *=0.1
 
         print(a_frag.compute_fragment_energy())
         ###a_frag.solve(eqtype = args.solver, s_virt = s_virt_init)

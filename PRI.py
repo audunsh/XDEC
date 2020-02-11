@@ -569,7 +569,7 @@ def invert_JK(JK):
     #print(n_points)
     JKk = tp.transform(JK, np.fft.fftn, n_points = n_points)
     JKk_inv = JKk*1.0
-    JKk_inv.blocks[:-1] = np.linalg.inv(JKk.blocks[:-1])
+    JKk_inv.blocks[:-1] = np.linalg.pinv(JKk.blocks[:-1])
 
 
 
@@ -663,7 +663,7 @@ def estimate_attenuation_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc
         big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
 
         Jmnc = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = [coords[m]])
-        #print(m, np.sqrt(d2)[m], np.max(np.abs(Jmnc.blocks[:-1])))
+        print("mn-screen:", m, coords[m], np.sqrt(d2)[m], np.max(np.abs(Jmnc.blocks[:-1])))
         if np.max(np.abs(Jmnc.blocks[:-1]))<xi0:
             #print(m)
             break
@@ -685,6 +685,7 @@ def estimate_attenuation_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc
             big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
             # coords[m]
             Jmnc = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = [m])
+            print("J-mn-screen:", m, coords[n], np.max(np.abs(Jmnc.cget(coords[n]))))
 
             if np.max(np.abs(Jmnc.cget(coords[n])))<xi0:
                 xi_domains.append([m, tp.tmat()])
@@ -1182,120 +1183,6 @@ class coefficient_fitter_static():
 
 
 
-
-
-def compute_fitting_coeffs(c,p,coord_q = np.array([[0,0,0]]), attenuation = 0.1, auxname = "cc-pvdz-ri", JKmats = None,robust = False, circulant = False):
-    """
-    Perform a least-squares type fit of products of functions expanded in gaussians
-    """
-    cube = tp.lattice_coords([2,2,2]) #assumed max twobody AO-extent (subst. C-S Screening)
-    #print("C-S like screening set to extent [ 2,2,2]")
-    if JKmats is None:
-        # build JK and inverse
-        big_tmat = estimate_attenuation_distance(p, attenuation = .5*attenuation, thresh = 10e-14, auxname = auxname)
-        cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
-        print("JK outer max (should be small):", cmax, np.max(np.abs(JK.cget(cmax))))
-
-        #print(cmax,c.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))])
-        #print(big_tmat.coords)
-        #JK = compute_JK(p,big_tmat, attenuation = attenuation, auxname = auxname)
-        JK = compute_JK(p,big_tmat, attenuation = attenuation, auxname = auxname)
-
-
-
-
-        JKinv = invert_JK(JK)
-        print("Condition:", np.abs(JK.blocks).max(), np.abs(JKinv.blocks).max())
-        # test inversion
-        tcoords = np.zeros((np.max(JK.coords),3), dtype = int)
-        tcoords[:,0] = np.arange(JK.coords.max(), dtype = int)
-        I = JKinv.cdot(JK, coords = tcoords )
-        #I = JKinv.circulantdot(JK)
-        print("Direct space inversion test (0,0,0):", np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
-        for cc in tcoords[1:]:
-            print("Direct space inversion test (%i,0,0):" % cc[0], np.max(np.abs(I.cget(cc))))
-        print("---")
-
-        I = JKinv.circulantdot(JK)
-        print("Circulant inversion test (0,0,0):", np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
-        for cc in tcoords[1:]:
-            print("Circulant inversion test (%i,0,0):" % cc[0], np.max(np.abs(I.cget(cc))))
-        print("---")
-    else:
-        JK, JKinv = JKmats
-    ## -> Perform inversion product in reciprocal space OR oversample the attenuated matrix
-
-
-
-    c_occ, c_virt = occ_virt_split(c,p)
-    #print(c_occ.blockshape, c_virt.blockshape)
-
-    # Remove core orbitals
-    #p.n_core = 1
-    #c_occ = tp.tmat()
-    #c_occ.load_nparray(c_occ_full.blocks[:-1, :, 1:], c_occ_full.coords)
-
-    Jpq_c = []
-    Jpq_c_coulomb = []
-
-
-    for i in np.arange(coord_q.shape[0]):
-
-        Jpq_c.append(tp.tmat())
-        Jpq_c[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
-        Jpq_c[-1].blocks *= 0
-        if robust:
-            Jpq_c_coulomb.append(tp.tmat())
-            Jpq_c_coulomb[-1].load_nparray(np.ones((c.coords.shape[0], JK.blockshape[0], c_occ.blockshape[1]*c_virt.blockshape[1]),dtype = float),  c.coords)
-            Jpq_c_coulomb[-1].blocks *= 0
-
-
-    for c2 in cube:
-        # Compute JMN with nsep =  c2
-
-        big_tmat = estimate_attenuation_distance(p, attenuation = attenuation, c2 = c2, auxname = auxname)
-
-
-        Jmnc2 = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
-        if robust:
-            Jmnc2_c = compute_Jmn(p,big_tmat, attenuation = 0.0, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
-
-        cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
-
-
-        if np.max(np.abs(Jmnc2.blocks))>1e-12:
-            # We go for maximum vectorization here, for some reason it changes the results ever so slightly - it should not, but it is still far below the FOT.
-
-
-            for i in np.arange(coord_q.shape[0]):
-                Jpq_c[i].blocks[:-1] = Jpq_c[i].cget(c.coords) + np.einsum("Kjmn,Kmk,Knl->Kjkl", Jmnc2.cget(c.coords).reshape(c.coords.shape[0], JK.blockshape[0],c_occ.blockshape[0],c_virt.blockshape[0]), c_occ.cget(c.coords), c_virt.cget(c.coords + c2 + coord_q[i]), optimize = True).reshape((c.coords.shape[0],JK.blockshape[0],c_occ.blockshape[1]*c_virt.blockshape[1]))
-                if robust:
-                    Jpq_c_coulomb[i].blocks[:-1] = Jpq_c_coulomb[i].cget(c.coords) + np.einsum("Kjmn,Kmk,Knl->Kjkl", Jmnc2_c.cget(c.coords).reshape(c.coords.shape[0], JK.blockshape[0],c_occ.blockshape[0],c_virt.blockshape[0]), c_occ.cget(c.coords), c_virt.cget(c.coords + c2 + coord_q[i]), optimize = True).reshape((c.coords.shape[0],JK.blockshape[0],c_occ.blockshape[1]*c_virt.blockshape[1]))
-                #print(Jpqc.shape, Jpq_c[i].blocks.shape)
-
-
-
-    JKinv = tp.screen_tmat(JKinv)
-    #print("Compute coeffs", JKinv.blocks.shape, JK.blocks.shape, Jpq.blocks.shape)
-
-    X = []
-    for i in np.arange(len(Jpq_c)):
-        #print("Compute coeffs for shifted coordinate", coord_q[i])
-        if circulant:
-            X.append(JKinv.circulantdot(Jpq_c[i]))
-        else:
-            X.append(JKinv.cdot(Jpq_c[i]))
-
-    if robust:
-        X_c = []
-        for i in np.arange(len(Jpq_c_coulomb)):
-            #print("Compute coeffs for shifted coordinate", coord_q[i])
-            X_c.append(Jpq_c_coulomb[i])
-        X = [X, X_c]
-    #X = JKinv.cdot(Jpq, coords = Jpq.coords) #compute coefficients
-    #print("done")
-    return X
-
 def test_matrix_kspace_condition(M, n_fourier):
     Mk = tp.dfft(M, n_fourier)*1
     #Mk_inv = M*0
@@ -1329,6 +1216,12 @@ class integral_builder_static():
 
 
         big_tmat = estimate_center_domain(p, attenuation = attenuation, xi0 = xi0, auxname=auxname)
+
+        bc = tp.lattice_coords([5,5,5])
+        big_tmat = tp.tmat()
+        big_tmat.load_nparray(np.ones((bc.shape[0], 2,2)), bc)
+
+
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
         cmax = np.argmax(np.sqrt(np.sum(np.dot(big_tmat.coords,p.lattice)**2, axis = 1)))
 
