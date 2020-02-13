@@ -1706,6 +1706,7 @@ class fragment_amplitudes():
             if rnorm<norm_thresh:
 
                 print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti,rnorm))
+                print("(Maximum absolute res. norm: %.4e)" % np.max(np.abs(dt2_new)))
                 break
 
     def solve_MP2PAO_steepdesc(self, norm_thresh = 1e-10, s_virt = None):
@@ -2650,8 +2651,8 @@ if __name__ == "__main__":
     print("Authors : Audun Skau Hansen (a.s.hansen@kjemi.uio.no) ")
     print("          Einar Aurbakken")
     print(" ")
-    print("  0o Hylleraas Centre for Quantum Molecular Sciences")
-    print("                       UiO 2020")
+    print("   \u001b[38;5;117m0\u001b[38;5;27mø \033[0mHylleraas Centre for Quantum Molecular Sciences")
+    print("                        UiO 2020")
 
 
     import sys

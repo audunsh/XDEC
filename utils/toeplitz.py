@@ -547,7 +547,7 @@ class tmat():
         F = F.split(index_word)[1].split("WANNIER")[0].split("G = ")
     
         bands = np.array([literal_eval(i) for i in F[0].split()])-1 # indexing begins at 0
-        
+
         for i in np.arange(1,len(F[1:])+1):
             # Reading block index vector
             
@@ -578,6 +578,7 @@ class tmat():
                             # line contains elements
                             row = row_list[0] - 1
                             elements = np.array(row_list[1:]) 
+                            
                             self.blocks[ gmap ][row, columns + bands[0]] = elements #row and column 
         return bands
                         
