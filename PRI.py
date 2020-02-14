@@ -909,7 +909,7 @@ class coefficient_fitter_static():
                 print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
 
                 Jmnc2_max =  np.max(np.sqrt(np.sum(self.p.coor2vec(Jmnc2_temp.coords[screen])**2, axis = 1)))
-                if cellmax-Jmnc2_max <= 1e-9:
+                if cellmax<=Jmnc2_max:
                     print("Warning: Jmnc2 fit for c = ", c2, " extends beyond truncation threshold.")
                     print("         Jmnc2_max = %.2e,    truncation_threshold = %.2e" % (Jmnc2_max, cellcut))
                     print("         Truncation threshold (cellcut) should be increased.") 
