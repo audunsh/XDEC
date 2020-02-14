@@ -1113,7 +1113,7 @@ class fragment_amplitudes():
 
         mM = 0 #occupied index only runs over fragment
 
-        print("Self.fragment;:", self.fragment)
+        #print("Self.fragment;:", self.fragment)
 
         for ddL in np.arange(N_virt):
             dL = self.d_ia.coords[ddL]
@@ -1745,7 +1745,7 @@ class fragment_amplitudes():
 
         for ti in np.arange(1000):
             counter += 1
-            print ('Iteration no.: ', ti)
+            #print ('Iteration no.: ', ti)
             t2_new = np.zeros_like(self.t2)
             R_new = np.zeros_like(self.t2)
 
@@ -1988,7 +1988,7 @@ class fragment_amplitudes():
         t2_old = np.zeros_like(self.t2)
 
         for ti in np.arange(1000):
-            print ('Iteration no.: ', ti)
+            #print ('Iteration no.: ', ti)
             t2_new = np.zeros_like(self.t2)
             R_new = np.zeros_like(self.t2)
 
@@ -2162,7 +2162,7 @@ class fragment_amplitudes():
         opt = True
 
         for ti in np.arange(1000):
-            print ('Iteration no.: ', ti)
+            #print ('Iteration no.: ', ti)
             t2_new = np.zeros_like(self.t2)
 
             beta1 = np.zeros_like(self.t2)
@@ -2273,13 +2273,13 @@ class fragment_amplitudes():
 
             t3 = time.time()
 
-            print ('time(beta):         ',t1-t0)
-            print ('time(resudial):     ',t2-t1)
-            print ('time(diis):         ',t3-t2)
+            #print ('time(beta):         ',t1-t0)
+            #print ('time(resudial):     ',t2-t1)
+            #print ('time(diis):         ',t3-t2)
 
             rnorm = np.linalg.norm(t2_new)
             ener = self.compute_fragment_energy()
-            print ('R norm: ',rnorm)
+            #print ('R norm: ',rnorm)
             print ('Energy: ',ener)
             #print ('dE: ',ener-ener_old)
             #ener_old = ener
@@ -2331,7 +2331,7 @@ class fragment_amplitudes():
         opt = True
 
         for ti in np.arange(1000):
-            print ('Iteration no.: ', ti)
+            #print ('Iteration no.: ', ti)
             t2_new = np.zeros_like(self.t2)
 
             beta1 = np.zeros_like(self.t2)
@@ -2443,13 +2443,13 @@ class fragment_amplitudes():
 
             t3 = time.time()
 
-            print ('time(beta):         ',t1-t0)
-            print ('time(resudial):     ',t2-t1)
-            print ('time(diis):         ',t3-t2)
+            #print ('time(beta):         ',t1-t0)
+            #print ('time(resudial):     ',t2-t1)
+            #print ('time(diis):         ',t3-t2)
 
             rnorm = np.linalg.norm(t2_new)
             ener = self.compute_fragment_energy()
-            print ('R norm: ',rnorm)
+            #print ('R norm: ',rnorm)
             print ('Energy: ',ener)
             #print ('dE: ',ener-ener_old)
             #ener_old = ener
@@ -2494,7 +2494,7 @@ class diis():
         ret = np.zeros(t_i.shape, dtype = float)
         err = np.zeros(t_i.shape, dtype = float)
 
-        print ('SUM COEFFS: ',np.sum(w))
+        #print ('SUM COEFFS: ',np.sum(w))
         for i in np.arange(len(w)-1):
             ret += w[i] * self.t[i].reshape(t_i.shape)
             err += w[i] * self.err[i].reshape(err_i.shape)
@@ -2539,9 +2539,9 @@ class diis():
                 b[j,i] = b[i,j]
 
         eigvals = np.linalg.eigvals(b)
-        print ('MAX eigval: ',np.max(eigvals))
-        print ('MIN eigval: ',np.min(eigvals))
-        print ('RATIO eigval: ',np.max(eigvals)/np.min(eigvals))
+        #print ('MAX eigval: ',np.max(eigvals))
+        #print ('MIN eigval: ',np.min(eigvals))
+        #print ('RATIO eigval: ',np.max(eigvals)/np.min(eigvals))
         self.b = b
 
 
@@ -2922,6 +2922,7 @@ if __name__ == "__main__":
                 dE = 10
                 e_virt = []
                 #
+                e_virt.append(E_prev)
                 while dE>args.fot:
                     #for i in np.arange(30):
                     print("e_prev:", E_prev)
@@ -2931,7 +2932,7 @@ if __name__ == "__main__":
                     occupied_cutoff_prev = a_frag.occupied_cutoff
 
                     t_0 = time.time()
-                    a_frag.autoexpand_virtual_space(n_orbs=4)
+                    a_frag.autoexpand_virtual_space(n_orbs=1)
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
@@ -2952,7 +2953,7 @@ if __name__ == "__main__":
                     print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
                     print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
                     print(" ")
-                    e_virt.append(E_prev)
+                    e_virt.append(E_new)
                     E_prev = E_new
 
                     n_virtuals_.append(a_frag.n_virtual_tot)

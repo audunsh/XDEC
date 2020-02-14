@@ -882,12 +882,21 @@ class coefficient_fitter_static():
                 It basically computes a large chunk, presumably larger than required
                 TODO: check boundaries for significant integrals, break if present
                 """
+                Nc = 10
+                if i == 0:
+                    cellcut = 30 # bohr
                 if p.cperiodicity == "POLYMER":
-                    bc = tp.lattice_coords([4,0,0])
+                    Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,0,0]))**2, axis = 1))
+                    bc = tp.lattice_coords([Nc,0,0])[Rc<=cellcut]
+                    
                 elif p.cperiodicity == "SLAB":
-                    bc = tp.lattice_coords([4,4,0])
+                    Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,Nc,0]))**2, axis = 1))
+                    bc = tp.lattice_coords([Nc,Nc,0])[Rc<=cellcut]
                 else:
-                    bc = tp.lattice_coords([4,4,4]) #Huge domain, will consume some memory
+                    Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,Nc,Nc]))**2, axis = 1))
+                    bc = tp.lattice_coords([Nc,Nc,Nc])[Rc<=cellcut] #Huge domain, will consume some memory
+                #if i == 0:
+                cellmax = np.max(np.sqrt(np.sum(self.p.coor2vec(bc)**2, axis = 1)))
 
                 big_tmat = tp.tmat()
                 big_tmat.load_nparray(np.ones((bc.shape[0], 2,2), dtype = float), bc)
@@ -898,6 +907,13 @@ class coefficient_fitter_static():
                 screen = np.max(np.abs(Jmnc2_temp.blocks[:-1]), axis = (1,2))>=xi0
                 screen[np.sum(bc**2, axis = 1)==0] = True
                 print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
+
+                Jmnc2_max =  np.max(np.sqrt(np.sum(self.p.coor2vec(Jmnc2_temp.coords[screen])**2, axis = 1)))
+                if cellmax-Jmnc2_max <= 1e-9:
+                    print("Warning: Jmnc2 fit for c = ", c2, " extends beyond truncation threshold.")
+                    print("         Jmnc2_max = %.2e,    truncation_threshold = %.2e" % (Jmnc2_max, cellcut))
+                    print("         Truncation threshold (cellcut) should be increased.") 
+                cellcut =  Jmnc2_max+1.0 #update truncation threshold
 
                 Jmnc2 = tp.tmat()
 
@@ -1086,7 +1102,7 @@ class integral_builder_static():
     RI-integral builder with stored AO-integrals
     For high performance (but high memory demand)
     """
-    def __init__(self, c_occ, c_virt,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = False, extent_thresh = 1e-14, robust  = False, ao_screening = 1e-12, inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64):
+    def __init__(self, c_occ, c_virt,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, extent_thresh = 1e-14, robust  = False, ao_screening = 1e-12, inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64):
         self.c_occ = c_occ
         self.c_virt = c_virt
         self.p = p
