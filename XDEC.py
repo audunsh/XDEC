@@ -2330,6 +2330,8 @@ class fragment_amplitudes():
         DIIS = diis(n_diis)
         opt = True
 
+        ener = [0,0] 
+
         for ti in np.arange(1000):
             #print ('Iteration no.: ', ti)
             t2_new = np.zeros_like(self.t2)
@@ -2427,7 +2429,7 @@ class fragment_amplitudes():
                         B2T_a_ijDd = np.dot(S_a_Cc, B2_Cc_ijDd)
                         B2T_aij_Dd = B2T_a_ijDd.reshape((nc*ni*nj, nD*nd))
 
-                        tnew += np.dot(B2T_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
+                        tnew += 0*np.dot(B2T_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
 
 
 
@@ -2448,9 +2450,10 @@ class fragment_amplitudes():
             #print ('time(diis):         ',t3-t2)
 
             rnorm = np.linalg.norm(t2_new)
-            ener = self.compute_fragment_energy()
+
+            ener.append(self.compute_fragment_energy())
             #print ('R norm: ',rnorm)
-            print ('Energy: ',ener)
+            print (ti, 'Energy: ',ener[-1], "Diff:",  ener[-1]-ener[-2])
             #print ('dE: ',ener-ener_old)
             #ener_old = ener
             if rnorm<norm_thresh:
@@ -2750,6 +2753,7 @@ if __name__ == "__main__":
     #if args.solver != "mp2":
     #s = PRI.compute_overlap_matrix(p, tp.lattice_coords([10,10,10]))
     s_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
+    s_virt = c_virt.tT().cdot(s.cdot(c_virt), coords = c_virt.coords)
 
 
 
@@ -2767,6 +2771,10 @@ if __name__ == "__main__":
 
     f_mo_aa = c_virt.tT().cdot(f_ao*c_virt, coords = c_virt.coords)
     f_mo_ii = c_occ.tT().cdot(f_ao*c_occ, coords = c_occ.coords)
+    f_mo_ia = c_occ.tT().cdot(f_ao*c_virt, coords = c_occ.coords)
+    f_mo_ia = c_occ.tT().circulantdot(f_ao.circulantdot(c_virt)) #, coords = c_occ.coords)
+
+    print("Max abs f_ia element:", np.max(np.abs(f_mo_ia.blocks)))
 
 
 

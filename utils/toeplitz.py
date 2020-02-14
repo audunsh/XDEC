@@ -1609,7 +1609,7 @@ class tmat():
         
         if screening is not None:
             result = tmat()
-            mx = np.max(np.abs(ret.blocks[:-1]), axis = (1,2))>screening
+            mx = np.max(np.abs(ret.cget(ret.coords)), axis = (1,2))>screening
             result.load_nparray(ret.cget(ret.coords)[mx], ret.coords[mx])
             result.set_precision(self.blocks.dtype)
             #print(np.sum(mx), mx.shape)
