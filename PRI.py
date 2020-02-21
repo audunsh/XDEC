@@ -674,6 +674,16 @@ def estimate_attenuation_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc
     # Determine cutoff between J and mn
 
     for m in xi_0_domain:
+        xi_domains.append([m, tp.tmat()])
+
+    # The following is not used, so can safely be skipped
+
+    """
+    xi_domains = []
+
+    # Determine cutoff between J and mn
+
+    for m in xi_0_domain:
 
 
         for n in indices:
@@ -691,7 +701,7 @@ def estimate_attenuation_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc
                 xi_domains.append([m, tp.tmat()])
                 xi_domains[-1][1].load_nparray(np.ones((coords[:n].shape[0], 2,2),dtype = float),  coords[:n])
                 break
-
+    """
     return xi_domains
 
 def estimate_center_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc-pvdz-ri"):
@@ -882,9 +892,9 @@ class coefficient_fitter_static():
                 It basically computes a large chunk, presumably larger than required
                 TODO: check boundaries for significant integrals, break if present
                 """
-                Nc = 10
+                Nc = 12
                 if i == 0:
-                    cellcut = 30 # bohr
+                    cellcut = 50 # bohr
                 if p.cperiodicity == "POLYMER":
                     Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,0,0]))**2, axis = 1))
                     bc = tp.lattice_coords([Nc,0,0])[Rc<=cellcut]
@@ -913,7 +923,7 @@ class coefficient_fitter_static():
                     print("Warning: Jmnc2 fit for c = ", c2, " extends beyond truncation threshold.")
                     print("         Jmnc2_max = %.2e,    truncation_threshold = %.2e" % (Jmnc2_max, cellcut))
                     print("         Truncation threshold (cellcut) should be increased.") 
-                cellcut =  Jmnc2_max+1.0 #update truncation threshold
+                cellcut =  Jmnc2_max+2.0 #update truncation threshold
 
                 Jmnc2 = tp.tmat()
 
@@ -1119,12 +1129,13 @@ class integral_builder_static():
 
 
         #big_tmat = estimate_center_domain(p, attenuation = attenuation, xi0 = xi0, auxname=auxname)
+        N_c = 10
         if p.cperiodicity=="POLYMER":
-            bc = tp.lattice_coords([5,0,0])
+            bc = tp.lattice_coords([N_c,0,0])
         if p.cperiodicity=="SLAB":
-            bc = tp.lattice_coords([5,5,0])
+            bc = tp.lattice_coords([N_c,N_c,0])
         if p.cperiodicity=="CRYSTAL":
-            bc = tp.lattice_coords([5,5,5])
+            bc = tp.lattice_coords([N_c,N_c,N_c])
         
         big_tmat = tp.tmat()
         big_tmat.load_nparray(np.ones((bc.shape[0], 2,2)), bc)

@@ -244,8 +244,9 @@ def screen_tmat(m, tolerance = 1e-30):
     mblocks = m.cget(m.coords)
     mx = np.max(np.abs(mblocks), axis = (1,2))>tolerance
     mx[np.sum(m.coords**2)==0] = True
+    #print("mx:", np.sum(mx))
 
-    return tmat(m.coords[mx], mblocks[mx])
+    return tmat(m.coords[mx], mblocks[mx], screening = False)
 
 def merge_blocks(tmatrix1, tmatrix2, axis):
     '''

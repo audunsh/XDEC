@@ -72,7 +72,9 @@ def wannierization(folder, P, newk = 9, fullboys = 10, cyctol = 9, run = True, c
         print("##                                                 ##")
 
         bands = [core[1]+1, virt[0]-1]
+    
     # Generate input files
+
     properties_input = """NEWK
 %i 0
 1 0
@@ -89,6 +91,8 @@ WANDM
 END
 CRYAPI_OUT
 END""" % (newk, cyctol, cyctol, cyctol)
+    
+
     
     f = open(folder + "/wann_input_valence.d3" , "w")
     f.write(properties_input)
@@ -488,6 +492,7 @@ if __name__ == "__main__":
     
     if args.local_only:
         S,F,D,C = read_wann(folder + "/Crystal/", P, newk = newk)
+        
     
         
         

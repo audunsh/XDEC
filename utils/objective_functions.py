@@ -422,8 +422,11 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
     """
     Concstruct the PAOs according to 
     """
-    p.n_core = 0
+    ncore = p.n_core 
+    p.n_core = 0 #temporarily include core orbital
     c_occ, c_virt = PRI.occ_virt_split( c, p)
+
+    p.n_core = ncore
 
     
 
@@ -533,7 +536,10 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
 
     SC = s.circulantdot(c_pao)
 
-    
+    # Check span
+    w = c_virt.tT().circulantdot(SC)
+    print("Span conserved?")
+    print(np.sum(w.blocks**2, axis = (0,1)))
    
             
     lattice = p.lattice

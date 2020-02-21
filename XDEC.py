@@ -891,10 +891,12 @@ class fragment_amplitudes():
         self.ib = ib #integral builder
         self.virtual_cutoff = virtual_cutoff
         self.occupied_cutoff = occupied_cutoff
-        self.min_elm = np.min(self.d.blocks[:-1], axis = (1,2)) #array for matrix-size calc
 
-        self.min_elm_ii = np.min(self.d_ii.blocks[:-1], axis = (1,2))
-        self.min_elm_ia = np.min(self.d_ia.blocks[:-1], axis = (1,2))
+
+        self.min_elm = np.min(self.d.cget(self.d.coords), axis = (1,2)) #array for matrix-size calc
+
+        self.min_elm_ii = np.min(self.d_ii.cget(self.d_ii.coords), axis = (1,2))
+        self.min_elm_ia = np.min(self.d_ia.cget(self.d_ia.coords), axis = (1,2))
 
         self.f_mo_ii = f_mo_ii # Occupied MO-Fock matrix elements
         self.f_mo_aa = f_mo_aa # Virtual MO-Fock matrix elements
@@ -1052,7 +1054,7 @@ class fragment_amplitudes():
                                 if m[3] == 0:
                                     # Direct contribution
                                     self.g_d[:, ddL, :, mM, :, ddM, :] = I.cget(M).reshape(Ishape)
-                                    self.t2[:,  ddL, :, mM, :, ddM, :] = I.cget(M).reshape(Ishape)*self.e_iajb**-1
+                                    self.t2[:,  ddL, :, mM, :, ddM, :] = 0*I.cget(M).reshape(Ishape)*self.e_iajb**-1
                                     n_computed_di += 1
                                 if m[3] == 1:
                                     # Exchange contribution
@@ -1064,7 +1066,7 @@ class fragment_amplitudes():
                                     # Direct contribution
                                     #print(ddL, mM, ddM, self.g_d.shape)
                                     self.g_d[:, ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)
-                                    self.t2[:,  ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)*self.e_iajb**-1
+                                    self.t2[:,  ddL, :, mM, :, ddM, :] = 0*I.cget(M).T.reshape(Ishape)*self.e_iajb**-1
                                     n_computed_di += 1
                                 if m[3] == 1:
                                     # Exchange contribution
@@ -1148,7 +1150,7 @@ class fragment_amplitudes():
 
                     #print(np.linalg.norm(self.g_d[:,ddL,:,mM, :, ddM, :].reshape(2*9,2*9).T.reshape(2,9,2,9) - self.g_x[:,ddL,:,mM, :, ddM, :]))
                     #print("direct, exchange at:", dL, dM, " = ", ddL, ddM, " = ", gd2, ex)# #, np.linalg.norm(self.t2[:,ddL,:,mM, :, ddM, :]),np.linalg.norm(self.g_d[:,ddL,:,mM, :, ddM, :]),np.linalg.norm(self.g_x[:,ddL,:,mM, :, ddM, :]) )
-                    #print(np.max(np.abs(t)), np.max(np.abs(g_direct)), np.max(np.abs(g_exchange)))
+                    #print(ddL, ddM, np.max(np.abs(t)), np.max(np.abs(g_direct)), np.max(np.abs(g_exchange)))
                     e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
         #print("E TOt", e_mp2_direct, e_mp2_exchange)
         return e_mp2
@@ -1499,6 +1501,7 @@ class fragment_amplitudes():
     def omega(self, t2):
 
         t2_new = np.zeros_like(t2)
+        
         for dL in np.arange(self.n_virtual_cells):
             dLv = self.d_ia.coords[dL]
             dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
@@ -1513,6 +1516,13 @@ class fragment_amplitudes():
 
                     # generate index mapping of non-zero amplitudes in cell
                     cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+
+                    #t2_mask = np.ones(tnew.shape, dtype = np.bool)
+                    #t2_mask[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i] = False
+
+                    #t2[:, :, dL_i==False, M, :, dM, dM_i==False] *= 0
+
+
 
                     # Perform contractions
 
@@ -1571,6 +1581,10 @@ class fragment_amplitudes():
                     t2_mapped = np.zeros_like(tnew).ravel()
                     t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
                     #t2_mapped = (tnew*self.e_iajb**-1).ravel()
+
+                    
+
+                    
                     t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
         return t2_new
 
@@ -1651,6 +1665,7 @@ class fragment_amplitudes():
                     #t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
                     #t2_mapped = (tnew*self.e_iajb**-1).ravel()
 
+
                     #print(dL, M, dM)
                     #print(t2_new[:, dL, :, M, :, dM, :].shape,(tnew*self.e_iajb**-1).shape )
                     t2_new[:, dL, :, M, :, dM, :] = (tnew*self.e_iajb**-1) #t2_mapped.reshape(tnew.shape)
@@ -1672,6 +1687,8 @@ class fragment_amplitudes():
         self.vp_indx = mapgen(self.virtual_extent, self.pair_extent)
         self.pp_indx = mapgen(self.pair_extent, self.pair_extent)
 
+        DIIS = diis(8)
+
         #print(vp_indx)
         #print(pp_indx)
 
@@ -1682,6 +1699,7 @@ class fragment_amplitudes():
 
 
             dt2_new = self.omega(self.t2)
+            #print("dt (max/min/absmin):", np.max(dt2_new), np.min(dt2_new), np.abs(dt2_new).min())
             #t2_prev =
 
             # do a line search
@@ -1699,15 +1717,23 @@ class fragment_amplitudes():
                 self.t2 -= j*0.1*dt2_new
                 rnorm = n #np.linalg.norm(n)
             else:
-                self.t2 -= dt2_new
+                self.t2 -= .5*dt2_new #/np.abs(dt2_new).max()
+                self.t2 = DIIS.advance(self.t2,dt2_new)
+
+
+
                 rnorm = np.linalg.norm(dt2_new)
+                #print("%.10e %.10e" % (self.compute_fragment_energy(),update_max ))
+                #print("Max update:", np.abs(dt2_new).max())
 
 
             if rnorm<norm_thresh:
 
                 print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti,rnorm))
-                print("(Maximum absolute res. norm: %.4e)" % np.max(np.abs(dt2_new)))
+                print("(Maximum absolute res. norm: %.4e)" % np.max(np.abs(dt2_new*self.e_iajb)))
+                print("")
                 break
+        print("Maximum absolute deviation in norm:", np.max(np.abs(dt2_new*self.e_iajb)))
 
     def solve_MP2PAO_steepdesc(self, norm_thresh = 1e-10, s_virt = None):
         """
@@ -2143,6 +2169,166 @@ class fragment_amplitudes():
         nocc = self.p.get_nocc()
         ener_old = self.compute_fragment_energy()
 
+        self.virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
+        self.pair_extent = self.d_ii.coords[:self.n_occupied_cells]
+
+        self.s_pao = s_virt
+        #self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
+
+        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
+        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
+        s_aa = np.diag(self.s_pao.cget([0,0,0]))
+        f_ij = f_ii[:,None] + f_ii[None,:]
+        sfs    = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
+        fs_ab  = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        fs_ba  = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        f_iajb = sfs - fs_ab - fs_ba
+
+        DIIS = diis(n_diis)
+        opt = True
+
+        ener = [0,0]
+
+        #self.t2 *= 0
+
+        for ti in np.arange(1000):
+            
+            t2_new = np.zeros_like(self.t2)
+            t2_bar = np.zeros_like(self.t2)
+
+            # construct tbar
+            for dL in np.arange(self.n_virtual_cells):
+                dLv = self.d_ia.coords[dL]
+                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+
+                for dM in np.arange(self.n_virtual_cells):
+                    dMv = self.d_ia.coords[dM]
+                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+                    for M in np.arange(self.n_occupied_cells):
+                        Mv = self.d_ii.coords[M]
+                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
+
+                        Sac = self.s_pao.cget( self.virtual_extent - self.virtual_extent[dL])
+                        Sdb = self.s_pao.cget(-self.virtual_extent + self.virtual_extent[dM])
+
+
+
+                        t2_bar[:, dL, :, M, :, dM, :] = np.einsum("Cac,iCcjDd,Ddb->iajb", Sac, self.t2[:, :, :, M, :, :, :], Sdb, optimize = True)
+
+
+
+            for dL in np.arange(self.n_virtual_cells):
+                dLv = self.d_ia.coords[dL]
+                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+
+                for dM in np.arange(self.n_virtual_cells):
+                    dMv = self.d_ia.coords[dM]
+                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+                    for M in np.arange(self.n_occupied_cells):
+                        Mv = self.d_ii.coords[M]
+                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
+
+                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
+
+                        # generate index mapping of non-zero amplitudes in cell
+                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+
+
+
+                        
+
+                        # Perform contractions
+                        
+                        Fik = np.array(self.f_mo_ii.cget(-1*self.pair_extent))
+                        Fkj = np.array(self.f_mo_ii.cget(self.pair_extent[M] -1*self.pair_extent))
+
+
+                        Fac = self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dL])
+                        Fdb = self.f_mo_aa.cget(-self.virtual_extent + self.virtual_extent[dM])
+                        Sac = self.s_pao.cget(self.virtual_extent - self.virtual_extent[dL])
+                        Sdb = self.s_pao.cget(-self.virtual_extent + self.virtual_extent[dM])
+
+                        # First term
+                        tnew -= np.einsum("Cac,iCcjDd,Ddb->iajb", Sac, self.t2[:, :, :, M, :, :, :], Fdb, optimize = True)
+
+                        # Second term
+                        tnew -= np.einsum("Cac,iCcjDd,Ddb->iajb", Fac, self.t2[:, :, :, M, :, :, :], Sdb, optimize = True)
+
+                        
+
+                        # Troublesome diagram
+                        M_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[M] - self.pair_extent ) ]
+                        dL_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dL] - self.pair_extent) ]
+                        dM_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dM] - self.pair_extent) ]
+                        # Make sure indices is in correct domain (not negative or beyond extent)
+                        nz = (M_range<self.n_occupied_cells)*(dL_M<self.n_virtual_cells)*(dM_M<self.n_virtual_cells)*\
+                                (M_range>=0)*(dL_M>=0)*(dM_M>=0)
+
+                        tnew += np.einsum("Kkajb,Kik->iajb",t2_bar[:, dL_M[nz], :, M_range[nz], :, dM_M[nz], :], Fik[nz])
+
+
+                        # Final diagram
+                        Fkj = np.array(self.f_mo_ii.cget(-1*self.pair_extent + self.pair_extent[M]))
+                        tnew += np.einsum("iaKkb,Kkj->iajb",t2_bar[:, dL, :, :, :, dM, :], Fkj)
+
+
+
+                        t2_mapped = np.zeros_like(tnew).ravel()
+                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
+                        #print(dLv, dMv, np.abs(np.max(tnew)))
+
+                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
+
+            #t2 = time.time()
+
+            self.t2 -= t2_new
+            self.t2 = DIIS.advance(self.t2,t2_new)
+
+            #t3 = time.time()
+
+            #print ('time(beta):         ',t1-t0)
+            #print ('time(resudial):     ',t2-t1)
+            #print ('time(diis):         ',t3-t2)
+
+            rnorm = np.linalg.norm(t2_new)
+            #ener = self.compute_fragment_energy()
+            #print ('R norm: ',rnorm)
+            #print ('Energy: ',ener)
+            ener.append(self.compute_fragment_energy())
+            #print ('R norm: ',rnorm)
+            print (ti, 'Energy: ',ener[-1], "Diff:",  ener[-1]-ener[-2], "Res.norm:", rnorm, "Abs max norm:", np.abs(t2_new).max()) 
+            #print ('dE: ',ener-ener_old)
+            #ener_old = ener
+            if rnorm<norm_thresh:
+                print ()
+                print ('##############')
+                print ('##############')
+                print ('##############')
+                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
+                print ()
+                break
+        
+
+    def solve_MP2PAO_(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
+        """
+        Solving the MP2 equations for a non-orthogonal virtual space
+        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
+        """
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
+
+        alpha = 0.1
+        ener_old = 0
+
+        nocc = self.p.get_nocc()
+        ener_old = self.compute_fragment_energy()
+
         virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
         pair_extent = self.d_ii.coords[:self.n_occupied_cells]
 
@@ -2153,13 +2339,15 @@ class fragment_amplitudes():
         f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
         s_aa = np.diag(self.s_pao.cget([0,0,0]))
         f_ij = f_ii[:,None] + f_ii[None,:]
-        sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        sfs    = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
+        fs_ab  = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        fs_ba  = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
         f_iajb = sfs - fs_ab - fs_ba
 
         DIIS = diis(n_diis)
         opt = True
+
+        ener = [0,0]
 
         for ti in np.arange(1000):
             #print ('Iteration no.: ', ti)
@@ -2178,6 +2366,7 @@ class fragment_amplitudes():
                         Fik = self.f_mo_ii.cget(pair_extent)
 
                         J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
+
                         C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
                         D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
 
@@ -2278,9 +2467,12 @@ class fragment_amplitudes():
             #print ('time(diis):         ',t3-t2)
 
             rnorm = np.linalg.norm(t2_new)
-            ener = self.compute_fragment_energy()
+            #ener = self.compute_fragment_energy()
             #print ('R norm: ',rnorm)
-            print ('Energy: ',ener)
+            #print ('Energy: ',ener)
+            ener.append(self.compute_fragment_energy())
+            #print ('R norm: ',rnorm)
+            print (ti, 'Energy: ',ener[-1], "Diff:",  ener[-1]-ener[-2], "Res.norm:", rnorm) 
             #print ('dE: ',ener-ener_old)
             #ener_old = ener
             if rnorm<norm_thresh:
@@ -2326,6 +2518,8 @@ class fragment_amplitudes():
         fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
         fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
         f_iajb = sfs - fs_ab - fs_ba
+
+        print("denom:", np.abs(f_iajb).min())
 
         DIIS = diis(n_diis)
         opt = True
@@ -2727,7 +2921,7 @@ if __name__ == "__main__":
             s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
             p.n_core = args.n_core
             p.set_nvirt(c_virt.blocks.shape[2])
-            s_virt = c_virt.tT().circulantdot( s.circulantdot( c_virt ))
+            #s_virt = c_virt.tT().circulantdot( s.circulantdot( c_virt ))
             args.solver = "mp2_nonorth"
 
             # Append virtual centers to the list of centers
@@ -2737,7 +2931,7 @@ if __name__ == "__main__":
             s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
             p.n_core = args.n_core
             p.set_nvirt(c_virt.blocks.shape[2])
-            s_virt = c_virt.tT().circulantdot( s.circulantdot( c_virt ))
+            #s_virt = c_virt.tT().circulantdot( s.circulantdot( c_virt ))
             args.solver = "paodot"
 
             # Append virtual centers to the list of centers
@@ -2749,11 +2943,14 @@ if __name__ == "__main__":
             c_virt.load(args.virtual_space)
             p.set_nvirt(c_virt.blocks.shape[2])
 
-
     #if args.solver != "mp2":
     #s = PRI.compute_overlap_matrix(p, tp.lattice_coords([10,10,10]))
     s_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
-    s_virt = c_virt.tT().cdot(s.cdot(c_virt), coords = c_virt.coords)
+    #s_virt = c_virt.tT().cdot(s.cdot(c_virt), coords = c_virt.coords)
+
+
+    #for i in np.arange(s_virt.coords.shape[0]):
+
 
 
 
@@ -2774,8 +2971,7 @@ if __name__ == "__main__":
     f_mo_ia = c_occ.tT().cdot(f_ao*c_virt, coords = c_occ.coords)
     f_mo_ia = c_occ.tT().circulantdot(f_ao.circulantdot(c_virt)) #, coords = c_occ.coords)
 
-    print("Max abs f_ia element:", np.max(np.abs(f_mo_ia.blocks)))
-
+    
 
 
     # Compute energy denominator
@@ -2790,7 +2986,9 @@ if __name__ == "__main__":
 
 
 
-
+    print("Coefficient screening")
+    #c_occ.blocks[c_occ.blocks<=1e-4] = 0.0
+    #c_virt.blocks[c_virt.blocks<=1e-4] = 0.0
 
 
 
@@ -2803,6 +3001,16 @@ if __name__ == "__main__":
     print("Number of (J|mn) tensors:", len(ib.cfit.Jmn))
 
 
+
+    I_explicit, shape = ib.getorientation([0,0,0],  [0,0,0])
+    I0 = I_explicit.cget([0,0,0])
+    
+    print("Stability tests")
+    print("max/min/absmin in V-tensor:", I0.max(), I0.min(), np.abs(I0).min())
+    print("Max abs f_ia element:", np.max(np.abs(f_mo_ia.blocks)))
+    print("Energy denom:", np.max(e_iajb), np.min(e_iajb), np.abs(e_iajb).min())
+    print("f_ii:", f_ii)
+    print("f_aa:", f_aa)
 
 
 
@@ -2839,6 +3047,7 @@ if __name__ == "__main__":
 
 
 
+    
 
 
 
@@ -2890,16 +3099,21 @@ if __name__ == "__main__":
         #print (a_frag.g_d.shape)
         #np.save('g_d_mp2',a_frag.g_d)
         #print(" ")
-        s_virt_init = tp.get_identity_tmat(a_frag.p.get_nvirt())
+        #s_virt_init = tp.get_identity_tmat(a_frag.p.get_nvirt())
 
         #a_frag.solve(eqtype = args.solver, s_virt = s_virt_init)
 
         #a_frag.t2 *=0.1
 
-        print(a_frag.compute_fragment_energy())
+        #print(a_frag.compute_fragment_energy())
+        print("t2 (max/min/absmin):", np.max(a_frag.t2), np.min(a_frag.t2), np.abs(a_frag.t2).min())
+        print("g_d (max/min/absmin):", np.max(a_frag.g_d), np.min(a_frag.g_d), np.abs(a_frag.g_d).min())
         ###a_frag.solve(eqtype = args.solver, s_virt = s_virt_init)
         #a_frag.solve(eqtype = args.solver, s_virt = s_virt_init)
         a_frag.solve(eqtype = args.solver, s_virt = s_virt)
+
+        print("t2 (max/min/absmin):", np.max(a_frag.t2), np.min(a_frag.t2), np.abs(a_frag.t2).min())
+        print("g_d (max/min/absmin):", np.max(a_frag.g_d), np.min(a_frag.g_d), np.abs(a_frag.g_d).min())
 
         # Converge to fot
         E_prev_outer = a_frag.compute_fragment_energy()
@@ -2931,6 +3145,8 @@ if __name__ == "__main__":
                 e_virt = []
                 #
                 e_virt.append(E_prev)
+                n_virtuals_.append(a_frag.n_virtual_tot)
+                virtu_cut_.append(a_frag.virtual_cutoff)
                 while dE>args.fot:
                     #for i in np.arange(30):
                     print("e_prev:", E_prev)
@@ -2940,7 +3156,7 @@ if __name__ == "__main__":
                     occupied_cutoff_prev = a_frag.occupied_cutoff
 
                     t_0 = time.time()
-                    a_frag.autoexpand_virtual_space(n_orbs=1)
+                    a_frag.autoexpand_virtual_space(n_orbs=6)
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
@@ -3010,7 +3226,7 @@ if __name__ == "__main__":
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
-                    a_frag.solve(eqtype = args.solver)
+                    a_frag.solve(eqtype = args.solver, s_virt = s_virt)
                     E_new = a_frag.compute_fragment_energy()
 
                     #a_frag.print_configuration_space_data()
