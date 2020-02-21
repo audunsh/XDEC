@@ -2149,7 +2149,7 @@ class fragment_amplitudes():
                 break
 
 
-    def solve_MP2PAO(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
+    def solve_MP2PAO_(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
         """
         Solving the MP2 equations for a non-orthogonal virtual space
         (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
@@ -2309,7 +2309,7 @@ class fragment_amplitudes():
                 break
         
 
-    def solve_MP2PAO_(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
+    def solve_MP2PAO(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
         """
         Solving the MP2 equations for a non-orthogonal virtual space
         (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
@@ -2986,7 +2986,7 @@ if __name__ == "__main__":
 
 
 
-    print("Coefficient screening")
+    #print("Coefficient screening")
     #c_occ.blocks[c_occ.blocks<=1e-4] = 0.0
     #c_virt.blocks[c_virt.blocks<=1e-4] = 0.0
 
