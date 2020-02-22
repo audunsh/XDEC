@@ -1497,6 +1497,49 @@ class fragment_amplitudes():
             return self.solve_MP2PAO_ls(norm_thresh, s_virt = s_virt)
         else:
             return self.solve_MP2(norm_thresh)
+    
+    def bfgs_solve(self, f, x0, N_alpha = 20, thresh = 1e-10):
+        """
+        Rough outline of bfgs solver
+        f       = objective function
+        x0      = initial state
+        N_alpha = resolution of line search
+        
+        """
+        
+        xn = x0                                # Initial state
+        df = autograd.grad(f)                  # Gradient of f, could be finite difference based
+        df = lambda x : x[1] - x[0]
+        B = np.eye(xn.shape[0], dtype = float) # Initial guess for approximate Hessian
+
+        for i in np.arange(50):
+            df_ = df(xn)
+
+            dx = np.linalg.solve(B, - df(xn))
+            #dx = np.dot(np.linalg.pinv(B), -df_) #should avoid inversion
+            
+            # line search
+            fj = f(xn) #initial energy
+            for j in np.linspace(0,1,N_alpha)[1:]:
+                fn = f(xn + j*dx) #update energy
+                if fn>fj:
+                    # if energy increase, break
+                    break
+                fj = fn
+        
+            xn = xn + j*dx # update state
+            if np.abs(fj)<=thresh:
+                # if energy close to zero, break
+                break
+            
+            # Update approximate Hessian
+            y = df(xn) - df_
+            Bs = np.dot(B, xn)
+            B += np.outer(y,y)/np.outer(xn,y).T  - np.outer(Bs, Bs)/np.outer(xn, Bs).T
+            
+            
+
+        return xn
 
     def omega(self, t2):
 
@@ -2833,6 +2876,7 @@ if __name__ == "__main__":
     parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
     parser.add_argument("-virtual_space", type = str, default = None, help = "Alternative representation of virtual space, provided as tmat file." )
     parser.add_argument("-solver", type = str, default = "mp2", help = "Solver model." )
+    parser.add_argument("-N_c", type = int, default = 6, help = "Number of layers in Coulomb BvK-cell." )
 
     args = parser.parse_args()
 
@@ -2994,7 +3038,7 @@ if __name__ == "__main__":
 
     # Initialize integrals
     if args.disable_static_mem:
-        ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust)
+        ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, N_c = args.N_c)
     else:
         ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision)
 

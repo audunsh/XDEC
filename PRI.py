@@ -857,7 +857,7 @@ class coefficient_fitter_static():
 
     """
 
-    def __init__(self, c_occ,c_virt, p, attenuation, auxname, JK, JKInv, screening_thresh = 1e-12, robust = False, circulant = True, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64):
+    def __init__(self, c_occ,c_virt, p, attenuation, auxname, JK, JKInv, screening_thresh = 1e-12, robust = False, circulant = True, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = False):
         self.robust = robust
         self.coords = []
         self.Jmn = []
@@ -872,6 +872,7 @@ class coefficient_fitter_static():
         self.c_occ = c_occ
         self.c_virt = c_virt
         self.float_precision = float_precision
+        self.printing = printing
         if self.robust:
             self.Jmnc = []
 
@@ -916,7 +917,8 @@ class coefficient_fitter_static():
 
                 screen = np.max(np.abs(Jmnc2_temp.blocks[:-1]), axis = (1,2))>=xi0
                 screen[np.sum(bc**2, axis = 1)==0] = True
-                print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
+                if self.printing:
+                    print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
 
                 Jmnc2_max =  np.max(np.sqrt(np.sum(self.p.coor2vec(Jmnc2_temp.coords[screen])**2, axis = 1)))
                 if cellmax<=Jmnc2_max:
@@ -940,8 +942,8 @@ class coefficient_fitter_static():
             self.Jmn.append( Jmnc2 ) #New formulation without uppercase-transpose
 
 
-
-            print("Intermediate overlaps (LJ|0mNn) with N =", c2, " included with %i blocks and maximum absolute %.2e" % (Jmnc2.blocks.shape[0],np.max(np.abs(Jmnc2.blocks)) ))
+            if self.printing:
+                print("Intermediate overlaps (LJ|0mNn) with N =", c2, " included with %i blocks and maximum absolute %.2e" % (Jmnc2.blocks.shape[0],np.max(np.abs(Jmnc2.blocks)) ))
 
 
         self.coords = np.array(self.coords)
@@ -1000,10 +1002,12 @@ class coefficient_fitter_static():
 
             self.Jmnc_sparse_tensors.append(vectors)
             self.Jmnc_sparse_screening.append(screening)
+            if self.printing:
 
-            print("\r>> Contracted occupieds (LJ|0p Mn) for L = ", self.c_occ.coords[coord], "(%.2f percent complete, compression rate: %.2e)" % (100.0*coord/self.c_occ.coords.shape[0], 100.0*compr/total), end='')
-        print(time.time()-t0)
-        print("Screening-induced sparsity is at %.2e percent." % (100.0*compr/total))
+                print("\r>> Contracted occupieds (LJ|0p Mn) for L = ", self.c_occ.coords[coord], "(%.2f percent complete, compression rate: %.2e)" % (100.0*coord/self.c_occ.coords.shape[0], 100.0*compr/total), end='')
+        if self.printing:
+            print(time.time()-t0)
+            print("Screening-induced sparsity is at %.2e percent." % (100.0*compr/total))
 
 
 
@@ -1112,7 +1116,7 @@ class integral_builder_static():
     RI-integral builder with stored AO-integrals
     For high performance (but high memory demand)
     """
-    def __init__(self, c_occ, c_virt,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, extent_thresh = 1e-14, robust  = False, ao_screening = 1e-12, inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64):
+    def __init__(self, c_occ, c_virt,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, extent_thresh = 1e-14, robust  = False, ao_screening = 1e-12, inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = True, N_c = 10):
         self.c_occ = c_occ
         self.c_virt = c_virt
         self.p = p
@@ -1121,6 +1125,7 @@ class integral_builder_static():
         self.circulant = circulant
         self.robust = robust
         self.float_precision = float_precision
+        self.N_c = N_c # (2*N_c + 1)  = k-space resolution
 
         # Oneshot calculations:
         # build attenuated JK matrix and inverse
@@ -1129,7 +1134,6 @@ class integral_builder_static():
 
 
         #big_tmat = estimate_center_domain(p, attenuation = attenuation, xi0 = xi0, auxname=auxname)
-        N_c = 10
         if p.cperiodicity=="POLYMER":
             bc = tp.lattice_coords([N_c,0,0])
         if p.cperiodicity=="SLAB":
@@ -1153,10 +1157,11 @@ class integral_builder_static():
         #self.JKa = compute_JK(self.p,self.c, attenuation = attenuation, auxname = auxname)
         self.JKa = compute_JK(self.p,big_tmat, attenuation = attenuation, auxname = auxname)
         self.JKa.set_precision(self.float_precision)
-        #print(self.JKa.blocks.shape)
-        print("")
-        print("Attenuated coulomb matrix (JKa) computed.")
-        print("JKa outer coordinate (should be smaller than %.2e):" % extent_thresh, cmax, big_tmat.coords[cmax], np.max(np.abs(self.JKa.cget(self.JKa.coords[cmax]))))
+        #print(self.JKa.blocks.shape)@
+        if printing:
+            print("")
+            print("Attenuated coulomb matrix (JKa) computed.")
+            print("JKa outer coordinate (should be smaller than %.2e):" % extent_thresh, cmax, big_tmat.coords[cmax], np.max(np.abs(self.JKa.cget(self.JKa.coords[cmax]))))
 
 
         #assert(np.max(np.abs(self.JKa.cget(self.JKa.coords[cmax])))<=extent_thresh), "JKa outer coordinate (should be smaller than %.2e):" % extent_thresh
@@ -1166,32 +1171,34 @@ class integral_builder_static():
         #print(self.JKa.coords)
 
 
-
-        print("Number of auxiliary basis functions (in supercell):", self.JKa.blocks[:-1].shape[0]*self.JKa.blocks[:-1].shape[1])
-        #print("JKa block shape:", self.JKa.blocks[:-1].shape)
-        print("")
+        if printing:
+            print("Number of auxiliary basis functions (in supercell):", self.JKa.blocks[:-1].shape[0]*self.JKa.blocks[:-1].shape[1])
+            #print("JKa block shape:", self.JKa.blocks[:-1].shape)
+            print("")
 
         self.JKinv = invert_JK(self.JKa)
         self.JKinv.set_precision(self.float_precision)
         #inverse_test = True
         if inverse_test:
-            print("JKa inverse computed, checking max deviation from 0 = JKa^-1 JKa - I within extent")
+            if printing:
+                print("JKa inverse computed, checking max deviation from 0 = JKa^-1 JKa - I within extent")
 
 
             tcoords = np.zeros((np.max(self.JKa.coords),3), dtype = int)
             tcoords[:,0] = np.arange(self.JKa.coords.max(), dtype = int)
             I = self.JKinv.cdot(self.JKa, coords = tcoords )
+            
+            if printing:
+                print("Direct space inversion (0,0,0): %.3e" % np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
+                for cc in tcoords[1:]:
+                    print("Direct space inversion (%i,0,0): %.3e" % (cc[0], np.max(np.abs(I.cget(cc)))))
 
-            print("Direct space inversion (0,0,0): %.3e" % np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
-            for cc in tcoords[1:]:
-                print("Direct space inversion (%i,0,0): %.3e" % (cc[0], np.max(np.abs(I.cget(cc)))))
 
-
-            I = self.JKinv.circulantdot(self.JKa)
-            print("Circulant inversion    (0,0,0): %.3e" % np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
-            for cc in tcoords[1:]:
-                print("Circulant inversion    (%i,0,0): %.3e" % (cc[0], np.max(np.abs(I.cget(cc)))))
-            print(" ")
+                I = self.JKinv.circulantdot(self.JKa)
+                print("Circulant inversion    (0,0,0): %.3e" % np.max(np.abs(I.cget([0,0,0])-np.eye(I.blockshape[0]))))
+                for cc in tcoords[1:]:
+                    print("Circulant inversion    (%i,0,0): %.3e" % (cc[0], np.max(np.abs(I.cget(cc)))))
+                print(" ")
 
 
         self.XregT = np.zeros((15,15,15), dtype = tp.tmat)  # RI - coefficient matrices ^T
@@ -1201,8 +1208,9 @@ class integral_builder_static():
 
         # initial coeffs computed in single layer around center cell
         coord_q =  tp.lattice_coords(initial_virtual_dom) #initial virtual domain
-        print("Computing fitting coefficients for dL = ")
-        print(coord_q)
+        if printing:
+            print("Computing fitting coefficients for dL = ")
+            print(coord_q)
         #if robust:
         #    t0 = time.time()
         #    Xreg, Jpq = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv], robust = True, circulant = self.circulant)
@@ -1218,13 +1226,15 @@ class integral_builder_static():
         t0 = time.time()
         self.cfit = coefficient_fitter_static(self.c_occ, self.c_virt, p, attenuation, auxname, self.JKa, self.JKinv, screening_thresh = ao_screening, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision)
         t1 = time.time()
-        print("Spent %.1f s preparing fitting (three index) integrals." % (t1-t0))
+        if printing:
+            print("Spent %.1f s preparing fitting (three index) integrals." % (t1-t0))
         if self.robust:
             Xreg, Jpq = self.cfit.get(coord_q)
         else:
              Xreg = self.cfit.get(coord_q)
         t2 = time.time()
-        print("Spent %.1f s computing fitting coefficient for %i coords" % (t2-t1, len(coord_q)))
+        if printing:
+            print("Spent %.1f s computing fitting coefficient for %i coords" % (t2-t1, len(coord_q)))
 
 
         for i in np.arange(coord_q.shape[0]):
@@ -1240,10 +1250,11 @@ class integral_builder_static():
             # Compute JK_coulomb
             coulomb_extent = np.max(np.abs(self.XregT[0,0,0].coords), axis = 0)
             #coulomb_extent = np.max(np.abs(self.JKa[0,0,0].coords), axis = 0)
-            print("Extent of Xreg          :", coulomb_extent)
+            if printing:
+                print("Extent of Xreg          :", coulomb_extent)
 
             #coulomb_extent = (10,10,10)
-            print("Extent of Coulomb matrix:", coulomb_extent)
+            #print("Extent of Coulomb matrix:", coulomb_extent)
 
         #s = tp.tmat()
         #scoords = tp.lattice_coords(coulomb_extent)
@@ -1253,7 +1264,9 @@ class integral_builder_static():
         self.JK = compute_JK(p,big_tmat, coulomb=True, auxname = self.auxname)
         self.JK.set_precision(self.float_precision)
 
-        print("Coulomb matrix (JK) computed.")
+        if printing:
+
+            print("Coulomb matrix (JK) computed.")
 
 
         for i in np.arange(coord_q.shape[0]):
