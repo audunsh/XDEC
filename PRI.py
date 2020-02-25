@@ -67,7 +67,7 @@ def occ_virt_split(c,p):
     c_virt.load_nparray(c.blocks[:-1,:,p.get_nocc()+p.n_core:], c.coords[:], screening = False)
 
     c_occ = tp.tmat()
-    c_occ.load_nparray(c.blocks[:-1,:,p.n_core:p.get_nocc()+p.n_core], c.coords[:], screening = True)
+    c_occ.load_nparray(c.blocks[:-1,:,p.n_core:p.get_nocc()+p.n_core], c.coords[:], screening = False)
 
     return c_occ, c_virt
 
@@ -617,7 +617,7 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
         if (np.max(np.abs(Jmnc.cget(cube[1:]))))<thresh:
 
             cmax = np.argmax(np.sqrt(np.sum(np.dot(cube,p.lattice)**2, axis = 1)))
-            rmax = np.sqrt(np.sum(np.dot(cube,p.lattice)**2, axis = 1))[cmax]
+            rmax = np.sqrt(np.sum(p.coor2vec(cube)**2, axis = 1))[cmax]
             #print("Converged to %i layers for shifted coordinate:" % i, c2, cmax, big_tmat.coords[cmax], rmax)
             break
 
@@ -764,7 +764,7 @@ def estimate_attenuation_distance_(p, attenuation = 0.1, c2 = [0,0,0], thresh = 
     cube = tp.lattice_coords([12,12,12]) #assumed max twobody AO-extent (subst. C-S Screening)
 
     # sort in increasing distance
-    cube = cube[np.argsort(np.sum(np.dot(cube, p.lattice)**2, axis = 1))]
+    cube = cube[np.argsort(np.sum(p.coor2vec(cube)**2, axis = 1))]
     #print(cube[:10])
 
     for i in np.arange(1,cube.shape[0]):
@@ -895,7 +895,7 @@ class coefficient_fitter_static():
                 """
                 Nc = 12
                 if i == 0:
-                    cellcut = 50 # bohr
+                    cellcut = 35 # bohr
                 if p.cperiodicity == "POLYMER":
                     Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,0,0]))**2, axis = 1))
                     bc = tp.lattice_coords([Nc,0,0])[Rc<=cellcut]
@@ -912,7 +912,9 @@ class coefficient_fitter_static():
                 big_tmat = tp.tmat()
                 big_tmat.load_nparray(np.ones((bc.shape[0], 2,2), dtype = float), bc)
 
-                Jmnc2_temp = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
+
+
+                Jmnc2_temp = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2]))
                 Jmnc2_temp.set_precision(self.float_precision)
 
                 screen = np.max(np.abs(Jmnc2_temp.blocks[:-1]), axis = (1,2))>=xi0
@@ -920,11 +922,28 @@ class coefficient_fitter_static():
                 if self.printing:
                     print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
 
-                Jmnc2_max =  np.max(np.sqrt(np.sum(self.p.coor2vec(Jmnc2_temp.coords[screen])**2, axis = 1)))
+                # Unscreened distances
+                distances = np.sqrt(np.sum(self.p.coor2vec(Jmnc2_temp.coords[screen])**2, axis = 1))
+
+                Jmnc2_max =  np.max(distances)
+
+
+                max_outer_10pcnt = np.max(Jmnc2_temp.blocks[:-1][screen][distances>Jmnc2_max*0.95])
+                
+
+
+
+
+
+                
+                
+
                 if cellmax<=Jmnc2_max:
                     print("Warning: Jmnc2 fit for c = ", c2, " extends beyond truncation threshold.")
                     print("         Jmnc2_max = %.2e,    truncation_threshold = %.2e" % (Jmnc2_max, cellcut))
+                    #print("         Max value at boundary: ", Jmnc2_temp)
                     print("         Truncation threshold (cellcut) should be increased.") 
+                    print("Maximum value in outer 5 percentage of block ", c2, " :", max_outer_10pcnt)
                 cellcut =  Jmnc2_max+2.0 #update truncation threshold
 
                 Jmnc2 = tp.tmat()
@@ -963,6 +982,7 @@ class coefficient_fitter_static():
 
 
         self.virtual_coords = []
+        #print("Will screen away:", xi1, xi0)
 
 
         t0 = time.time()
@@ -1011,7 +1031,7 @@ class coefficient_fitter_static():
 
 
 
-    def get(self, coords_q):
+    def get(self, coords_q, robust = False):
         c_occ, c_virt = self.c_occ, self.c_virt
         #c = self.c
         JK = self.JK
@@ -1063,6 +1083,8 @@ class coefficient_fitter_static():
 
                 block_j.reshape(NJ, Np, Nq)
 
+                #print(coord, NJ)
+
 
                 Jpq_c[j].blocks[Jpq_c[j].mapping[ Jpq_c[j]._c2i(c_occ.coords[coord]) ]] =  block_j.reshape(NJ, Np*Nq)
 
@@ -1075,6 +1097,7 @@ class coefficient_fitter_static():
         X = []
         for i in np.arange(len(Jpq_c)):
             t0 = time.time()
+            
             if self.circulant:
                 """
                 A range of methods has been tested, the svd_solve seems to be fastest and stable
@@ -1082,11 +1105,30 @@ class coefficient_fitter_static():
                 #X.append(self.JKInv.circulantdot(Jpq_c[i]))
                 #X.append(self.JK.kspace_linear_solve(Jpq_c[i]))
                 #X.append(self.JK.kspace_cholesky_solve(Jpq_c[i]))
-                X.append(self.JK.kspace_svd_solve(Jpq_c[i])) #, complex_precision = np.complex128))
+                print(self.JK.cutoffs(), Jpq_c[i].cutoffs())
+
+                n_ppts = np.array(self.JK.cutoffs()) + np.array( Jpq_c[i].cutoffs() )
+
+                n_ppts = np.array([9,9,9]) #np.array(self.JK.cutoffs())+1
+                print(n_ppts)
+                if robust: 
+                    X.append([self.JK.kspace_svd_solve(Jpq_c[i], n_points = n_ppts), Jpq_c[i]]) #, complex_precision = np.complex128))
+                else:
+                    X.append(self.JK.kspace_svd_solve(Jpq_c[i], n_points = n_ppts))
+                #X.append(self.JK.kspace_svd_solve(Jpq_c[i], n_points = (10,10,10))) #, complex_precision = np.complex128))
+                
+                # Test coeff distance decay
+                #tp.decay_check(X[-1], self.p, printing = False)
+
+
                 #print(X[-1].blocks.dtype)
 
             else:
-                X.append(self.JKInv.cdot(Jpq_c[i]))
+                if robust: 
+                    X.append([self.JK.kspace_svd_solve(Jpq_c[i], n_points = n_ppts), Jpq_c[i]]) #, complex_precision = np.complex128))
+                else:
+                    X.append(self.JK.kspace_svd_solve(Jpq_c[i], n_points = n_ppts))
+                #X.append(self.JKInv.cdot(Jpq_c[i]))
             print("Solving for Jpqc:", time.time()-t0)
 
         return X
@@ -1145,7 +1187,7 @@ class integral_builder_static():
         big_tmat.load_nparray(np.ones((bc.shape[0], 2,2)), bc)
 
         cmax = big_tmat.coords[np.argmax(np.sum(big_tmat.coords**2, axis = 1))]
-        cmax = np.argmax(np.sqrt(np.sum(np.dot(big_tmat.coords,p.lattice)**2, axis = 1)))
+        cmax = np.argmax(np.sqrt(np.sum(p.coor2vec(big_tmat.coords)**2, axis = 1)))
 
         """
         if JKa_extent is not None:
@@ -1224,14 +1266,14 @@ class integral_builder_static():
 
         #print("Coeff fitter static tresh set to 1e-8")
         t0 = time.time()
-        self.cfit = coefficient_fitter_static(self.c_occ, self.c_virt, p, attenuation, auxname, self.JKa, self.JKinv, screening_thresh = ao_screening, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision)
+        self.cfit = coefficient_fitter_static(self.c_occ, self.c_virt, p, attenuation, auxname, self.JKa, self.JKinv, screening_thresh = ao_screening, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision, printing = printing)
         t1 = time.time()
         if printing:
             print("Spent %.1f s preparing fitting (three index) integrals." % (t1-t0))
         if self.robust:
-            Xreg, Jpq = self.cfit.get(coord_q)
+            Xreg = self.cfit.get(coord_q, robust = True)
         else:
-             Xreg = self.cfit.get(coord_q)
+            Xreg = self.cfit.get(coord_q, robust = False)
         t2 = time.time()
         if printing:
             print("Spent %.1f s computing fitting coefficient for %i coords" % (t2-t1, len(coord_q)))
@@ -1239,11 +1281,16 @@ class integral_builder_static():
 
         for i in np.arange(coord_q.shape[0]):
             #print("Transpose of coordinate", coord_q[i])
-            self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i].tT()
-        if robust:
-            for i in np.arange(coord_q.shape[0]):
-                #print("Transpose of coordinate", coord_q[i])
-                self.JpqXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Jpq[i]
+            if self.robust:
+                self.JpqXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i][1]
+                self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i][0].tT()
+
+            else:
+                self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i].tT()
+        #if robust:
+        #    for i in np.arange(coord_q.shape[0]):
+        #        #print("Transpose of coordinate", coord_q[i])
+        #        self.JpqXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Jpq[i]
 
 
         if coulomb_extent is None:
@@ -1271,30 +1318,66 @@ class integral_builder_static():
 
         for i in np.arange(coord_q.shape[0]):
             #print("JK dot X for cell ", coord_q[i])
+            if robust:
 
-            if circulant:
-                self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.circulantdot(Xreg[i])
+                if circulant:
+                    self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.circulantdot(Xreg[i][0])
+                else:
+                    self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.cdot(Xreg[i][0])
             else:
-                self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.cdot(Xreg[i])
+                if circulant:
+                    self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.circulantdot(Xreg[i])
+                else:
+                    self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.cdot(Xreg[i])
 
     def getorientation(self, dL, dM):
         for d in [dL, dM]:
             #print(d)
             if self.XregT[d[0], d[1], d[2]] is 0:
+                if self.robust:
+                    Xreg = self.cfit.get(np.array([d]), robust = True)
+                    self.XregT[d[0], d[1], d[2]] = Xreg[0][0].tT()
 
-                #Xreg, Jpq = self.cfit.get(np.array([d]))
-                Xreg = self.cfit.get(np.array([d]))
-                self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
-                #self.JpqXreg[d[0], d[1], d[2]] = Jpq[0]
-                if self.circulant:
-                    self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0])
+                    self.JpqXreg[d[0], d[1], d[2]] = Xreg[0][1]
+
+                    if self.circulant:
+                        self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0][0])
+                    else:
+                        self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0][0])
+
+
+
                 else:
-                    self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
 
-                print("        On-demand calculation:", d)
+                    #Xreg, Jpq = self.cfit.get(np.array([d]))
+                    Xreg = self.cfit.get(np.array([d]))
+                    self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
+                    #self.JpqXreg[d[0], d[1], d[2]] = Jpq[0]
+                    if self.circulant:
+                        self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0])
+                    else:
+                        self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
+
+                    print("        On-demand calculation:", d)
+        
+        
         if self.robust:
-            print("Robust orientation not yet implemented")
-            return None
+            print("Warning: Robust orientation not tested")
+            if self.circulant:
+                return (-self.JpqXreg[dL[0], dL[1], dL[2]].tT().circulantdot(self.XregT[dM[0], dM[1], dM[2]].tT()) - \
+                    self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.JpqXreg[dM[0], dM[1], dM[2]]) + \
+                    self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])), \
+                    (self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt()) #.cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+
+            else:
+                #return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().cdot(self.XregT[dM[0], dM[1], dM[2]].tT(), coords = [M]) + \
+                    self.XregT[dL[0], dL[1], dL[2]].cdot(self.JpqXreg[dM[0], dM[1], dM[2]], coords = [M]) - \
+                    self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M])), \
+                    (self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt()) #.cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+
+        
+        
         else:
             #print("Return:")
             if self.circulant:

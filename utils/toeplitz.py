@@ -1387,21 +1387,90 @@ class tmat():
         
 
 
-
-
-
-    def kspace_svd_solve(self, other, tolerance = 1e-10, complex_precision = np.complex128):
+    def kspace_svd_solve(self, other, tolerance = 1e-10, complex_precision = np.complex128, n_points = None, complx = False):
         """
-        goes to reciprocal space and solves 
+        IBT (Infinite Block-Circulant) svd solver
+        """
+        if n_points is None:
+            
+            m1n = np.max(np.abs(self.coords), axis = 0)
+            m2n = np.max(np.abs(other.coords), axis = 0)
+            
+            n_points = np.max([m1n,m2n], axis = 0)  
+
+        nx,ny,nz = 2*n_points + 1
+        m1x,m1y = self.blocks.shape[1], self.blocks.shape[2]
+        m2x,m2y = other.blocks.shape[1], other.blocks.shape[2]
+        
+        coords = np.roll(lattice_coords(n_points).reshape(nx,ny,nz, 3), -n_points, axis = (0,1,2)).reshape(nx*ny*nz, 3)
+
+        
+        m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
+        m2r = other.cget(coords).reshape(nx,ny,nz,m2x,m2y)
+        M1 = np.fft.fftn(m1r, axes = (0,1,2))
+        M2 = np.fft.fftn(m2r, axes = (0,1,2))
+        M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = np.complex128)
+        for c in coords:
+            #M1[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
+
+            #ci = self_k.coords[i]
+            u_,s_,vh_ = np.linalg.svd(M1[c[0], c[1], c[2]])
+            b = M2[c[0], c[1], c[2]]
+
+            t = s_>tolerance #screening
+            if np.any(t == False):
+                print("Warning (SVD): poorly conditioned JK matrix.", s_)
+
+            pinv = np.dot(vh_[t,:].conj().T, np.dot(np.diag(s_[t]**-1), u_[:,t].conj().T))
+            x = np.dot(pinv, b)
+
+            #rhs = np.dot(np.dot(np.diag(s_[t]**-1), u_[:,t].conj().T), b)
+            #x = np.linalg.solve(vh_[t,:], rhs)
+            
+            
+            
+            #svhx = np.linalg.solve(u_[:,t], b)
+
+            #x = np.linalg.solve(np.dot(np.diag(s_[t]),vh_[t,:]), svhx )
+
+            
+            """
+            
+            U = u_[:,t]
+            S = np.diag(s_[t])
+            VH = vh_[t,:]
+
+            SVH = np.dot(S, VH)
+            Ub  = np.dot(U.conj().T, other_k.blocks[i])
+            """
+
+            M3[c[0], c[1], c[2]] = x #np.linalg.solve(SVH, Ub)
+
+
+            
+        
+        
+        ret = tmat()
+        if complx:
+            ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m2y), coords)
+        else:
+            ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).real.reshape(coords.shape[0], m1x,m2y), coords)
+        return ret
+
+
+    def kspace_svd_solve_(self, other, tolerance = 1e-10, complex_precision = np.complex128, n_points = None):
+        """
+        transforms to reciprocal space and solves 
             self \cdot x = other
         using svd decomposition
             u s vh = self
         returns x
         """
         #print(self.blocks.shape, other.blocks.shape)
+        if n_points is None:
 
-        n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
-        #print(n_points)
+            n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
+        print(n_points)
         #print(other.coords)
         self_k = transform(self, np.fft.fftn, n_points = n_points)
         other_k = transform(other, np.fft.fftn, n_points = n_points)
@@ -1422,6 +1491,8 @@ class tmat():
             b = other_k.cget(ci)
 
             t = s_>tolerance #screening
+            if np.any(t == False):
+                print("SVD solver unstable:", t)
 
             pinv = np.dot(vh_[t,:].conj().T, np.dot(np.diag(s_[t]**-1), u_[:,t].conj().T))
             x = np.dot(pinv, b)
@@ -1581,9 +1652,43 @@ class tmat():
         del(mk)
         del(nk)
         return screen_tmat(transform(tmat(c, rb), np.fft.ifftn, n_points = npt, complx = False))
+
+    def circulantdot(self, other, n_layers = None, complx = False):
+        """
+        IBT (Infinite Block-Circulant) matrix-matrix product
+        """
+        if n_layers is None:
+            
+            m1n = np.max(np.abs(self.coords), axis = 0)
+            m2n = np.max(np.abs(other.coords), axis = 0)
+            
+            n_layers = np.max([m1n,m2n], axis = 0)  
+
+        nx,ny,nz = 2*n_layers + 1
+        m1x,m1y = self.blocks.shape[1], self.blocks.shape[2]
+        m2x,m2y = other.blocks.shape[1], other.blocks.shape[2]
+        
+        coords = np.roll(lattice_coords(n_layers).reshape(nx,ny,nz, 3), -n_layers, axis = (0,1,2)).reshape(nx*ny*nz, 3)
+
+        
+        m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
+        m2r = other.cget(coords).reshape(nx,ny,nz,m2x,m2y)
+        M1 = np.fft.fftn(m1r, axes = (0,1,2))
+        M2 = np.fft.fftn(m2r, axes = (0,1,2))
+        M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = np.complex128)
+        for c in coords:
+            M3[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
+        
+        
+        ret = tmat()
+        if complx:
+            ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m2y), coords)
+        else:
+            ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).real.reshape(coords.shape[0], m1x,m2y), coords)
+        return ret
         
 
-    def circulantdot(self, other, complx = False, screening = None):
+    def circulantdot_(self, other, complx = False, screening = None):
         """
         Computes the dot product assuming a circulant matrix structure
         """
@@ -2304,3 +2409,20 @@ def get_tmatrix(data):
     '''
     return tmat(coords = np.array(data.coords, dtype=int),
                 blocks = np.array(data.blocks, dtype=data.number_type))
+
+def decay_check(m, p, printing = False, distance = 30, threshold = 1e-8):
+    # Check that blocks beyond distance is below treshold
+    R = np.sqrt(np.sum(p.coor2vec(m.coords))**2, axis =1 )
+    Ri = np.argsort(R)
+    Jm = np.max(np.abs(m.cget(m.coords)[Ri]), axis = (1,2))
+    if printing:
+        for l in np.array([R[Ri], Jm]).T:
+            print(l)
+    mx_d = np.max(np.abs(m.cget(m.coords)[R>distance]))
+    if mx_d>threshold:
+        print("Warning: found matrix element with abs.value %.6e outside %.6e bohr." % (mx_d, distance))
+        if printing:
+            for l in np.array([R[R>distance], np.max(np.abs(m.cget(m.coords)[R>distance]), axis = (1,2)) ] ).T:
+                print(l)
+
+    

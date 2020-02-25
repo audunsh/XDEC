@@ -308,7 +308,7 @@ class pair_fragment_amplitudes():
                                 if m[3] == 0:
                                     # Direct contribution
                                     self.g_d[:, ddL, :, mM, :, ddM, :] = I.cget(M).reshape(Ishape)
-                                    self.t2[:,  ddL, :, mM, :, ddM, :] = I.cget(M).reshape(Ishape)*self.f1.e_iajb**-1
+                                    self.t2[:,  ddL, :, mM, :, ddM, :] = 0*I.cget(M).reshape(Ishape)*self.f1.e_iajb**-1
                                 if m[3] == 1:
                                     # Exchange contribution
                                     ddL_, mM_, ddM_ = m[4], m[5], m[6]
@@ -317,7 +317,7 @@ class pair_fragment_amplitudes():
                                 if m[3] == 0:
                                     # Direct contribution
                                     self.g_d[:, ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)
-                                    self.t2[:,  ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)*self.f1.e_iajb**-1
+                                    self.t2[:,  ddL, :, mM, :, ddM, :] = 0*I.cget(M).T.reshape(Ishape)*self.f1.e_iajb**-1
                                 if m[3] == 1:
                                     # Exchange contribution
                                     ddL_, mM_, ddM_ = m[4], m[5], m[6]
@@ -367,7 +367,7 @@ class pair_fragment_amplitudes():
                             if m[3] == 0:
                                 # Direct contribution
                                 self.g_d[:, ddL, :, mM, :, ddM, :] = I.cget(M).reshape(Ishape)
-                                self.t2[:,  ddL, :, mM, :, ddM, :] = I.cget(M).reshape(Ishape)*self.f1.e_iajb**-1
+                                self.t2[:,  ddL, :, mM, :, ddM, :] = 0*I.cget(M).reshape(Ishape)*self.f1.e_iajb**-1
                             if m[3] == 1:
                                 # Exchange contribution
                                 ddL_, mM_, ddM_ = m[4], m[5], m[6]
@@ -665,7 +665,7 @@ class pair_fragment_amplitudes_():
                     g_exchange = self.f1.ib.getcell(dM-M, M, dL+M)
                     #t = g_direct*self.e_iajb**-1
                     #print(np.linalg.norm(g_direct*self.e_iajb**-1))
-                    self.t2[:, ddL, :, mM, :, ddM, :] = g_direct*self.e_iajb**-1
+                    self.t2[:, ddL, :, mM, :, ddM, :] = 0*g_direct*self.e_iajb**-1
                     self.g_d[:, ddL, :, mM, :, ddM, :] = g_direct
                     self.g_x[:, ddL, :, mM, :, ddM, :] = g_exchange
                     #self.e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
@@ -1737,7 +1737,7 @@ class fragment_amplitudes():
 
         #dt2 = ad.gh(self.omega_agrad)
         #dt_new = dt2[1](self.t2)
-        for ti in np.arange(100):
+        for ti in np.arange(500):
 
 
 
@@ -1767,6 +1767,7 @@ class fragment_amplitudes():
 
                 rnorm = np.linalg.norm(dt2_new)
                 #print("%.10e %.10e" % (self.compute_fragment_energy(),update_max ))
+                print("%.10e %.10e" % (self.compute_fragment_energy(),np.abs(dt2_new).max() ))
                 #print("Max update:", np.abs(dt2_new).max())
 
 
@@ -2192,7 +2193,7 @@ class fragment_amplitudes():
                 break
 
 
-    def solve_MP2PAO_(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
+    def solve_MP2PAO(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
         """
         Solving the MP2 equations for a non-orthogonal virtual space
         (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
@@ -2352,7 +2353,7 @@ class fragment_amplitudes():
                 break
         
 
-    def solve_MP2PAO(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
+    def solve_MP2PAO_(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
         """
         Solving the MP2 equations for a non-orthogonal virtual space
         (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
@@ -2920,6 +2921,7 @@ if __name__ == "__main__":
     print(" ")
     print("General settings:")
     print("Virtual space          :", args.virtual_space)
+    print("Coulomb extent (layers):", args.N_c)
     #print("Dot-product            :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
     #print("RI fitting             :", ["Non-robust", "Robust"][int(args.robust)])
     print("_________________________________________________________")
@@ -2944,9 +2946,13 @@ if __name__ == "__main__":
 
 
     # Wannier coefficients
+    C = tp.tmat()
+    C.load(args.coefficients)
+    C.set_precision(args.float_precision)
+
     c = tp.tmat()
-    c.load(args.coefficients)
-    c.set_precision(args.float_precision)
+    c_coords = tp.lattice_coords([4,4,4])
+    c.load_nparray(C.cget(c_coords), c_coords, screening = False)
 
     # Load wannier centers
     
@@ -2990,6 +2996,7 @@ if __name__ == "__main__":
     #if args.solver != "mp2":
     #s = PRI.compute_overlap_matrix(p, tp.lattice_coords([10,10,10]))
     s_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
+    np.save("S_ab0.npy", s_virt.cget([0,0,0]))
     #s_virt = c_virt.tT().cdot(s.cdot(c_virt), coords = c_virt.coords)
 
 
@@ -3017,6 +3024,13 @@ if __name__ == "__main__":
 
     
 
+    #f_mo_aa = c_virt.tT().circulantdot(f_ao.circulantdot(c_virt))
+    #f_mo_ii = c_occ.tT().circulantdot(f_ao.circulantdot(c_occ))
+    #f_mo_ia = c_occ.tT().circulantdot(f_ao.circulantdot(c_virt))
+    #f_mo_ia = c_occ.tT().circulantdot(f_ao.circulantdot(c_virt)) #, coords = c_occ.coords)
+
+    
+
 
     # Compute energy denominator
     #f_aa = f_mo.cget([0,0,0])[np.arange(p.get_nocc(),p.get_n_ao()), np.arange(p.get_nocc(),p.get_n_ao())]
@@ -3033,6 +3047,12 @@ if __name__ == "__main__":
     #print("Coefficient screening")
     #c_occ.blocks[c_occ.blocks<=1e-4] = 0.0
     #c_virt.blocks[c_virt.blocks<=1e-4] = 0.0
+    print("C_occ extent")
+    print(np.max(np.abs(c.coords), axis = 0))
+    print(np.max(np.abs(c_occ.coords), axis = 0))
+    print(np.max(np.abs(c_virt.coords), axis = 0))
+
+    
 
 
 
@@ -3040,7 +3060,7 @@ if __name__ == "__main__":
     if args.disable_static_mem:
         ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, N_c = args.N_c)
     else:
-        ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision)
+        ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c)
 
     print("Number of (J|mn) tensors:", len(ib.cfit.Jmn))
 
@@ -3055,6 +3075,11 @@ if __name__ == "__main__":
     print("Energy denom:", np.max(e_iajb), np.min(e_iajb), np.abs(e_iajb).min())
     print("f_ii:", f_ii)
     print("f_aa:", f_aa)
+
+    #Save all matrices for center cell runs
+    np.save("Fab_0.npy", f_mo_aa.cget([0,0,0]))
+    np.save("Fij_0.npy", f_mo_ii.cget([0,0,0]))
+    np.save("Viajb_0.npy", I0)
 
 
 
