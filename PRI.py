@@ -939,11 +939,11 @@ class coefficient_fitter_static():
                 
 
                 if cellmax<=Jmnc2_max:
-                    print("Warning: Jmnc2 fit for c = ", c2, " extends beyond truncation threshold.")
+                    print("Warning: Jmnc2 fitting integrals for c = ", c2, " extends beyond predefined matrix extents.")
                     print("         Jmnc2_max = %.2e,    truncation_threshold = %.2e" % (Jmnc2_max, cellcut))
                     #print("         Max value at boundary: ", Jmnc2_temp)
                     print("         Truncation threshold (cellcut) should be increased.") 
-                    print("Maximum value in outer 5 percentage of block ", c2, " :", max_outer_10pcnt)
+                    print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_10pcnt)
                 cellcut =  Jmnc2_max+2.0 #update truncation threshold
 
                 Jmnc2 = tp.tmat()
@@ -1364,8 +1364,8 @@ class integral_builder_static():
         if self.robust:
             print("Warning: Robust orientation not tested")
             if self.circulant:
-                return (-self.JpqXreg[dL[0], dL[1], dL[2]].tT().circulantdot(self.XregT[dM[0], dM[1], dM[2]].tT()) - \
-                    self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.JpqXreg[dM[0], dM[1], dM[2]]) + \
+                return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().circulantdot(self.XregT[dM[0], dM[1], dM[2]].tT()) + \
+                    self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.JpqXreg[dM[0], dM[1], dM[2]]) - \
                     self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])), \
                     (self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt()) #.cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
 

@@ -1622,7 +1622,8 @@ class fragment_amplitudes():
                     tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
 
                     t2_mapped = np.zeros_like(tnew).ravel()
-                    t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
+                    #t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
+                    t2_mapped[cell_map] = .1*tnew.ravel()[cell_map]
                     #t2_mapped = (tnew*self.e_iajb**-1).ravel()
 
                     
