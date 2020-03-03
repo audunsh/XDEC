@@ -634,7 +634,7 @@ def estimate_attenuation_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc
 
     """
     # Generate a grid of cells
-    coords = tp.lattice_coords([12,0,0]) #assumed max extent
+    coords = tp.lattice_coords(n_points_p(p, 6)) #assumed max extent
     #coords = n_points_p(p, 12)
 
     print(coords)
@@ -965,21 +965,21 @@ class coefficient_fitter_static():
 
         xi_domain = estimate_attenuation_domain(p, attenuation = attenuation, xi0 = xi0,  auxname = auxname)
 
-        ddM = tp.lattice_coords([20,0,0])
-        ddM = ddM[np.argsort(np.sum(p.coor2vec(ddM)**2, axis = 1))]
+        #ddM = tp.lattice_coords([20,0,0])
+        #ddM = ddM[np.argsort(np.sum(p.coor2vec(ddM)**2, axis = 1))]
         
         #xi_domain = []
         #for i in np.arange(20):
         #    xi_domain.append([dM[i], 1])
 
-        """
+        
         for i in np.arange(len(xi_domain)):
             # Compute JMN with nsep =  c2
 
             c2, big_tmat = xi_domain[i]
-        """
-        for i in np.arange(ddM.shape[0]):
-            c2 = ddM[i]
+        
+            #for i in np.arange(ddM.shape[0]):
+            #c2 = ddM[i]
 
 
             if True:
@@ -993,8 +993,8 @@ class coefficient_fitter_static():
                     cellcut = 65 # bohr
                 if p.cperiodicity == "POLYMER":
                     cellcut = 165 # bohr
-                    Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc**2,0,0]))**2, axis = 1))
-                    bc = tp.lattice_coords([Nc**2,0,0])[Rc<=cellcut]
+                    Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,0,0]))**2, axis = 1))
+                    bc = tp.lattice_coords([Nc,0,0])[Rc<=cellcut]
                     
                 elif p.cperiodicity == "SLAB":
                     Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,Nc,0]))**2, axis = 1))
@@ -1009,7 +1009,7 @@ class coefficient_fitter_static():
                 big_tmat = tp.tmat()
                 big_tmat.load_nparray(np.ones((bc.shape[0], 2,2), dtype = float), bc)
 
-                print(" Cellmax.", cellmax)
+                #print(" Cellmax.", cellmax)
                 #print(bc)
 
 
@@ -1350,7 +1350,7 @@ class coefficient_fitter_static():
 def n_points_p(p, Nc):
 
     if p.cperiodicity == "POLYMER":
-        return np.array([Nc**2,0,0])
+        return np.array([Nc,0,0])
         
     elif p.cperiodicity == "SLAB":
         return np.array([Nc,Nc,0])
@@ -1387,10 +1387,10 @@ def contract_virtuals(OC_L_np, c_virt_coords_L, c_virt_screen, c_virt, NJ, Np, p
 
     Jpq = tp.tmat()
     Jpq.load_nparray(Jpq_blocks[:-1], pq_region[:NL-1])    
-    for coord in pq_region[:NL]:
-        
-        print("Normcheck: (jpq):", coord, np.linalg.norm(Jpq.cget([coord])))
-        #print(J)
+    #for coord in pq_region[:NL]:
+    #    
+    #    print("Normcheck: (jpq):", coord, np.linalg.norm(Jpq.cget([coord])))
+    #    #print(J)
 
     return Jpq
 
@@ -1470,7 +1470,7 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
 
             if np.sum(sc)>0:
                 # If any block non-zero : contract occupieds
-                dO_LN_np = np.einsum("NJmn,Nmp->NJnp", Jmn_blocks[sc], c_occ_blocks[sc]) #change
+                dO_LN_np = np.einsum("NJmn,Nmp->NJnp", Jmn_blocks[sc], c_occ_blocks[sc], optimize = True) #change
                 if np.abs(dO_LN_np).max()<xi2:
                     break
                 O_LN_np[sc] += dO_LN_np
