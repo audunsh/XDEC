@@ -1622,8 +1622,8 @@ class fragment_amplitudes():
                     tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
 
                     t2_mapped = np.zeros_like(tnew).ravel()
-                    #t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
-                    t2_mapped[cell_map] = .1*tnew.ravel()[cell_map]
+                    t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
+                    #t2_mapped[cell_map] = .1*tnew.ravel()[cell_map]
                     #t2_mapped = (tnew*self.e_iajb**-1).ravel()
 
                     
@@ -1717,7 +1717,7 @@ class fragment_amplitudes():
 
 
 
-    def solve_MP2(self, norm_thresh = 1e-10):
+    def solve_MP2(self, norm_thresh = 1e-8):
         """
         Converge fragment (AOS) amplitudes within occupied and virtual extents
         """
@@ -1761,7 +1761,7 @@ class fragment_amplitudes():
                 self.t2 -= j*0.1*dt2_new
                 rnorm = n #np.linalg.norm(n)
             else:
-                self.t2 -= .5*dt2_new #/np.abs(dt2_new).max()
+                self.t2 -= .05*dt2_new #/np.abs(dt2_new).max()
                 self.t2 = DIIS.advance(self.t2,dt2_new)
 
 
@@ -1769,16 +1769,19 @@ class fragment_amplitudes():
                 rnorm = np.linalg.norm(dt2_new)
                 #print("%.10e %.10e" % (self.compute_fragment_energy(),update_max ))
                 print("%.10e %.10e" % (self.compute_fragment_energy(),np.abs(dt2_new).max() ))
+                if np.abs(dt2_new).max()<1e-7:
+                    break
                 #print("Max update:", np.abs(dt2_new).max())
+                #if np.abs(dt2_new).max() <
 
 
-            if rnorm<norm_thresh:
+            if np.abs(dt2_new).max() <norm_thresh:
 
                 print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti,rnorm))
-                print("(Maximum absolute res. norm: %.4e)" % np.max(np.abs(dt2_new*self.e_iajb)))
+                print("(Maximum absolute res. norm: %.4e)" % np.max(np.abs(dt2_new)))
                 print("")
                 break
-        print("Maximum absolute deviation in norm:", np.max(np.abs(dt2_new*self.e_iajb)))
+        #print("Maximum absolute deviation in norm:", np.max(np.abs(dt2_new*self.e_iajb)))
 
     def solve_MP2PAO_steepdesc(self, norm_thresh = 1e-10, s_virt = None):
         """
@@ -1856,6 +1859,10 @@ class fragment_amplitudes():
 
                         # generate index mapping of non-zero amplitudes in cell
                         cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+
+                        #cell_map_bool = np.zeros(tnew.size, dtype = np.bool)
+                        #cell_map_bool[cell_map_bool] = True
+                        #cell_map_bool_full[ :, dL, :, M, :, dM, :] =  cell_map_bool[cell_map_bool].reshape(tnew.shape)
 
                         # Perform contractions
                         Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
@@ -2947,13 +2954,16 @@ if __name__ == "__main__":
 
 
     # Wannier coefficients
-    C = tp.tmat()
-    C.load(args.coefficients)
-    C.set_precision(args.float_precision)
+    
+    c = tp.tmat()
+    c.load(args.coefficients)
+    c.set_precision(args.float_precision)
 
+    """
     c = tp.tmat()
     c_coords = tp.lattice_coords([4,4,4])
     c.load_nparray(C.cget(c_coords), c_coords, screening = False)
+    """
 
     # Load wannier centers
     
@@ -3135,7 +3145,7 @@ if __name__ == "__main__":
 
 
 
-    center_fragments = dd.atomic_fragmentation(p, d, 3.0)
+    center_fragments = dd.atomic_fragmentation(p, d, 2.0)
     center_fragments = np.array(center_fragments)[::-1]
     #center_fragments = [[1], [0]]
 
