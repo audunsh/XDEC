@@ -1021,28 +1021,29 @@ class tmat():
             Md[c[0], c[1], c[2]] = np.diag(me) #np.linalg.solve(SVH, Ub)
 
 
-            
-        print("Real conditioning report ( eigenvalues / singular values / determinant / inverse dev. from unity)")
-        print("Gamma point:", cn[0,0].real/cn[0,1].real, "/", cn[0,2].real/cn[0,3].real, "/", cn[0,4],cn[0,5])
-        print("Kspace max :", (cn[:,0].real/cn[:,1].real).max(), "/", (cn[:,2].real/cn[:,3].real).max(), "/", cn[:,4].max(),"/", cn[:,5].max())
-        print("Kspace min :", (cn[:,0].real/cn[:,1].real).min(), "/", (cn[:,2].real/cn[:,3].real).min(), "/", cn[:,4].min(),"/", cn[:,5].min())
+        print("_________________________________________________________")
+        print("Testing matrix condition ( imaginary part ingored )")
+        print("             eig (min/max) |  singular (min/max) |  determinant   | A^{-1}A - I (abs.max)")
+        print("Gamma point: %.4e       %.4e            %.4e      %.4e" % (cn[0,0].real/cn[0,1].real, cn[0,2].real/cn[0,3].real, cn[0,4].real,cn[0,5].real))
+        print("Kspace max : %.4e       %.4e            %.4e      %.4e" % ((cn[:,0].real/cn[:,1].real).max(), (cn[:,2].real/cn[:,3].real).max(), cn[:,4].real.max(), cn[:,5].real.max()))
+        print("Kspace min : %.4e       %.4e            %.4e      %.4e" % ((cn[:,0].real/cn[:,1].real).min(), (cn[:,2].real/cn[:,3].real).min(), cn[:,4].real.min(), cn[:,5].real.min()))
         #print("Imaginary conditioning report ( eigenvalues / singular values / determinant )")
         #print("Gamma point:", cn[0,0].imag/cn[0,1].imag, "/", cn[0,2].real/cn[0,3].imag, "/", cn[0,4])
         #print("Kspace max :", (cn[:,0].imag/cn[:,1].imag).max(), "/", (cn[:,2].imag/cn[:,3].imag).max(), "/", cn[:,4].max())
         #print("Kspace min :", (cn[:,0].imag/cn[:,1].imag).min(), "/", (cn[:,2].imag/cn[:,3].imag).min(), "/", cn[:,4].min())
 
         
-        ret_v = tmat()
-        ret_v.load_nparray(np.fft.ifftn(Mv.reshape(nx,ny,nz,m1x,m1y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m1y), coords, safemode = False)
+        #ret_v = tmat()
+        #ret_v.load_nparray(np.fft.ifftn(Mv.reshape(nx,ny,nz,m1x,m1y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m1y), coords, safemode = False)
         
-        ret_d = tmat()
-        ret_d.load_nparray(np.fft.ifftn(Md.reshape(nx,ny,nz,m1x,m1y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m1y), coords, safemode = False)
+        #ret_d = tmat()
+        #ret_d.load_nparray(np.fft.ifftn(Md.reshape(nx,ny,nz,m1x,m1y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m1y), coords, safemode = False)
 
         #print(np.diag(ret_v.cget([0,0,0])))
         #print(np.diag(ret_d.cget([0,0,0])))
-        print("Total condition, eigenvalues    :", ret_v.blocks[:-1, np.arange(m1x),np.arange(m1x)].max()/ret_v.blocks[:-1, np.arange(m1x),np.arange(m1x)].min() )
-        print("Total condition, singular values:", ret_d.blocks[:-1, np.arange(m1x),np.arange(m1x)].max()/ret_d.blocks[:-1, np.arange(m1x),np.arange(m1x)].min() )
-        
+        #print("Total condition, eigenvalues    :", ret_v.blocks[:-1, np.arange(m1x),np.arange(m1x)].max()/ret_v.blocks[:-1, np.arange(m1x),np.arange(m1x)].min() )
+        #print("Total condition, singular values:", ret_d.blocks[:-1, np.arange(m1x),np.arange(m1x)].max()/ret_d.blocks[:-1, np.arange(m1x),np.arange(m1x)].min() )
+        print("_________________________________________________________")
         
         
         
