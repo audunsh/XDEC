@@ -988,18 +988,31 @@ class coefficient_fitter_static():
                 It basically computes a large chunk, presumably larger than required
                 TODO: check boundaries for significant integrals, break if present
                 """
-                Nc = 12
+                Nc = self.N_c
                 if i == 0:
                     cellcut = 65 # bohr
+                    c_x = np.sum(p.coor2vec([Nc,0,0])**2)
+                    c_y = np.sum(p.coor2vec([0,Nc,0])**2)
+                    c_z = np.sum(p.coor2vec([0,0,Nc])**2)
+                    print()
+
+                    
                 if p.cperiodicity == "POLYMER":
-                    cellcut = 165 # bohr
-                    Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,0,0]))**2, axis = 1))
-                    bc = tp.lattice_coords([Nc,0,0])[Rc<=cellcut]
+                    #cellcut = 165 # bohr
+                    if i== 0:
+                        cellcut = 2*np.sqrt(c_x)
+                        #cellcut = 165
+                    Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([2*Nc,0,0]))**2, axis = 1))
+                    bc = tp.lattice_coords([2*Nc,0,0])[Rc<=cellcut]
                     
                 elif p.cperiodicity == "SLAB":
+                    if i == 0:
+                        cellcut = np.sqrt(np.max([c_x,c_y]))
                     Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,Nc,0]))**2, axis = 1))
                     bc = tp.lattice_coords([Nc,Nc,0])[Rc<=cellcut]
                 else:
+                    if i == 0:
+                        cellcut = np.sqrt(np.max([c_x,c_y, c_z]))
                     Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,Nc,Nc]))**2, axis = 1))
                     bc = tp.lattice_coords([Nc,Nc,Nc])[Rc<=cellcut] #Huge domain, will consume some memory
                 #if i == 0:
@@ -1058,7 +1071,7 @@ class coefficient_fitter_static():
                         print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
                         print("->", c2, xi_domain[i-1][0])
                         print("->", np.sum(p.coor2vec(c2)**2), np.sum(p.coor2vec(xi_domain[i-1][0])**2))
-                    cellcut =  Jmnc2_max*1.1 #update truncation threshold
+                    cellcut =  Jmnc2_max*1.2#update truncation threshold
 
                 Jmnc2 = tp.tmat()
 
@@ -1170,8 +1183,8 @@ class coefficient_fitter_static():
         cellcut = 35
         if p.cperiodicity == "POLYMER":
             cellcut = 180
-            Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc**2,0,0]))**2, axis = 1))
-            pq_region = tp.lattice_coords([Nc**2,0,0])[Rc<=cellcut]
+            Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,0,0]))**2, axis = 1))
+            pq_region = tp.lattice_coords([Nc,0,0])[Rc<=cellcut]
             
         elif p.cperiodicity == "SLAB":
             Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,Nc,0]))**2, axis = 1))
@@ -1183,10 +1196,10 @@ class coefficient_fitter_static():
         #pq_region = tp.lattice_coords([7,7,7])
         
         self.pq_region = pq_region[np.argsort(np.sum(p.coor2vec(pq_region)**2, axis = 1))]
-        print("pq_region")
-        print(self.pq_region)
-        print(np.max(np.abs(self.pq_region), axis = 0))
-        print(self.pq_region.shape)
+        #print("pq_region")
+        #print(self.pq_region)
+        #print(np.max(np.abs(self.pq_region), axis = 0))
+        #print(self.pq_region.shape)
 
         self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.NJ, self.Np = contract_occupieds(self.p, self.Jmn, self.coords, self.pq_region, self.c_occ, self.xi1)
         
@@ -1218,17 +1231,18 @@ class coefficient_fitter_static():
                 J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
                 
                 n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
-                n_points = np.array([6,6,6])
+                #n_points = np.array([6,6,6])
                 print("Virtual grid")
                 print(n_points)
-                print(np.max(np.abs(J_pq_c.coords), axis = 0))
+                #print(np.max(np.abs(J_pq_c.coords), axis = 0))
                 pq_c.append([self.JK.kspace_svd_solve(J_pq_c, n_points = n_points), J_pq_c ])
             else:
                 J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
-                n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
-                
+                #n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
+                n_points = n_points_p(self.p, self.N_c)
                 #n_points = np.array([6,6,6])
-                print(n_points)
+                #print("Reciprocal space svd solver:")
+                #print(n_points)
                 pq_c.append(
                     self.JK.kspace_svd_solve(
                         J_pq_c, 
@@ -1375,10 +1389,8 @@ def contract_virtuals(OC_L_np, c_virt_coords_L, c_virt_screen, c_virt, NJ, Np, p
         sc = c_virt_screen[i]
         
         
-        #Jpq_blocks[i] = np.dot(OC_L_np[i],c_virt.cget(c_virt_coords_L[i]+dM).reshape(NN*Nn,Nq)[sc,:]).reshape(NJ, Np*Nq)
         Jpq_blocks[i] = np.dot(OC_L_np[i],c_virt.cget(c_virt_coords_L[i]+dM).reshape(NN*Nn,Nq)[sc,:]).reshape(NJ, Np*Nq)
-        #J
-        #J
+
         
 
     Jpq_blocks = Jpq_blocks.reshape(NL, NJ, Np*Nq)
@@ -1419,9 +1431,13 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
     Nm = c_occ.blocks.shape[1]  # number of ao functions
 
 
-    # DOuble region
-    s = tp.get_zero_tmat(n_points_p(p, 12), [2,2])
+    # Set max possible extent
+
+    #n_points = np.max(np.abs(dM_region), axis = 0) + np.max(np.abs(Jmn_dm[0].coords), axis = 0)
+    s = tp.get_zero_tmat(n_points_p(p, 10), [2,2])
+    #s = tp.get_zero_tmat(n_points, [2,2])
     NN = s.coords.shape[0]      # number of 
+    print("domain setup in contract_occupieds may not be optimal")
     print(np.max(s.coords, axis = 0))
     print("xi2:", xi2)
     
@@ -1439,29 +1455,49 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
     elms_retained = 0
     elms_total    = 0
 
+    # optimize
+    # 
+    N_coords = -s.coords
+    optimized = True
+    if optimized:
+        n_points = np.max(np.abs(dM_region), axis = 0) + np.max(np.abs(c_occ.coords), axis = 0)
+        print(" Optimized points:", n_points)
+        N_coords = tp.lattice_coords(n_points)
+        print(N_coords.shape, s.coords.shape)
+        NN = N_coords.shape[0]
+
     for Li in np.arange(pq_region.shape[0]):
         L = pq_region[Li]
         O_LN_np = np.zeros((NN, NJ,Nn, Np), dtype = float)
 
         #N_coords = -Jmn_dm[0].coords 
-        N_coords = -s.coords
+        
+        
+
+        # J = -N - dM - L, L in all
+        # O = N + dM = -(J) - L 
+        # 
+        # N_coords = tp.lattice_coords([np.max(np.abs(Jmnc.coords), axis = 0) + np.abs()])
         
 
         for dMi in np.arange(dM_region.shape[0]):
             dM = dM_region[dMi]
-            #print("L:", L, " dM:", dM)
+            
 
             Jmn = Jmn_dm[dMi]
             NJ = Jmn.blocks.shape[1]
-            #print(np.max(np.abs(Jmn_blocks = Jmn.cget(N_coords-L)), axes = 1,2))
-            #print(L,(Jmn.coords-L).shape, Jmn.cget(N_coords-L).shape)
-            Jmn_blocks = Jmn.cget(-N_coords-dM-L).reshape(NN,NJ,Nm,Nn)
 
-            #print(Jmn.blocks[-1])
-            #print(c_occ.blocks[-1])
+            #if optimized:
+            #    # optimize
+            #    c_occ_blocks = c_occ.cget(N_coords + dM)
+            #    Jmn_blocks = Jmn.cget(-N_coords-dM-L).reshape(NN,NJ,Nm,Nn)
+            #else:
+            Jmn_blocks = Jmn.cget(-N_coords-dM-L).reshape(NN,NJ,Nm,Nn) #screen on these coordinates, use as "zero", all other offsets
+            c_occ_blocks = c_occ.cget(N_coords + dM)  #+ here (used to be)
 
-            #c_occ_blocks = c_occ.cget(-N_coords - dM)
-            c_occ_blocks = c_occ.cget(N_coords + dM)
+                
+
+
 
             # Screen out zero blocks here 
             cs = np.max(np.abs(c_occ_blocks), axis = (1,2))>xi2
@@ -1470,7 +1506,15 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
 
             if np.sum(sc)>0:
                 # If any block non-zero : contract occupieds
-                dO_LN_np = np.einsum("NJmn,Nmp->NJnp", Jmn_blocks[sc], c_occ_blocks[sc], optimize = True) #change
+                #dO_LN_np = np.einsum("NJmn,Nmp->NJnp", Jmn_blocks[sc], c_occ_blocks[sc], optimize = True) #change
+
+                Jsc, csc = Jmn_blocks[sc], c_occ_blocks[sc]
+                dO_LN_np = np.zeros((np.sum(sc), NJ, Nn, Np), dtype = float)
+                for k in np.arange(np.sum(sc)):
+                    dO_LN_np[k] =  np.dot(Jsc[k].reshape(NJ,Nm,Nn).swapaxes(1,2).reshape(NJ*Nn,Nm), csc[k]).reshape(NJ, Nn, Np)
+
+                
+
                 if np.abs(dO_LN_np).max()<xi2:
                     break
                 O_LN_np[sc] += dO_LN_np
@@ -1478,6 +1522,11 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
         
 
         c_virt_coords_L.append(N_coords)
+
+        # optimize
+        # c_virt_coords_L.append(c_occ.coords)
+
+
         
         # Prepare for screening + sparse storage
         O_LN_np = np.einsum("NJnp->JpNn", O_LN_np).reshape(NJ*Np, NN*Nn)
@@ -1486,10 +1535,11 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
         #print(sc.shape)
         c_virt_screen.append(sc)
         
-        print("O(L,N,n,p) for L =", L, " has an abs.max value of %.2e" % np.abs(O_LN_np).max())
         #print
         elms_retained += np.sum(sc)*O_LN_np.shape[0]
         elms_total    += NJ*Np*NN*Nn
+        print("Interm.contr. at L =", L, " (|R_L| = %.2e bohr). Abs.max value: %.2e. Compression rate: %.2e (%i retained columns)." % (np.sqrt(np.sum(p.coor2vec(pq_region[Li])**2)), np.abs(O_LN_np).max(), elms_retained/elms_total, np.sum(sc)))
+        
         
         OC_L_np.append(O_LN_np[:,sc])
         #screen_L.append(np.max(np.abs(O_LN_np.reshape(NN*NJ,Nn*Np)), axis = 1)) #->NJnp-Jp,Nn
@@ -1546,7 +1596,7 @@ class integral_builder_static():
 
         #big_tmat = estimate_center_domain(p, attenuation = attenuation, xi0 = xi0, auxname=auxname)
         if p.cperiodicity=="POLYMER":
-            bc = tp.lattice_coords([11,0,0])
+            bc = tp.lattice_coords([N_c,0,0])
             #coulomb_extent = np.array([N_c, 0,0])
         if p.cperiodicity=="SLAB":
             bc = tp.lattice_coords([N_c,N_c,0])
@@ -1573,6 +1623,7 @@ class integral_builder_static():
         #self.JKa = compute_JK(self.p,self.c, attenuation = attenuation, auxname = auxname)
         self.JKa = compute_JK(self.p,big_tmat, attenuation = attenuation, auxname = auxname)
         self.JKa.set_precision(self.float_precision)
+        self.JKa.check_condition()
         #print(self.JKa.blocks.shape)@
         if printing:
             print("")
@@ -1598,6 +1649,8 @@ class integral_builder_static():
         if inverse_test:
             if printing:
                 print("JKa inverse computed, checking max deviation from 0 = JKa^-1 JKa - I within extent")
+
+            
 
 
             tcoords = np.zeros((np.max(self.JKa.coords),3), dtype = int)
@@ -1705,36 +1758,43 @@ class integral_builder_static():
                 else:
                     self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.cdot(Xreg[i])
 
-    def getorientation(self, dL, dM):
-        for d in [dL, dM]:
-            #print(d)
-            if self.XregT[d[0], d[1], d[2]] is 0:
-                if self.robust:
-                    Xreg = self.cfit.get(np.array([d]), robust = True)
-                    self.XregT[d[0], d[1], d[2]] = Xreg[0][0].tT()
 
-                    self.JpqXreg[d[0], d[1], d[2]] = Xreg[0][1]
 
-                    if self.circulant:
-                        self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0][0])
+    def getorientation(self, dL, dM, adaptive_cdot = False, M=None):
+        if adaptive_cdot:
+            # not yet implementet
+            return None
+        else:
+            # use circulant fomulation
+            for d in [dL, dM]:
+                #print(d)
+                if self.XregT[d[0], d[1], d[2]] is 0:
+                    if self.robust:
+                        Xreg = self.cfit.get(np.array([d]), robust = True)
+                        self.XregT[d[0], d[1], d[2]] = Xreg[0][0].tT()
+
+                        self.JpqXreg[d[0], d[1], d[2]] = Xreg[0][1]
+
+                        if self.circulant:
+                            self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0][0])
+                        else:
+                            self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0][0])
+
+
+
                     else:
-                        self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0][0])
 
+                        #Xreg, Jpq = self.cfit.get(np.array([d]))
+                        Xreg = self.cfit.get(np.array([d]))
+                        self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
+                        #self.JpqXreg[d[0], d[1], d[2]] = Jpq[0]
+                        if self.circulant:
+                            self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0])
+                        else:
+                            self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
 
-
-                else:
-
-                    #Xreg, Jpq = self.cfit.get(np.array([d]))
-                    Xreg = self.cfit.get(np.array([d]))
-                    self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
-                    #self.JpqXreg[d[0], d[1], d[2]] = Jpq[0]
-                    if self.circulant:
-                        self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0])
-                    else:
-                        self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
-
-                    print("        On-demand calculation:", d)
-        
+                        print("        On-demand calculation:", d)
+            
         
         if self.robust:
             print("Warning: Robust orientation not tested")

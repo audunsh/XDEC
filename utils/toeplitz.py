@@ -911,8 +911,46 @@ class tmat():
             other.expand(new_domain)
             
         assert(np.all(self.delim == other.delim)), "domain mismatch"
+
+    def inv(self, n_layers = None):
+        if n_layers is None:
+            n_layers = np.max(np.abs(self.coords), axis = 0)
+            
+
+        nx,ny,nz = 2*n_layers + 1
+        m1x,m1y = self.blocks.shape[1], self.blocks.shape[2]
+        
+        coords = np.roll(lattice_coords(n_layers).reshape(nx,ny,nz, 3), -n_layers, axis = (0,1,2)).reshape(nx*ny*nz, 3)
+
+        
+        m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
+        M1 = np.fft.fftn(m1r, axes = (0,1,2))
+
+        cn = np.zeros((coords.shape[0], 6), dtype = np.complex128)
+
+
+        
+
+        M_inv = np.zeros((nx,ny,nz,m1x, m1y),dtype = np.complex128)
+
+        
+
+        for c in coords:
+            M_inv[c[0], c[1], c[2]] = np.linalg.pinv(M1[c[0], c[1], c[2]])
+            #mb, me, ms = np.linalg.svd(M1[c[0], c[1], c[2]])
+
+            #cn[ic, np.array([0, 1])] = w.max(),w.min()
+            #cn[ic, np.array([2, 3])] = me.max(), me.min()
+            #cn[ic, 4] = np.linalg.det(M1[c[0], c[1], c[2]])
+            #cn[ic, 5] = np.abs(np.dot(np.linalg.inv(M1[c[0], c[1], c[2]]),M1[c[0], c[1], c[2]])-np.eye(m1x)).max()
+            #ic += 1
+        ret_inv = tmat()
+        ret_inv.load_nparray(np.fft.ifftn(M_inv.reshape(nx,ny,nz,m1x,m1y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m1y), coords, safemode = False)
+        return ret_inv
+        
+        
     
-    def inv(self):
+    def inv_(self, n_layers = None):
         # BT inversion through FFT - blockwise inversion - IFFT
         # Mathematical details may be found in notes
         n_points = np.array(n_lattice(self))
@@ -935,9 +973,78 @@ class tmat():
 
         return ret 
 
-    def check_inversion_condition(self):
-        pass
+    def check_condition(self, n_layers = None):
+        if n_layers is None:
+            n_layers = np.max(np.abs(self.coords), axis = 0)
+            
 
+        nx,ny,nz = 2*n_layers + 1
+        m1x,m1y = self.blocks.shape[1], self.blocks.shape[2]
+        
+        coords = np.roll(lattice_coords(n_layers).reshape(nx,ny,nz, 3), -n_layers, axis = (0,1,2)).reshape(nx*ny*nz, 3)
+
+        
+        m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
+        M1 = np.fft.fftn(m1r, axes = (0,1,2))
+
+        cn = np.zeros((coords.shape[0], 6), dtype = np.complex128)
+
+
+        ic = 0
+
+        Mv = np.zeros((nx,ny,nz,m1x, m1y),dtype = np.complex128)
+
+        Md = np.zeros((nx,ny,nz,m1x, m1y),dtype = np.complex128)
+
+
+        for c in coords:
+            w,v = np.linalg.eig(M1[c[0], c[1], c[2]])
+            mb, me, ms = np.linalg.svd(M1[c[0], c[1], c[2]])
+
+            cn[ic, np.array([0, 1])] = w.max(),w.min()
+            cn[ic, np.array([2, 3])] = me.max(), me.min()
+            cn[ic, 4] = np.linalg.det(M1[c[0], c[1], c[2]])
+            cn[ic, 5] = np.abs(np.dot(np.linalg.inv(M1[c[0], c[1], c[2]]),M1[c[0], c[1], c[2]])-np.eye(m1x)).max()
+            ic += 1
+
+            #sk = np.linalg.abs(np.dot(np.linalg.inv(M1[c[0], c[1], c[2]]),M1[c[0], c[1], c[2]])-np.eye(m1x)).max()
+            #print("Condition at k = ",c, ", (max/min) : ", w.max()/w.min(),w.max(),w.min())
+
+            #mb, me, ms = np.linalg.svd(M1[c[0], c[1], c[2]])
+            #print("Largest/smallest singular value: ", me.max()/me.min(), me.max(), me.min())
+            #print("Determinant:", np.linalg.det(M1[c[0], c[1], c[2]]))
+        
+
+        
+
+            Mv[c[0], c[1], c[2]] = np.diag(w) #np.linalg.solve(SVH, Ub)
+            Md[c[0], c[1], c[2]] = np.diag(me) #np.linalg.solve(SVH, Ub)
+
+
+            
+        print("Real conditioning report ( eigenvalues / singular values / determinant / inverse dev. from unity)")
+        print("Gamma point:", cn[0,0].real/cn[0,1].real, "/", cn[0,2].real/cn[0,3].real, "/", cn[0,4],cn[0,5])
+        print("Kspace max :", (cn[:,0].real/cn[:,1].real).max(), "/", (cn[:,2].real/cn[:,3].real).max(), "/", cn[:,4].max(),"/", cn[:,5].max())
+        print("Kspace min :", (cn[:,0].real/cn[:,1].real).min(), "/", (cn[:,2].real/cn[:,3].real).min(), "/", cn[:,4].min(),"/", cn[:,5].min())
+        #print("Imaginary conditioning report ( eigenvalues / singular values / determinant )")
+        #print("Gamma point:", cn[0,0].imag/cn[0,1].imag, "/", cn[0,2].real/cn[0,3].imag, "/", cn[0,4])
+        #print("Kspace max :", (cn[:,0].imag/cn[:,1].imag).max(), "/", (cn[:,2].imag/cn[:,3].imag).max(), "/", cn[:,4].max())
+        #print("Kspace min :", (cn[:,0].imag/cn[:,1].imag).min(), "/", (cn[:,2].imag/cn[:,3].imag).min(), "/", cn[:,4].min())
+
+        
+        ret_v = tmat()
+        ret_v.load_nparray(np.fft.ifftn(Mv.reshape(nx,ny,nz,m1x,m1y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m1y), coords, safemode = False)
+        
+        ret_d = tmat()
+        ret_d.load_nparray(np.fft.ifftn(Md.reshape(nx,ny,nz,m1x,m1y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m1y), coords, safemode = False)
+
+        #print(np.diag(ret_v.cget([0,0,0])))
+        #print(np.diag(ret_d.cget([0,0,0])))
+        print("Total condition, eigenvalues    :", ret_v.blocks[:-1, np.arange(m1x),np.arange(m1x)].max()/ret_v.blocks[:-1, np.arange(m1x),np.arange(m1x)].min() )
+        print("Total condition, singular values:", ret_d.blocks[:-1, np.arange(m1x),np.arange(m1x)].max()/ret_d.blocks[:-1, np.arange(m1x),np.arange(m1x)].min() )
+        
+        
+        
         
 
 
@@ -1419,7 +1526,7 @@ class tmat():
 
             t = s_>tolerance #screening
             if np.any(t == False):
-                print("Warning (SVD): poorly conditioned JK matrix.", s_)
+                print("Warning (SVD): poorly conditioned JK matrix (singular values).") #, s_)
 
             pinv = np.dot(vh_[t,:].conj().T, np.dot(np.diag(s_[t]**-1), u_[:,t].conj().T))
             x = np.dot(pinv, b)

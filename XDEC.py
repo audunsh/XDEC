@@ -2243,7 +2243,7 @@ class fragment_amplitudes():
 
         #self.t2 *= 0
 
-        for ti in np.arange(1000):
+        for ti in np.arange(100):
             
             t2_new = np.zeros_like(self.t2)
             t2_bar = np.zeros_like(self.t2)
@@ -2886,6 +2886,7 @@ if __name__ == "__main__":
     parser.add_argument("-virtual_space", type = str, default = None, help = "Alternative representation of virtual space, provided as tmat file." )
     parser.add_argument("-solver", type = str, default = "mp2", help = "Solver model." )
     parser.add_argument("-N_c", type = int, default = 6, help = "Number of layers in Coulomb BvK-cell." )
+    parser.add_argument("-pairs", type = bool, default = False, help = "Compute pair fragments" )
 
     args = parser.parse_args()
 
@@ -3333,19 +3334,21 @@ if __name__ == "__main__":
             print(" ")
             print(" ")
 
-        # Outline of pair fragment calcs
+        if args.pairs:
 
-        pair_coords = tp.lattice_coords([10,10,10])
-        pair_coords = pair_coords[np.argsort(np.sum(pair_coords**2, axis = 1))[1:]] #Sort in increasing order
-        pair_total = 0
-        for c in pair_coords:
+            # Outline of pair fragment calcs
 
-            pair = pair_fragment_amplitudes(a_frag, a_frag, M = c)
-            #print(pair.compute_pair_fragment_energy())
-            pair.solve()
-            p_energy = pair.compute_pair_fragment_energy()
-            pair_total += 2*p_energy
-            print("Pair fragment energy for ",c," is ", p_energy, " (total: ", pair_total + E_new, " )")
+            pair_coords = tp.lattice_coords([10,10,10])
+            pair_coords = pair_coords[np.argsort(np.sum(pair_coords**2, axis = 1))[1:]] #Sort in increasing order
+            pair_total = 0
+            for c in pair_coords:
+
+                pair = pair_fragment_amplitudes(a_frag, a_frag, M = c)
+                #print(pair.compute_pair_fragment_energy())
+                pair.solve()
+                p_energy = pair.compute_pair_fragment_energy()
+                pair_total += 2*p_energy
+                print("Pair fragment energy for ",c," is ", p_energy, " (total: ", pair_total + E_new, " )")
 
 
 
