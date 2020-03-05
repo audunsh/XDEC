@@ -293,13 +293,13 @@ def compute_Jmn(p, s, attenuation = 0.0, auxname = "cc-pvdz", coulomb = False, n
 
 
     f = open(atomsm, "w")
-    f.write(get_xyz(p))
+    f.write(get_xyz(p, nshift))
     f.close()
 
     #print(nshift)
     #print(get_xyz(p, nshift))
     f = open(atomsn, "w")
-    f.write(get_xyz(p, nshift))
+    f.write(get_xyz(p))
     f.close()
 
 
@@ -1241,8 +1241,9 @@ class coefficient_fitter_static():
                 #n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
                 n_points = n_points_p(self.p, self.N_c)
                 #n_points = np.array([6,6,6])
-                #print("Reciprocal space svd solver:")
-                #print(n_points)
+                #
+                print("Reciprocal space svd solver:")
+                print(n_points)
                 pq_c.append(
                     self.JK.kspace_svd_solve(
                         J_pq_c, 
@@ -1398,7 +1399,7 @@ def contract_virtuals(OC_L_np, c_virt_coords_L, c_virt_screen, c_virt, NJ, Np, p
     
 
     Jpq = tp.tmat()
-    Jpq.load_nparray(Jpq_blocks[:-1], pq_region[:NL-1])    
+    Jpq.load_nparray(Jpq_blocks[:-1], -pq_region[:NL-1])    
     #for coord in pq_region[:NL]:
     #    
     #    print("Normcheck: (jpq):", coord, np.linalg.norm(Jpq.cget([coord])))
@@ -1492,8 +1493,10 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
             #    c_occ_blocks = c_occ.cget(N_coords + dM)
             #    Jmn_blocks = Jmn.cget(-N_coords-dM-L).reshape(NN,NJ,Nm,Nn)
             #else:
-            Jmn_blocks = Jmn.cget(-N_coords-dM-L).reshape(NN,NJ,Nm,Nn) #screen on these coordinates, use as "zero", all other offsets
-            c_occ_blocks = c_occ.cget(N_coords + dM)  #+ here (used to be)
+            #Jmn_blocks = Jmn.cget(-N_coords-dM-L).reshape(NN,NJ,Nm,Nn) #screen on these coordinates, use as "zero", all other offsets
+            Jmn_blocks = Jmn.cget(-N_coords+L).reshape(NN,NJ,Nm,Nn) #screen on these coordinates, use as "zero", all other offsets
+            
+            c_occ_blocks = c_occ.cget(-N_coords - dM)  #+ here (used to be)
 
                 
 
@@ -1521,7 +1524,7 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
 
         
 
-        c_virt_coords_L.append(N_coords)
+        c_virt_coords_L.append(-N_coords)
 
         # optimize
         # c_virt_coords_L.append(c_occ.coords)
