@@ -667,10 +667,9 @@ def estimate_attenuation_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc
         big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
 
         Jmnc = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = [coords[m]])
-        print("mn-screen:", m, coords[m], np.sqrt(d2)[m], np.max(np.abs(Jmnc.blocks[:-1])))
         if np.max(np.abs(Jmnc.blocks[:-1]))<xi0:
-            print("Break at :", m)
-            print(coords[:m])
+            #print("Break at :", m)
+            #print(coords[:m])
             break
 
     xi_0_domain = coords[:m]*1
@@ -789,145 +788,6 @@ def estimate_attenuation_distance_(p, attenuation = 0.1, c2 = [0,0,0], thresh = 
     big_tmat.load_nparray(np.ones((cube[:i+1].shape[0], 2,2),dtype = float),  cube[:i+1])
 
     return big_tmat #return expansion region in form of toeplitz matrix
-
-
-def contract_occupied_(vals):
-    # L    = coords[coord]
-    coords, Jmn, NL, NJ, Nn, Np, Nq, coord, c_occ = vals
-
-    tj = np.zeros((NJ, Np, NL, Nn), dtype = float) # LJpn
-
-    for i in np.arange(coords.shape[0]):
-        # For all dN offsets in (LJ|0 m dN n)
-
-        # OLD
-        Jmnc2 = Jmn[i]
-        Jmnc_coords = -c_occ.coords - coords[i] # HERE
-        Jmnc2blocks = Jmnc2.cget(Jmnc_coords).reshape(NL, NJ,Nn,Nn )
-        occupied_coords = -Jmnc_coords - c_occ.coords[coord]
-        
-
-        # NEW
-        """
-        Jmnc2 = Jmn[i]
-        Jmnc_coords = -Jmn[i].coords - coords[i] 
-        Jmnc2blocks = Jmnc2.cget(Jmnc_coords).reshape(NL, NJ,Nn,Nn )
-        occupied_coords = -Jmnc_coords - c_occ.coords[coord]
-        """
-        # END NEW
-
-
-        cb = c_occ.cget(occupied_coords)
-        if True:
-            #dotk(tj, NL, Jmnc2blocks, NJ, Nn, cb, Np)
-            screening = np.max(np.abs(cb), axis = (1,2))>1e-12
-            for k in np.arange(NL)[screening]:
-                b1 = Jmnc2blocks[k].swapaxes(1,2).reshape(NJ*Nn, Nn) #Jn,m
-                b2 = cb[k] #m,p
-
-                tj[:,:,k,:] += np.dot(b1,b2).reshape(NJ, Nn, Np).swapaxes(1,2) #Jn,p->J,p,k,n
-        else:
-            b1 = Jmnc2blocks.swapaxes(2,3).reshape(NL, NJ*Nn, Nn)
-            screening = np.max(np.abs(cb), axis = (1,2))>1e-12
-            NLs = np.sum(screening)
-
-            tjk = np.einsum("LJn,Lnp->LJp",b1[screening], cb[screening], optimize = True).reshape(NLs, NJ, Nn, Np).swapaxes(2,3) #reshape(NLs, NJ*Np, Nn)
-            #print(tjk.shape, tj.shape)
-            indxs = np.arange(NL)[screening]
-            for k in np.arange(NLs):
-                #print(tj[:,:, k, :].shape, k)
-                tj[:,:, indxs[k], :]= tjk[k]
-
-
-            #tj[:,:, np.arange(NL)[screening], :]= tjk
-            #tj[:,:, screening, :] = t
-
-
-
-        """
-        for k in np.arange(NL):
-            b1 = Jmnc2blocks[k].swapaxes(1,2).reshape(NJ*Nn, Nn) #Jn,m
-            b2 = cb[k] #m,p
-            tj[:,:,k,:] += np.dot(b1,b2).reshape(NJ, Nn, Np).swapaxes(1,2) #Jn,p->J,p,k,n
-        """
-
-    tj = tj.reshape(NJ*Np, NL*Nn) #L J p n -> p J L n -> J p L n
-
-    return tj
-
-def contract_occupied(vals):
-    # L    = coords[coord]
-    coords, Jmn, NL, NJ, Nn, Np, Nq, coord, c_occ = vals
-
-    tj = np.zeros((NJ, Np, NL, Nn), dtype = float) # LJpn
-
-    for i in np.arange(coords.shape[0]):
-        # For all dN offsets in (LJ|0 m dN n)
-
-        # OLD
-        Jmnc2 = Jmn[i]
-        Jmnc_coords = -c_occ.coords - coords[i] # HERE
-        Jmnc2blocks = Jmnc2.cget(Jmnc_coords).reshape(NL, NJ,Nn,Nn )
-        occupied_coords = -Jmnc_coords - c_occ.coords[coord]
-        
-
-        # NEW
-        """
-        Jmnc2 = Jmn[i]
-        Jmnc_coords = -Jmn[i].coords - coords[i] 
-        Jmnc2blocks = Jmnc2.cget(Jmnc_coords).reshape(NL, NJ,Nn,Nn )
-        occupied_coords = -Jmnc_coords - c_occ.coords[coord]
-        """
-        # END NEW
-
-
-        cb = c_occ.cget(occupied_coords)
-        if True:
-            #dotk(tj, NL, Jmnc2blocks, NJ, Nn, cb, Np)
-            screening = np.logical_and(np.max(np.abs(cb), axis = (1,2))>1e-12, np.max(np.abs(Jmnc2blocks), axis = (1,2,3))>1e-12)
-            for k in np.arange(NL)[screening]:
-                b1 = Jmnc2blocks[k].swapaxes(1,2).reshape(NJ*Nn, Nn) #Jn,m
-                b2 = cb[k] #m,p
-
-                tj[:,:,k,:] += np.dot(b1,b2).reshape(NJ, Nn, Np).swapaxes(1,2) #Jn,p->J,p,k,n
-        else:
-            b1 = Jmnc2blocks.swapaxes(2,3).reshape(NL, NJ*Nn, Nn)
-            screening = np.max(np.abs(cb), axis = (1,2))>1e-12
-            NLs = np.sum(screening)
-
-            tjk = np.einsum("LJn,Lnp->LJp",b1[screening], cb[screening], optimize = True).reshape(NLs, NJ, Nn, Np).swapaxes(2,3) #reshape(NLs, NJ*Np, Nn)
-            #print(tjk.shape, tj.shape)
-            indxs = np.arange(NL)[screening]
-            for k in np.arange(NLs):
-                #print(tj[:,:, k, :].shape, k)
-                tj[:,:, indxs[k], :]= tjk[k]
-
-
-            #tj[:,:, np.arange(NL)[screening], :]= tjk
-            #tj[:,:, screening, :] = t
-
-
-
-        """
-        for k in np.arange(NL):
-            b1 = Jmnc2blocks[k].swapaxes(1,2).reshape(NJ*Nn, Nn) #Jn,m
-            b2 = cb[k] #m,p
-            tj[:,:,k,:] += np.dot(b1,b2).reshape(NJ, Nn, Np).swapaxes(1,2) #Jn,p->J,p,k,n
-        """
-
-    tj = tj.reshape(NJ*Np, NL*Nn) #L J p n -> p J L n -> J p L n
-
-    return tj
-
-
-def dotk(tj, NL, Jmnc2blocks, NJ, Nn, cb, Np):
-    screening = np.max(np.abs(cb), axis = (1,2))>1e-12
-    for k in np.arange(NL)[screening]:
-        b1 = Jmnc2blocks[k].swapaxes(1,2).reshape(NJ*Nn, Nn) #Jn,m
-        b2 = cb[k] #m,p
-
-        tj[:,:,k,:] += np.dot(b1,b2).reshape(NJ, Nn, Np).swapaxes(1,2) #Jn,p->J,p,k,n
-
 
 
 
@@ -1682,7 +1542,7 @@ class integral_builder_static():
         coord_q =  tp.lattice_coords(initial_virtual_dom) #initial virtual domain
         if printing:
             print("Computing fitting coefficients for dL = ")
-            print(coord_q)
+            #print(coord_q)
         #if robust:
         #    t0 = time.time()
         #    Xreg, Jpq = compute_fitting_coeffs(self.c,self.p,coord_q = coord_q, attenuation = self.attenuation, auxname = self.auxname, JKmats = [self.JKa, self.JKinv], robust = True, circulant = self.circulant)
