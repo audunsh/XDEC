@@ -1743,7 +1743,7 @@ class fragment_amplitudes():
                 self.t2 -= j*0.1*dt2_new
                 rnorm = n #np.linalg.norm(n)
             else:
-                self.t2 -= .05*dt2_new #/np.abs(dt2_new).max()
+                self.t2 -= dt2_new #/np.abs(dt2_new).max()
                 self.t2 = DIIS.advance(self.t2,dt2_new)
 
 
@@ -1763,7 +1763,8 @@ class fragment_amplitudes():
                 #print("(Maximum absolute res. norm: %.4e)" % np.max(np.abs(dt2_new)))
                 print("")
                 break
-        print("Max.abs. deviation in norm post optimization is %.5e" % np.max(np.abs(dt2_new)))
+        self.max_abs_residual = np.max(np.abs(dt2_new))
+        print("Max.abs. deviation in residual post optimization is %.5e" % np.max(np.abs(dt2_new)))
 
     def solve_MP2PAO_steepdesc(self, norm_thresh = 1e-10, s_virt = None):
         """
@@ -2870,6 +2871,7 @@ if __name__ == "__main__":
     parser.add_argument("-N_c", type = int, default = 6, help = "Number of layers in Coulomb BvK-cell." )
     parser.add_argument("-pairs", type = bool, default = False, help = "Compute pair fragments" )
     parser.add_argument("-print_level", type = int, default = 0, help = "Print level" )
+    parser.add_argument("-orb_increment", type = int, default = 6, help = "Number of orbitals to include at every XDEC-iteration." )
 
     args = parser.parse_args()
 
@@ -3025,9 +3027,9 @@ if __name__ == "__main__":
 
     print(" ")
     print("_________________________________________________________")
-    print("Fragmentation of occupied space resulted in %i fragment." % len(center_fragments))
+    print("Fragmentation of occupied space:")
     for i in np.arange(len(center_fragments)):
-        print("Fragment %i:" %i, center_fragments[i])
+        print("  Fragment %i:" %i, center_fragments[i])
     print("_________________________________________________________")
     print(" ")
 
@@ -3091,7 +3093,7 @@ if __name__ == "__main__":
                     occupied_cutoff_prev = a_frag.occupied_cutoff
 
                     t_0 = time.time()
-                    a_frag.autoexpand_virtual_space(n_orbs=6)
+                    a_frag.autoexpand_virtual_space(n_orbs=args.orb_increment)
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
@@ -3131,7 +3133,7 @@ if __name__ == "__main__":
                 print(e_virt)
                 #dE = 10
                 #print("--- occupied")
-                a_frag.autoexpand_occupied_space(n_orbs=6)
+                a_frag.autoexpand_occupied_space(n_orbs=args.orb_increment)
                 print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                 print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
@@ -3154,7 +3156,7 @@ if __name__ == "__main__":
                     occupied_cutoff_prev = a_frag.occupied_cutoff
 
                     #print("--- occupied")
-                    a_frag.autoexpand_occupied_space(n_orbs=6)
+                    a_frag.autoexpand_occupied_space(n_orbs=args.orb_increment)
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
