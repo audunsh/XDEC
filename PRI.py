@@ -90,6 +90,46 @@ def get_xyz(p, t = np.array([[0,0,0]]), conversion_factor = 0.5291772109200000):
     return sret
 
 """
+Mapping functions
+"""
+def mapgen(vex1, vex2):
+    """
+    returns a matrix where vex1[ ret_indx[i,j] ] = vex1[i] - vex2[j]
+    """
+    D = vex1[:, None] - vex2[None, :]
+    ret_indx = -1*np.ones((vex1.shape[0], vex2.shape[0]), dtype = int)
+    for i in np.arange(vex1.shape[0]):
+        for j in np.arange(vex2.shape[0]):
+            try:
+                ret_indx[i,j] = np.argwhere(np.all(np.equal(vex1, D[i,j]), axis = 1))
+            except:
+                pass
+    return ret_indx
+
+def intersection3s(coords1, coords2):
+    """
+    Returns the intersection of 3-vectors between two sets of (N,3) arrays
+    """
+    distance = np.sum((coords1[:,None] - coords2[None,:])**2, axis = 2)
+
+    coords1_in_coords2 = np.any(distance==0, axis = 0)
+    return coords2[coords1_in_coords2]
+
+def c2_not_in_c1(c1, c2, sort = False):
+    """
+    Returns the 3-vectors in c2 which are not present in c1
+    """
+    distance = np.sum((c1[:,None] - c2[None,:])**2, axis = 2)
+
+    c1_in_c2 = np.any(distance==0, axis = 0)
+    if not sort:
+        return c2[c1_in_c2==False]
+    if sort:
+        c2_ret = c2[c1_in_c2==False]
+        c2_ret = c2_ret[np.argsort(np.sum(c2_ret**2, axis = 1))]
+        return c2_ret
+
+"""
 Integral calculations
 The functions in this section computes the integrals required for the Periodic Resolution-of-Identity approximation
 
@@ -873,17 +913,18 @@ class coefficient_fitter_static():
                 else:
                     if i == 0:
                         cellcut = np.sqrt(np.max([c_x,c_y, c_z]))
+                        print(" Cellcut0:", cellcut)
                     Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,Nc,Nc]))**2, axis = 1))
                     bc = tp.lattice_coords([Nc,Nc,Nc])[Rc<=cellcut] #Huge domain, will consume some memory
-                #if i == 0:
-                #print(bc)
+                # if i == 0:
+                # print(bc)
                 cellmax = np.max(np.sqrt(np.sum(self.p.coor2vec(bc)**2, axis = 1)))
 
                 big_tmat = tp.tmat()
                 big_tmat.load_nparray(np.ones((bc.shape[0], 2,2), dtype = float), bc)
 
-                #print(" Cellmax.", cellmax)
-                #print(bc)
+                # print(" Cellmax.", cellmax)
+                # print(bc.shape)
 
 
 
@@ -987,6 +1028,8 @@ class coefficient_fitter_static():
         # Contracting occupieds
         self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.NJ, self.Np = contract_occupieds(self.p, self.Jmn, self.coords, self.pq_region, self.c_occ, self.xi1)
         
+        # Can delete self.Jmn now, no longer required and takes up a lot of memory
+        del(self.Jmn)
         
 
         if self.printing:
@@ -1137,6 +1180,8 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
         
         NN = N_coords.shape[0]
 
+        print("Shape of N_coords:", N_coords.shape)
+
     for Li in np.arange(pq_region.shape[0]):
         L = pq_region[Li]
         O_LN_np = np.zeros((NN, NJ,Nn, Np), dtype = float)
@@ -1164,19 +1209,40 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
             #    Jmn_blocks = Jmn.cget(-N_coords-dM-L).reshape(NN,NJ,Nm,Nn)
             #else:
             #Jmn_blocks = Jmn.cget(-N_coords-dM-L).reshape(NN,NJ,Nm,Nn) #screen on these coordinates, use as "zero", all other offsets
+            t0 = time.time()
             Jmn_blocks = Jmn.cget(-N_coords+L).reshape(NN,NJ,Nm,Nn) #screen on these coordinates, use as "zero", all other offsets
+            
+            print("Jmn.cget:", time.time()-t0)
+            print("")
+            t0 = time.time()
             
             c_occ_blocks = c_occ.cget(-N_coords - dM)  #+ here (used to be)
 
-                
+            print("c_occ.cget:", time.time()-t0)
+            print("")
+            t0 = time.time()
+            
 
 
 
             # Screen out zero blocks here 
-            cs = np.max(np.abs(c_occ_blocks), axis = (1,2))>xi2
-            bs = np.max(np.abs(Jmn_blocks), axis = (1,2,3))>xi2
+            #cs = np.max(np.abs(c_occ_blocks), axis = (1,2))>xi2
+            cs = np.any(np.greater(np.abs(c_occ_blocks), xi2), axis = (1,2))
+
+
+            #bs = np.max(np.abs(Jmn_blocks), axis = (1,2,3))>xi2
+            bs = np.any(np.greater(np.abs(Jmn_blocks), xi2), axis = (1,2,3))
+
+
+
+            #print(np.argmax(np.abs(Jmn_blocks), axis = (1,2,3)))
             sc = np.logical_and(cs, bs)
 
+            print("screening:", time.time()-t0)
+            print("")
+            t0 = time.time()
+            
+            print("number of sc:", np.sum(sc))
             if np.sum(sc)>0:
                 # If any block non-zero : contract occupieds
                 #dO_LN_np = np.einsum("NJmn,Nmp->NJnp", Jmn_blocks[sc], c_occ_blocks[sc], optimize = True) #change
@@ -1185,12 +1251,18 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
                 dO_LN_np = np.zeros((np.sum(sc), NJ, Nn, Np), dtype = float)
                 for k in np.arange(np.sum(sc)):
                     dO_LN_np[k] =  np.dot(Jsc[k].reshape(NJ,Nm,Nn).swapaxes(1,2).reshape(NJ*Nn,Nm), csc[k]).reshape(NJ, Nn, Np)
-
                 
+                print("for k in sc:", time.time()-t0)
+                print("")
+                t0 = time.time()
 
                 if np.abs(dO_LN_np).max()<xi2:
                     break
                 O_LN_np[sc] += dO_LN_np
+
+            print("if np.sumsc:", time.time()-t0)
+            print("")
+            t0 = time.time()
 
         
 
@@ -1200,9 +1272,16 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
         # c_virt_coords_L.append(c_occ.coords)
 
 
+        print("full np.sumsc:", time.time()-t0)
+        print("")
+        t0 = time.time()
         
         # Prepare for screening + sparse storage
         O_LN_np = np.einsum("NJnp->JpNn", O_LN_np).reshape(NJ*Np, NN*Nn)
+
+        print("transpose:", time.time()-t0)
+        print("")
+        t0 = time.time()
         
         sc = np.max(np.abs(O_LN_np), axis = 0)>xi2
         #print(sc.shape)
@@ -1215,6 +1294,10 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
         
         
         OC_L_np.append(O_LN_np[:,sc])
+
+        print("add to list:", time.time()-t0)
+        print("")
+        t0 = time.time()
         #screen_L.append(np.max(np.abs(O_LN_np.reshape(NN*NJ,Nn*Np)), axis = 1)) #->NJnp-Jp,Nn
         
         if np.abs(O_LN_np).max()<xi2:
@@ -1349,7 +1432,10 @@ class integral_builder_static():
             self.JpqXreg = np.zeros((15,15,15), dtype = tp.tmat)
 
         # initial coeffs computed in single layer around center cell
-        coord_q =  tp.lattice_coords(initial_virtual_dom) #initial virtual domain
+        if initial_virtual_dom is not None:
+            coord_q =  tp.lattice_coords(initial_virtual_dom) #initial virtual domain
+        else:
+            coords_q = []
         if printing:
             print("Computing fitting coefficients for dL = ")
             print(coord_q)
@@ -1370,23 +1456,24 @@ class integral_builder_static():
         t1 = time.time()
         if printing:
             print("Spent %.1f s preparing fitting (three index) integrals." % (t1-t0))
-        if self.robust:
-            Xreg = self.cfit.get(coord_q, robust = True)
-        else:
-            Xreg = self.cfit.get(coord_q, robust = False)
-        t2 = time.time()
-        if printing:
-            print("Spent %.1f s computing fitting coefficient for %i coords" % (t2-t1, len(coord_q)))
-
-
-        for i in np.arange(coord_q.shape[0]):
-            #print("Transpose of coordinate", coord_q[i])
+        if initial_virtual_dom is not None:
             if self.robust:
-                self.JpqXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i][1]
-                self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i][0].tT()
-
+                Xreg = self.cfit.get(coord_q, robust = True)
             else:
-                self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i].tT()
+                Xreg = self.cfit.get(coord_q, robust = False)
+            t2 = time.time()
+            if printing:
+                print("Spent %.1f s computing fitting coefficient for %i coords" % (t2-t1, len(coord_q)))
+
+        if initial_virtual_dom is not None:
+            for i in np.arange(coord_q.shape[0]):
+                #print("Transpose of coordinate", coord_q[i])
+                if self.robust:
+                    self.JpqXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i][1]
+                    self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i][0].tT()
+
+                else:
+                    self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i].tT()
         #if robust:
         #    for i in np.arange(coord_q.shape[0]):
         #        #print("Transpose of coordinate", coord_q[i])
@@ -1416,26 +1503,45 @@ class integral_builder_static():
 
             print("Coulomb matrix (JK) computed.")
 
+        if initial_virtual_dom is not None:
+            for i in np.arange(coord_q.shape[0]):
+                #print("JK dot X for cell ", coord_q[i])
+                if robust:
 
-        for i in np.arange(coord_q.shape[0]):
-            #print("JK dot X for cell ", coord_q[i])
-            if robust:
+                    if circulant:
+                        self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.circulantdot(Xreg[i][0])
+                    else:
+                        self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.cdot(Xreg[i][0])
+                else:
+                    if circulant:
+                        self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.circulantdot(Xreg[i])
+                    else:
+                        self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.cdot(Xreg[i])
 
-                if circulant:
-                    self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.circulantdot(Xreg[i][0])
-                else:
-                    self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.cdot(Xreg[i][0])
-            else:
-                if circulant:
-                    self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.circulantdot(Xreg[i])
-                else:
-                    self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.cdot(Xreg[i])
+    def get_adaptive(self, dL, dM, M):
+        """
+        Fit integrals, compute required blocks in the Coulomb matrix on the fly
+        Returns a toeplitz matrix where the blocks in M are calculated and shape of (pq|rs)
+        """
+        for d in [dL, dM]:
+            # Make sure Jpq are available in fitter, if not calculate them
+            if self.XregT[d[0], d[1], d[2]] is 0:
+                Xreg = self.cfit.get(np.array([d]))
+                self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
+        self.JK, v_pqrs = tdot(self.XregT[dL[0], dL[1], dL[2]],self.JK,self.XregT[dM[0], dM[1], dM[2]].tT(), auxname = self.auxname, coords = M)
+        return v_pqrs, (self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+
+
+
 
 
 
     def getorientation(self, dL, dM, adaptive_cdot = False, M=None):
         if adaptive_cdot:
             # not yet implementet
+
+
+
             return None
         else:
             # use circulant fomulation
@@ -1494,6 +1600,8 @@ class integral_builder_static():
             else:
                 return self.XregT[dL[0], dL[1], dL[2]].dot(self.VXreg[dM[0], dM[1], dM[2]]), \
                     (self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+
+
 
     def getcell(self, dL, M, dM):
         if self.robust:
@@ -1571,7 +1679,72 @@ class integral_builder_static():
 
 
 
+def tdot(c1,v,c2, auxname, coords = np.array([[0,0,0]])):
+    """
+    'Minimal-route' calculation of triple product c1*v*c2
 
+    v = the two index Coulomb matrix
+    auxname = name of auxiliary basis file
+    
+    Since not all blocks may be required in the end-product c1*(sc)
+    it is possible to compute a minimal number of intermediate products.
+    """
+    # Find required coordinates in s
+    vcoords = tcoords_metric(c1,c2, coords)
+     
+    # Compute potential extra coordinates in s
+    vcoords_extra = c2_not_in_c1(vcoords, v.coords)
+    if vcoords_extra.shape[0]>0:
+        vn_coords = np.zeros((v.coords.shape[0]+vcoords_extra.shape[0], 3), dtype = int)
+        vn_coords[:v.coords.shape[0]] = v.coords
+        vn_coords[v.coords.shape[0]:] = vcoords_extra
+
+
+        vn_blocks = np.zeros((v.coords.shape[0]+vcoords_extra.shape[0], v.blocks.shape[1], v.blocks.shape[2]), dtype = float)
+        vn_blocks[:v.coords.shape[0]] = v.cget(v.coords)
+        
+
+        block_matrix = tp.tmat()
+        block_matrix.load_nparray(np.ones((vcoords_extra.shape[0], 2,2)), vcoords_extra)
+        #self.JK = 
+        vn_blocks[v.coords.shape[0]:] = compute_JK(p,block_matrix, coulomb=True, auxname = auxname).cget(vcoords_extra)
+
+        v = tp.tmat()
+        v.load_nparray(vn_blocks,vn_coords, screening = False)
+    
+    
+    return v, c1.cdot(v.cdot(c2, coords = tcoords(c1, coords)), coords = coords)
+    #return v, c1.circulantdot(v.cdot(c2, coords = tcoords(c1, coords))) # POssibly do circulantdot here
+
+def tcoords(c1,coords = np.array([[0,0,0]])):
+    """
+    identify unique intermediate coordinates for triple-product, metric/middle toeplitz matrix
+    """
+    nsep = 200
+
+    
+    
+    nc = (-c1.coords[None,:] + coords[:,None]).reshape(c1.coords.shape[0]*coords.shape[0], 3)
+    return nc[np.unique(np.dot(nc-nc.min(), np.array([nsep**0,nsep**1,nsep**2])), return_index = True)[1]]
+
+def tcoords_metric(c1,c2, coords):
+    """
+    Identify required indices to compute in middle matrix when contracting 
+    
+    c1 * middle * c2
+    
+    
+    """
+    nsep = 200
+
+    print(c1.coords.shape, coords.shape)
+
+    nc = (-c1.coords[None,:] + coords[:,None]).reshape(c1.coords.shape[0]*coords.shape[0], 3)
+    c1coords = nc[np.unique(np.dot(nc-nc.min(), np.array([nsep**0,nsep**1,nsep**2])), return_index = True)[1]]
+    
+    nc = (c1coords[None,:] - c2.coords[:,None]).reshape(c1coords.shape[0]*c2.coords.shape[0], 3)
+    
+    return nc[np.unique(np.dot(nc-nc.min(), np.array([nsep**0,nsep**1,nsep**2])), return_index = True)[1]]
 
 
 

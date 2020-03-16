@@ -1022,7 +1022,7 @@ class tmat():
 
 
         print("_________________________________________________________")
-        print("Testing matrix condition ( imaginary part ingored )")
+        print("Testing matrix condition ( imaginary part ignored )")
         print("             eig (min/max) |  singular (min/max) |  determinant   | A^{-1}A - I (abs.max)")
         print("Gamma point: %.4e       %.4e            %.4e      %.4e" % (cn[0,0].real/cn[0,1].real, cn[0,2].real/cn[0,3].real, cn[0,4].real,cn[0,5].real))
         print("Kspace max : %.4e       %.4e            %.4e      %.4e" % ((cn[:,0].real/cn[:,1].real).max(), (cn[:,2].real/cn[:,3].real).max(), cn[:,4].real.max(), cn[:,5].real.max()))

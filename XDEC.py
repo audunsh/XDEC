@@ -914,8 +914,8 @@ class fragment_amplitudes():
         self.n_virtual_cells = np.sum(self.min_elm_ia<=self.virtual_cutoff)
         self.n_occupied_cells = np.sum(self.min_elm_ii<=self.occupied_cutoff)
 
-        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1,self.fragment[0]]<=self.virtual_cutoff)
-        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1, self.fragment[0]]<=self.occupied_cutoff)
+        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1,self.fragment[0]]<self.virtual_cutoff)
+        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1, self.fragment[0]]<self.occupied_cutoff)
 
 
         n_occ = self.p.get_nocc()     # Number of occupied orbitals per cell
@@ -1029,6 +1029,10 @@ class fragment_amplitudes():
                         # Integrate here, loop over M
                         t0 = time.time()
                         I, Ishape = self.ib.getorientation(dL, dM)
+
+                        # adaptive
+                        #di_indices = np.unique(np.array(sq_i[k:l])[:, 1])
+                        #I, Ishape = self.ib.get_adaptive(dL, dM, self.d_ii.coords[ di_indices ])
 
                         for m in sq_i[k:l]:
                             M = self.d_ii.coords[m[1]]
@@ -1460,8 +1464,8 @@ class fragment_amplitudes():
         self.n_virtual_cells = Nv
         self.n_occupied_cells = No
 
-        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1,self.fragment[0]]<=self.virtual_cutoff)
-        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1, self.fragment[0]]<=self.occupied_cutoff)
+        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1,self.fragment[0]]<self.virtual_cutoff)
+        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1, self.fragment[0]]<self.occupied_cutoff)
 
     def print_configuration_space_data(self):
         """
@@ -2316,7 +2320,7 @@ class fragment_amplitudes():
 
             #t2 = time.time()
 
-            self.t2 -= t2_new
+            self.t2 -= .1*t2_new
             self.t2 = DIIS.advance(self.t2,t2_new)
 
             #t3 = time.time()
@@ -2694,6 +2698,56 @@ class fragment_amplitudes():
                 print ()
                 break
 
+    def compute_mp2_density(self, orb_n = 0):
+        """
+        Compute fragment energy
+        """
+        N_virt = self.n_virtual_cells
+
+        mM = 0 #occupied index only runs over fragment
+
+        d_full = np.zeros(self.t2.shape, dtype = np.bool)
+
+        occ_ind = np.zeros(self.p.get_nocc(), dtype = np.bool)
+        occ_ind[orb_n] = True
+
+
+        for ddL in np.arange(N_virt):
+            dL = self.d_ia.coords[ddL]
+            dL_i = self.d_ia.cget(dL)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+            # Doublecount? dL == dM
+
+            for ddM in np.arange(N_virt):
+
+                    dM =  self.d_ia.coords[ddM]
+                    dM_i = self.d_ia.cget(dM)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+
+                    
+                    cell_map = np.arange(d_full[:,ddL,:,0, :, ddM, :].size).reshape(d_full[:,ddL,:,0, :, ddM, :].shape)[occ_ind][:, dL_i][:, :, occ_ind][:,:,:,dM_i].ravel()
+
+                    # Using multiple levels of masking, probably some other syntax could make more sense
+
+                    #g_direct = self.g_d[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
+
+                    #g_exchange = self.g_d[:,ddM,:,0, :, ddL, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
+                    
+                    #t = self.t2[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
+                    
+
+                    d_block_bool = np.zeros(d_full[:,ddL,:,0, :, ddM, :].shape, dtype = np.bool).ravel()
+                    d_block_bool[cell_map] = True
+
+                    #d_full[:,ddL,:,0, :, ddM, :][orb_n][:, dL_i][:, :, orb_n][:,:,:,dM_i] = True
+
+                    d_full[:,ddL,:,0, :, ddM, :] = d_block_bool.reshape(d_full[:,ddL,:,0, :, ddM, :].shape)
+                    
+                    #e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+
+        return self.t2[d_full].reshape(self.n_virtual_tot, self.n_virtual_tot)
+
+
+
+
 
 
 
@@ -2857,7 +2911,7 @@ if __name__ == "__main__":
     parser.add_argument("-fot", type = float, default = 0.001, help = "fragment optimization treshold")
     parser.add_argument("-circulant", type = bool, default = True, help = "Use circulant dot-product.")
     parser.add_argument("-robust", default = False, action = "store_true", help = "Enable Dunlap robust fit for improved integral accuracy.")
-    parser.add_argument("-disable_static_mem", default = False, action = "store_true", help = "Recompute AO integrals for new fitting sets.")
+    parser.add_argument("-ibuild", type = str, default = None, help = "Filename of integral fitting module (will be computed if missing).")
     parser.add_argument("-n_core", type = int, default = 0, help = "Number of core orbitals (the first n_core orbitals will not be correlated).")
     parser.add_argument("-skip_fragment_optimization", default = False, action = "store_true", help = "Skip fragment optimization (for debugging, will run faster but no error estimate.)")
     parser.add_argument("-basis_truncation", type = float, default = 0.1, help = "Truncate AO-basis function below this threshold." )
@@ -2872,6 +2926,8 @@ if __name__ == "__main__":
     parser.add_argument("-pairs", type = bool, default = False, help = "Compute pair fragments" )
     parser.add_argument("-print_level", type = int, default = 0, help = "Print level" )
     parser.add_argument("-orb_increment", type = int, default = 6, help = "Number of orbitals to include at every XDEC-iteration." )
+    parser.add_argument("-pao_sorting", type = bool, default = False, help = "Sort LVOs in order of decreasing PAO-coefficient" )
+    parser.add_argument("-adaptive_domains", default = False, action = "store_true", help = "Activate adaptive Coulomb matrix calculation.")
 
     args = parser.parse_args()
 
@@ -3010,12 +3066,15 @@ if __name__ == "__main__":
 
 
     # Initialize integrals
-    if args.disable_static_mem:
-        ib = PRI.integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, N_c = args.N_c, printing = args.print_level)
-    else:
+    if args.ibuild is None:
         ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level)
-
-
+        #ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=None, circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level)
+        
+        np.save("integral_build.npy", np.array([ib]), allow_pickle = True)
+    else:
+        ib = np.load(args.ibuild, allow_pickle = True)[0]
+        print(ib.getorientation([0,0,0],[0,0,0]))
+    
     
     # Initialize domain definitions
     d = dd.build_distance_matrix(p, c.coords, wcenters, wcenters)
@@ -3042,15 +3101,21 @@ if __name__ == "__main__":
     virt_cut = 3.0
     occ_cut = 6.0
 
+    refcell_fragments = []
+
     for fragment in center_fragments:
-        #d_ia = build_weight_matrix(p, c, s.coords)
+        
 
         #ib.fragment = fragment
         t0 = time.time()
-        #a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0, float_precision = args.float_precision, d_ia = d_ia)
-        
-        a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0, float_precision = args.float_precision)
-        
+        if args.pao_sorting:
+            d_ia = build_weight_matrix(p, c, s.coords)
+            a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0, float_precision = args.float_precision, d_ia = d_ia)
+            
+           
+        else:
+            a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0, float_precision = args.float_precision)
+
         #print("Frag init:", time.time()-t0)
 
         a_frag.solve(eqtype = args.solver, s_virt = s_virt)
@@ -3105,6 +3170,7 @@ if __name__ == "__main__":
                     E_new = a_frag.compute_fragment_energy()
                     t_3 = time.time()
                     dE = np.abs(E_prev - E_new)
+                    print("D_ii = ", a_frag.compute_mp2_density(orb_n = 0).shape)
 
                     print("_________________________________________________________")
                     print("E(fragment): %.8f      DE(fragment): %.8e" % (E_new, dE))
@@ -3186,22 +3252,35 @@ if __name__ == "__main__":
             print("_________________________________________________________")
             print(" ")
             print(" ")
+            refcell_fragments.append(a_frag)
 
-        if args.pairs:
+    if args.pairs:
 
-            # Outline of pair fragment calcs
+        # Outline of pair fragment calcs
 
-            pair_coords = tp.lattice_coords([10,10,10])
-            pair_coords = pair_coords[np.argsort(np.sum(pair_coords**2, axis = 1))[1:]] #Sort in increasing order
-            pair_total = 0
-            for c in pair_coords:
+        pair_coords = tp.lattice_coords([10,10,10])
+        pair_coords = pair_coords[np.argsort(np.sum(p.coor2vec(pair_coords)**2, axis = 1))[1:]] #Sort in increasing distance
+        pair_total = 0
 
-                pair = pair_fragment_amplitudes(a_frag, a_frag, M = c)
-                #print(pair.compute_pair_fragment_energy())
-                pair.solve()
-                p_energy = pair.compute_pair_fragment_energy()
-                pair_total += 2*p_energy
-                print("Pair fragment energy for ",c," is ", p_energy, " (total: ", pair_total + E_new, " )")
+        for fa in np.arange(len(refcell_fragments)):
+            for fb in np.arange(fa, len(refcell_fragments)):
+                frag_a = refcell_fragments[fa]
+                frag_b = refcell_fragments[fb]
+
+
+
+                for c in pair_coords:
+
+                    pair = pair_fragment_amplitudes(a_frag, a_frag, M = c)
+                    #print(pair.compute_pair_fragment_energy())
+                    pair.solve()
+                    p_energy = pair.compute_pair_fragment_energy()
+                    pair_total += 2*p_energy
+                    print("Pair fragment energy for ",c," is ", p_energy, " (total: ", pair_total + 0*E_new, " )")
+                    print(fa, fb, np.sum(p.coor2vec(pair_coords)**2))
+
+
+        
 
 
 
