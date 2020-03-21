@@ -11,6 +11,43 @@ import utils.toeplitz as tp
 import utils.prism as pr
 
 
+def build_pair_distance_matrix(p, coords, wcenters_a, wcenters_b, M, dist_cut_0, dist_cut_1):
+    """
+    Given two N*3 arrays with wannier centers, construct the BT-distance matrix with elements
+
+    D^L_{pq} = <0p|r|0p> - <Lq|r|Lq>
+
+    Input parameters
+
+     p       - prism object with crystal geometry
+     coords  - tp.tmat.coords array for which lattice cells to compute
+     wcenters_a - wannier centers to remain fixed in the reference cell
+     wcenters_b - wannier centers that are translated along the crystal lattice
+
+     
+    Returns
+    d  - tp.tmat() object, BT-distance matrix
+
+    """    
+    dblocks = np.ones((coords.shape[0], wcenters_a.shape[0], wcenters_b.shape[0]), dtype = float)
+    for c in np.arange(coords.shape[0]):
+        dblocks[c, np.sqrt(np.sum( (wcenters_a[:, None] - wcenters_b[None, :] - p.coor2vec(coords[c]))**2, axis = 2))<dist_cut_0] = 0.0
+        dblocks[c, np.sqrt(np.sum( (wcenters_a[:, None] - wcenters_b[None, :] - p.coor2vec(coords[c]) + p.coor2vec(coords[M]) )**2, axis = 2))<dist_cut_1] = 0.0
+        dblocks[c, np.sqrt(np.sum( (wcenters_a[:, None] - wcenters_b[None, :] - p.coor2vec(coords[c]) - p.coor2vec(coords[M]) )**2, axis = 2))<dist_cut_1] = 0.0
+
+    
+    #sort blocks and coords in order of increasing distance
+
+    d_order = np.argsort(np.min(dblocks,axis=(1,2)))
+
+    d = tp.tmat()
+    d.load_nparray(dblocks[d_order], coords[d_order])
+
+
+
+    return d
+
+
 def build_distance_matrix(p, coords, wcenters_a, wcenters_b):
     """
     Given two N*3 arrays with wannier centers, construct the BT-distance matrix with elements
@@ -40,6 +77,8 @@ def build_distance_matrix(p, coords, wcenters_a, wcenters_b):
     d = tp.tmat()
     d.load_nparray(dblocks[d_order], coords[d_order])
 
+    #Slightly hacky way do avoid referencing outside matrix
+    d.blocks[-1] += 1000.0 #bohr
 
 
     return d

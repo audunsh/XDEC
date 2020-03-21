@@ -1212,15 +1212,15 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
             t0 = time.time()
             Jmn_blocks = Jmn.cget(-N_coords+L).reshape(NN,NJ,Nm,Nn) #screen on these coordinates, use as "zero", all other offsets
             
-            print("Jmn.cget:", time.time()-t0)
-            print("")
-            t0 = time.time()
+            #print("Jmn.cget:", time.time()-t0)
+            #print("")
+            #t0 = time.time()
             
             c_occ_blocks = c_occ.cget(-N_coords - dM)  #+ here (used to be)
 
-            print("c_occ.cget:", time.time()-t0)
-            print("")
-            t0 = time.time()
+            #print("c_occ.cget:", time.time()-t0)
+            #print("")
+            #t0 = time.time()
             
 
 
@@ -1238,11 +1238,11 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
             #print(np.argmax(np.abs(Jmn_blocks), axis = (1,2,3)))
             sc = np.logical_and(cs, bs)
 
-            print("screening:", time.time()-t0)
-            print("")
-            t0 = time.time()
+            #print("screening:", time.time()-t0)
+            #print("")
+            #t0 = time.time()
             
-            print("number of sc:", np.sum(sc))
+            #print("number of sc:", np.sum(sc))
             if np.sum(sc)>0:
                 # If any block non-zero : contract occupieds
                 #dO_LN_np = np.einsum("NJmn,Nmp->NJnp", Jmn_blocks[sc], c_occ_blocks[sc], optimize = True) #change
@@ -1252,17 +1252,17 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
                 for k in np.arange(np.sum(sc)):
                     dO_LN_np[k] =  np.dot(Jsc[k].reshape(NJ,Nm,Nn).swapaxes(1,2).reshape(NJ*Nn,Nm), csc[k]).reshape(NJ, Nn, Np)
                 
-                print("for k in sc:", time.time()-t0)
-                print("")
-                t0 = time.time()
+                #print("for k in sc:", time.time()-t0)
+                #print("")
+                #t0 = time.time()
 
                 if np.abs(dO_LN_np).max()<xi2:
                     break
                 O_LN_np[sc] += dO_LN_np
 
-            print("if np.sumsc:", time.time()-t0)
-            print("")
-            t0 = time.time()
+            #print("if np.sumsc:", time.time()-t0)
+            #print("")
+            #t0 = time.time()
 
         
 
@@ -1272,16 +1272,16 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
         # c_virt_coords_L.append(c_occ.coords)
 
 
-        print("full np.sumsc:", time.time()-t0)
-        print("")
-        t0 = time.time()
+        #print("full np.sumsc:", time.time()-t0)
+        #print("")
+        #t0 = time.time()
         
         # Prepare for screening + sparse storage
         O_LN_np = np.einsum("NJnp->JpNn", O_LN_np).reshape(NJ*Np, NN*Nn)
 
-        print("transpose:", time.time()-t0)
-        print("")
-        t0 = time.time()
+        #print("transpose:", time.time()-t0)
+        #print("")
+        #t0 = time.time()
         
         sc = np.max(np.abs(O_LN_np), axis = 0)>xi2
         #print(sc.shape)
@@ -1295,9 +1295,9 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
         
         OC_L_np.append(O_LN_np[:,sc])
 
-        print("add to list:", time.time()-t0)
-        print("")
-        t0 = time.time()
+        #print("add to list:", time.time()-t0)
+        #print("")
+        #t0 = time.time()
         #screen_L.append(np.max(np.abs(O_LN_np.reshape(NN*NJ,Nn*Np)), axis = 1)) #->NJnp-Jp,Nn
         
         if np.abs(O_LN_np).max()<xi2:
