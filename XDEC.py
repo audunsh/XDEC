@@ -388,6 +388,7 @@ class pair_fragment_amplitudes():
         e_mp2 = 0
 
         N_virt = self.n_virtual_cells
+        print("PAir fragment energy")
 
         for ddL in np.arange(N_virt):
             dL = self.d_ia.coords[ddL]
@@ -911,8 +912,8 @@ class fragment_amplitudes():
         """
         Initialize the amplitudes using the MP2-like starting guess
         """
-        self.n_virtual_cells = np.sum(self.min_elm_ia<=self.virtual_cutoff)
-        self.n_occupied_cells = np.sum(self.min_elm_ii<=self.occupied_cutoff)
+        self.n_virtual_cells = np.sum(self.min_elm_ia<self.virtual_cutoff)
+        self.n_occupied_cells = np.sum(self.min_elm_ii<self.occupied_cutoff)
 
         self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1,self.fragment[0]]<self.virtual_cutoff)
         self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1, self.fragment[0]]<self.occupied_cutoff)
@@ -1238,8 +1239,8 @@ class fragment_amplitudes():
         self.virtual_cutoff = virtual_cutoff
         self.occupied_cutoff = occupied_cutoff
 
-        Nv = np.sum(self.min_elm_ia<=self.virtual_cutoff)
-        No = np.sum(self.min_elm_ii<=self.occupied_cutoff)
+        Nv = np.sum(self.min_elm_ia<self.virtual_cutoff)
+        No = np.sum(self.min_elm_ii<self.occupied_cutoff)
 
         n_occ = self.p.get_nocc()
         n_virt = self.p.get_nvirt()
@@ -2796,11 +2797,11 @@ class pair_fragment_amplitudes_2():
         #print(self.f2.d_ii.blocks[:, self.f1.fragment[0], :])
         # Unite with translated occupied domain (set these distances to zero)
         for coord in self.d_ii.coords:
-            elmn = self.f2.d_ii.cget(coord - M)[self.f2.fragment[0], :] <= self.f2.occupied_cutoff
+            elmn = self.f2.d_ii.cget(coord - M)[self.f2.fragment[0], :] < self.f2.occupied_cutoff
             #print(elmn, self.f2.d_ii.cget(coord - M)[self.f2.fragment[0], :] )
             #print(coord, coord-M) #happens outside the region, distance problem
             #print(" ")
-            self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.9
+            self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.99
 
 
         #sort in increasing order to avoid miscounting
@@ -2815,9 +2816,10 @@ class pair_fragment_amplitudes_2():
             
 
         # Set index of f2 coordinate (for energy summations)
-        self.mM = np.argwhere(np.sum((self.d_ii.coords+M)**2, axis = 1)==0)[0,0]
+        self.mM = np.argwhere(np.sum((self.d_ii.coords-M)**2, axis = 1)==0)[0,0]
         #print(self.mM, self.d_ii.coords[self.mM], self.M)
         #print(self.d_ii.coords)
+        #print(" ..... ")
 
 
         #if d_ia is None:
@@ -2827,15 +2829,17 @@ class pair_fragment_amplitudes_2():
 
         # Unite with translated virtual domain (set these distances to zero)
         for coord in self.d_ia.coords:
-            elmn = self.f2.d_ia.cget(coord - M)[self.f2.fragment[0], :] <= self.f2.virtual_cutoff
-            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.9
+            elmn = self.f2.d_ia.cget(coord - M)[self.f2.fragment[0], :] < self.f2.virtual_cutoff
+            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
             
         #sort in increasing order to avoid miscounting
         #order = np.argsort( np.min(self.d_ia.cget(self.d_ia.coords), axis = (1,2)) )
         order = np.argsort( np.min(self.d_ia.cget(self.d_ia.coords)[:, self.f1.fragment[0], :], axis = 1) )
         d_ia = tp.tmat()
         d_ia.load_nparray(self.d_ia.cget(self.d_ia.coords[order]), self.d_ia.coords[order] )
+        #print(self.d_ia.coords[order])
         self.d_ia = d_ia
+        print(self.d_ii.coords)
         #print(self.d_ia.coords)
         #print(self.d_ia.coords.shape)
         
@@ -2866,11 +2870,11 @@ class pair_fragment_amplitudes_2():
         """
         Initialize the amplitudes using the MP2-like starting guess
         """
-        self.n_virtual_cells = np.sum(self.min_elm_ia<=self.virtual_cutoff)
-        self.n_occupied_cells = np.sum(self.min_elm_ii<=self.occupied_cutoff)
+        self.n_virtual_cells = np.sum(self.min_elm_ia<self.virtual_cutoff)
+        self.n_occupied_cells = np.sum(self.min_elm_ii<self.occupied_cutoff)
 
-        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1,self.fragment[0]]<=self.virtual_cutoff)
-        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1, self.fragment[0]]<=self.occupied_cutoff)
+        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1,self.fragment[0]]<self.virtual_cutoff)
+        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1, self.fragment[0]]<self.occupied_cutoff)
 
 
         n_occ = self.p.get_nocc()     # Number of occupied orbitals per cell
@@ -2905,7 +2909,7 @@ class pair_fragment_amplitudes_2():
             # G(0, :, dL, :, M, :, dM, : ) = G(0, dM, :, -M, :, dL, :).T
             # Saves some seconds here and there :-)
             # Still, have to make sure -M is inside the truncated domain -> if-test inside loop
-            for ddM in np.arange(ddL, N_virt):
+            for ddM in np.arange(N_virt):
                 dL, dM = self.d_ia.coords[ddL], self.d_ia.coords[ddM]
 
                 for mM in np.arange(N_occ):
@@ -2936,16 +2940,18 @@ class pair_fragment_amplitudes_2():
 
                         # Testing here
                         #sequence.append([ddL_M, mM, ddM_M,   1, ddL, mM, ddM,   0]) # exchange
+                        """
 
 
-
+ 
                         if mM_<N_occ: # if the transpose is in the domain
                             sequence.append([ddL, mM, ddM,   0, ddM, mM_, ddL,  1]) # direct, transposed
 
-                            ddL_M_ = self.d_ia.mapping[self.d_ia._c2i(dM - M) ]
+                            #ddL_M_ = self.d_ia.mapping[self.d_ia._c2i(dM - M) ]
                             #ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL - M) ]
-                            ddM_M_ = self.d_ia.mapping[self.d_ia._c2i(dL + M) ]
+                            #ddM_M_ = self.d_ia.mapping[self.d_ia._c2i(dL + M) ]
                             #sequence.append([ddL_M_, mM, ddM_M_,   1, ddM, mM_, ddL,  1]) # exchange, transposed
+                        """
 
 
 
@@ -3123,31 +3129,44 @@ class pair_fragment_amplitudes_2():
         Compute fragment energy
         """
 
+        n_occ = self.p.get_nocc()     # Number of occupied orbitals per cell
+        N_occ = self.n_occupied_cells # Number of occupied cells
+        n_virt = self.p.get_nvirt()   # Number of virtual orbitals per cell
+        N_virt = self.n_virtual_cells # Number of virtual cells
+        #print(N_virt, N_occ)
+        #print(self.d_ia.coords[:N_virt])
+        #print(self.d_ii.coords[:N_occ])
+
+
+
+
         e_mp2 = 0
 
         N_virt = self.n_virtual_cells
 
-        print(self.mM)
-        print(self.g_d.shape)
+        #print(self.mM)
+        #print(self.g_d.shape)
+        print("Compute PAIR FRAGMENT")
 
         for ddL in np.arange(N_virt):
             dL = self.d_ia.coords[ddL]
-            #dL_i = np.array(self.d_ia.cget(dL)[self.f1.fragment[0],:], dtype = bool) # dL index mask
-            dL_i = np.array(self.d_ia.cget([0,0,0])[self.f1.fragment[0],:], dtype = bool) # dL index mask
+            dL_i = np.array(self.d_ia.cget(dL)[self.f1.fragment[0],:], dtype = bool)<self.virtual_cutoff # dL index mask
+            #dL_i = np.array(self.d_ia.cget([0,0,0])[self.f1.fragment[0],:], dtype = bool) # dL index mask
 
 
             for ddM in np.arange(N_virt):
                 dM =  self.d_ia.coords[ddM]
-                #dM_i = np.array(self.d_ia.cget(dM)[self.f2.fragment[0],:], dtype = bool) # dM index mask
-                dM_i = np.array(self.d_ia.cget([0,0,0])[self.f1.fragment[0],:], dtype = bool) # dM index mask
+                dM_i = np.array(self.d_ia.cget(dM) [self.f1.fragment[0],:], dtype = bool)<self.virtual_cutoff # dM index mask
+                #dM_i = np.array(self.d_ia.cget([0,0,0])[self.f1.fragment[0],:], dtype = bool) # dM index mask
 
 
                 g_direct = self.g_d[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
                 #g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
                 
                 #g_exchange = self.cfit.()
+                print(" Energy:", dL, dM, dM+self.M, dL-self.M)
                 I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
-                g_exchange = I.cget(self.M).reshape(Ishape)[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+                g_exchange = I.cget(self.M).reshape(Ishape)[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
 
 
 
@@ -3257,8 +3276,8 @@ class pair_fragment_amplitudes_2():
         self.virtual_cutoff = virtual_cutoff
         self.occupied_cutoff = occupied_cutoff
 
-        Nv = np.sum(self.min_elm_ia<=self.virtual_cutoff)
-        No = np.sum(self.min_elm_ii<=self.occupied_cutoff)
+        Nv = np.sum(self.min_elm_ia<self.virtual_cutoff)
+        No = np.sum(self.min_elm_ii<self.occupied_cutoff)
 
         n_occ = self.p.get_nocc()
         n_virt = self.p.get_nvirt()
@@ -5275,14 +5294,15 @@ if __name__ == "__main__":
         pair_coords = pair_coords[np.argsort(np.sum(p.coor2vec(pair_coords)**2, axis = 1))[1:]] #Sort in increasing distance
         pair_total = 0
 
-        for fa in np.arange(len(refcell_fragments)):
-            for fb in np.arange(fa, len(refcell_fragments)):
-                frag_a = refcell_fragments[fa]
-                frag_b = refcell_fragments[fb]
+        for c in pair_coords:
+            for fa in np.arange(len(refcell_fragments)):
+                for fb in np.arange(fa, len(refcell_fragments)):
+                    frag_a = refcell_fragments[fa]
+                    frag_b = refcell_fragments[fb]
 
 
 
-                for c in pair_coords:
+                
 
                     pair = pair_fragment_amplitudes_2(frag_a, frag_b, M = c)
                     #print(pair.compute_pair_fragment_energy())
@@ -5290,7 +5310,7 @@ if __name__ == "__main__":
                     p_energy = pair.compute_pair_fragment_energy()
                     pair_total += 2*p_energy
                     print("Pair fragment energy for ",c," is ", 2*p_energy, " (total: ", pair_total + 0*E_new, " )")
-                    print("R = ", np.sum(p.coor2vec(c)**2)**.5)
+                    print("R = ", np.sum(p.coor2vec(c)**2)**.5, fa, fb)
                     print(fa, fb, np.sum(p.coor2vec(c)**2)**.5)
 
 
