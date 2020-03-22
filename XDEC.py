@@ -2815,7 +2815,7 @@ class pair_fragment_amplitudes_2():
             
 
         # Set index of f2 coordinate (for energy summations)
-        self.mM = np.argwhere(np.sum((self.d_ii.coords-M)**2, axis = 1)==0)[0,0]
+        self.mM = np.argwhere(np.sum((self.d_ii.coords+M)**2, axis = 1)==0)[0,0]
         #print(self.mM, self.d_ii.coords[self.mM], self.M)
         #print(self.d_ii.coords)
 
@@ -2885,6 +2885,8 @@ class pair_fragment_amplitudes_2():
 
         self.g_x = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
+        
+
         f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
         f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
 
@@ -2916,7 +2918,7 @@ class pair_fragment_amplitudes_2():
                         # Get exchange block coordinates
                         ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM + M) ]
                         #ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL - M) ]
-                        ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL) ]
+                        ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL - M) ]
 
 
 
@@ -2924,16 +2926,32 @@ class pair_fragment_amplitudes_2():
 
                         # Negative M
                         mM_ = self.d_ia.mapping[ self.d_ia._c2i(-M) ]
+                        #print(mM_)
 
                         # sequence[ ddL, mM, ddM        ,  0 ,   ddL, mM, ddM,    0]
                         #                ^                 ^           ^          ^
-                        #            Calculate these    ex/direct    store here   1=transpose
+                        #            Calculate these    direct/ex    store here   1=transpose
 
                         sequence.append([ddL, mM, ddM,   0, ddL, mM, ddM,   0]) # direct
+
+                        # Testing here
+                        #sequence.append([ddL_M, mM, ddM_M,   1, ddL, mM, ddM,   0]) # exchange
+
+
+
                         if mM_<N_occ: # if the transpose is in the domain
                             sequence.append([ddL, mM, ddM,   0, ddM, mM_, ddL,  1]) # direct, transposed
 
+                            ddL_M_ = self.d_ia.mapping[self.d_ia._c2i(dM - M) ]
+                            #ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL - M) ]
+                            ddM_M_ = self.d_ia.mapping[self.d_ia._c2i(dL + M) ]
+                            #sequence.append([ddL_M_, mM, ddM_M_,   1, ddM, mM_, ddL,  1]) # exchange, transposed
 
+
+
+
+                        
+                        """
                         # For fragments, exchange only required for only M = (0,0,0)
                         # EOS always has the two occupied indices in the fragment, ie the refcell
                         if np.sum(M**2) == 0:
@@ -2945,6 +2963,8 @@ class pair_fragment_amplitudes_2():
 
                             sequence.append([ddL, mM, ddM,   1, ddL, mM, ddM,   1]) # direct
                             sequence.append([ddL, mM, ddM,   1, ddM, mM, ddL,   0]) # direct, transposed
+                        """
+                        
 
         #print(sequence)
         self.initialize_blocks(sequence)
@@ -3107,6 +3127,9 @@ class pair_fragment_amplitudes_2():
 
         N_virt = self.n_virtual_cells
 
+        print(self.mM)
+        print(self.g_d.shape)
+
         for ddL in np.arange(N_virt):
             dL = self.d_ia.coords[ddL]
             #dL_i = np.array(self.d_ia.cget(dL)[self.f1.fragment[0],:], dtype = bool) # dL index mask
@@ -3116,15 +3139,19 @@ class pair_fragment_amplitudes_2():
             for ddM in np.arange(N_virt):
                 dM =  self.d_ia.coords[ddM]
                 #dM_i = np.array(self.d_ia.cget(dM)[self.f2.fragment[0],:], dtype = bool) # dM index mask
-                dM_i = np.array(self.d_ia.cget([0,0,0])[self.f2.fragment[0],:], dtype = bool) # dM index mask
+                dM_i = np.array(self.d_ia.cget([0,0,0])[self.f1.fragment[0],:], dtype = bool) # dM index mask
 
 
-                g_direct = self.g_d[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
-                g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+                g_direct = self.g_d[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
+                #g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+                
+                #g_exchange = self.cfit.()
+                I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
+                g_exchange = I.cget(self.M).reshape(Ishape)[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
 
 
 
-                t = self.t2[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
+                t = self.t2[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
                 
                 e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
 
@@ -3165,6 +3192,8 @@ class pair_fragment_amplitudes_2():
                     #g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
 
                     g_exchange = self.g_d[:,ddM,:,0, :, ddL, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
+
+                    
                     #g_exchange = self.g_d[:,ddM,:,mM, :, ddL, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
 
                     #print(g_direct.shape)
@@ -5260,8 +5289,9 @@ if __name__ == "__main__":
                     pair.solve()
                     p_energy = pair.compute_pair_fragment_energy()
                     pair_total += 2*p_energy
-                    print("Pair fragment energy for ",c," is ", p_energy, " (total: ", pair_total + 0*E_new, " )")
-                    print(fa, fb, np.sum(p.coor2vec(c)**2))
+                    print("Pair fragment energy for ",c," is ", 2*p_energy, " (total: ", pair_total + 0*E_new, " )")
+                    print("R = ", np.sum(p.coor2vec(c)**2)**.5)
+                    print(fa, fb, np.sum(p.coor2vec(c)**2)**.5)
 
 
         
