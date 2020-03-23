@@ -65,783 +65,1287 @@ def c2_not_in_c1(c1, c2, sort = False):
         c2_ret = c2_ret[np.argsort(np.sum(c2_ret**2, axis = 1))]
         return c2_ret
 
-class pair_fragment_amplitudes():
-    # Setup and compute all pair fragments between 0 and M
-    def __init__(self, fragment_amplitudes_1, fragment_amplitudes_2, M, float_precision = np.float64):
-        self.M = M # Translation of fragment 2
-        self.f1 = fragment_amplitudes_1
-        self.f2 = fragment_amplitudes_2
-
-        # Option for low precision (memory saving)
-        self.float_precision = float_precision
-
-        self.f1_occupied_cells = self.f1.d_ii.coords[:self.f1.n_occupied_cells]
-        self.f1_virtual_cells = self.f1.d_ia.coords[:self.f1.n_virtual_cells]
-
-        self.f2_occupied_cells = self.f2.d_ii.coords[:self.f2.n_occupied_cells] + M
-        self.f2_virtual_cells = self.f2.d_ia.coords[:self.f2.n_virtual_cells] + M
-
-
-        # Set up unified occupied domain
-        coords_extra = c2_not_in_c1(self.f1_occupied_cells, self.f2_occupied_cells, sort = True)
-        self.coords_occupied = np.zeros((self.f1_occupied_cells.shape[0]+coords_extra.shape[0], 3), dtype = int)
-        self.coords_occupied[:self.f1_occupied_cells.shape[0]] = self.f1_occupied_cells
-        self.coords_occupied[self.f1_occupied_cells.shape[0]:] = coords_extra
-
-        self.n_occupied_cells = self.coords_occupied.shape[0]
-
-        # Set up unified amplitude masking matrices for the occupied domain
-        d_ii_blocks = []
-        for c in self.coords_occupied:
-            #print(c)
-            #print(self.f1.d_ii.cget(c))
-            #print(self.f1.d_ii.cget(c)<=self.f1.occupied_cutoff)
-
-            d_ii_blocks.append(np.any(np.array([self.f1.d_ii.cget(c)<=self.f1.occupied_cutoff, \
-                                         self.f2.d_ii.cget(c+M)<=self.f2.occupied_cutoff, \
-                                         self.f2.d_ii.cget(c-M)])<=self.f2.occupied_cutoff, axis = 0))
-
-        self.d_ii = tp.tmat()
-        self.d_ii.load_nparray(np.array(d_ii_blocks, dtype = bool), self.coords_occupied, safemode = False, screening = False)
-
-
-        # Set up unified virtual domain
-        coords_extra = c2_not_in_c1(self.f1_virtual_cells, self.f2_virtual_cells, sort = True)
-        self.coords_virtual = np.zeros((self.f1_virtual_cells.shape[0]+coords_extra.shape[0], 3), dtype = int)
-        self.coords_virtual[:self.f1_virtual_cells.shape[0]] = self.f1_virtual_cells
-        self.coords_virtual[self.f1_virtual_cells.shape[0]:] = coords_extra
-
-        self.n_virtual_cells = self.coords_virtual.shape[0]
-
-        # Set up unified amplitude masking matrices for the virtual domain
-        d_ia_blocks = []
-        for c in self.coords_virtual:
-            d_ia_blocks.append(np.any(np.array([self.f1.d_ia.cget(c)<=self.f1.virtual_cutoff, \
-                                         self.f2.d_ia.cget(c+M)<=self.f2.virtual_cutoff, \
-                                         self.f2.d_ia.cget(c-M)])<=self.f2.virtual_cutoff, axis = 0))
-
-        print("Virtual pair space")
-        print(self.coords_virtual, len(self.coords_virtual))
-        print("Occupied pair space")
-        print(self.coords_occupied, self.coords_occupied.shape[0])
-        self.d_ia = tp.tmat()
-        self.d_ia.load_nparray(np.array(d_ia_blocks, dtype = bool), self.coords_virtual, safemode=False, screening = False)
-
-        # Then initialize tensors and solve equations as for the fragment-case
-
-        self.mM = np.arange(self.coords_occupied.shape[0])[np.sum((self.coords_occupied-self.M)**2, axis = 1)==0][0]
-
-
-
-        self.vv_indx = mapgen(self.coords_virtual, self.coords_virtual)
-
-
-        nocc = self.f1.p.get_nocc()
-        nvirt = self.f1.p.get_nvirt()
-        N_occ = self.d_ii.coords.shape[0]
-        N_virt = self.d_ia.coords.shape[0]
-
-        self.t2 = np.zeros((nocc, N_virt, nvirt, N_occ, nocc, N_virt, nvirt), dtype = self.float_precision)
-        self.g_d = np.zeros((nocc, N_virt, nvirt, N_occ, nocc, N_virt, nvirt), dtype = self.float_precision)
-        self.g_x = np.zeros((nocc, N_virt, nvirt, N_occ, nocc, N_virt, nvirt), dtype = self.float_precision)
-
-        # Use amplitudes from the two fragments as initial guess, fill in known tensors
+class amplitude_solver():
+    def print_configuration_space_data(self):
         """
-        self.t2[self.f1.fragment, :self.f1.n_virtual_cells, :, :self.f1.n_occupied_cells, :, :self.f1.n_virtual_cells, :] = self.f1.t2[self.f1.fragment]
-        self.g_d[:, :self.f1.n_virtual_cells, :, :self.f1.n_occupied_cells, :, :self.f1.n_virtual_cells, :] = self.f1.g_d
-        self.g_x[:, :self.f1.n_virtual_cells, :, :self.f1.n_occupied_cells, :, :self.f1.n_virtual_cells, :] = self.f1.g_x
-
-
-        self.t2[self.f2.fragment, :self.f2.n_virtual_cells, :, :self.f2.n_occupied_cells, :, :self.f2.n_virtual_cells, :] = self.f2.t2[self.f2.fragment]
-        self.g_d[:, :self.f2.n_virtual_cells, :, :self.f2.n_occupied_cells, :, :self.f2.n_virtual_cells, :] = self.f2.g_d
-        self.g_x[:, :self.f2.n_virtual_cells, :, :self.f2.n_occupied_cells, :, :self.f2.n_virtual_cells, :] = self.f2.g_x
+        Prints extent sizes in terms of number of orbitals
         """
-
-
-        self.cmap = tp.tmat() #coordinate mapping
-        cgrid = tp.lattice_coords([8,8,8])
-        self.cmap.load_nparray(np.ones((cgrid.shape[0], 2,2), dtype = int), cgrid, safemode=False)
-
-        sequence = []
-        for ddL in np.arange(N_virt):
-            for ddM in np.arange(N_virt):
-                dL, dM = self.d_ia.coords[ddL], self.d_ia.coords[ddM]
-
-                for mM in np.arange(N_occ):
-                    # Further room for improvement here!! (only positive indidces needed) :-)
-                    M = self.d_ii.coords[mM]
-                    if np.linalg.norm(self.g_d[:, ddL, :, mM, :, ddM, :])<10e-10:
-                        """
-                        # Get exchange block coordinates
-                        M_cmap    = self.cmap.mapping[self.cmap._c2i(M) ]
-                        ddL_cmap  = self.cmap.mapping[self.cmap._c2i(dL) ]
-                        ddM_cmap  = self.cmap.mapping[self.cmap._c2i(dM) ]
-                        ddL_M = self.cmap.mapping[self.cmap._c2i(dM + M) ]
-                        ddM_M = self.cmap.mapping[self.cmap._c2i(dL - M) ]
-
-                        sequence.append([ddL_cmap  , M_cmap, ddM_cmap  , 0, ddL, mM, ddM])
-                        sequence.append([ddL_M, M_cmap, ddM_M, 1, ddL, mM, ddM])
-                        """
-
-
-                        ## Instead
-
-                        M = self.d_ii.coords[mM]
-
-                        # Get exchange block coordinates
-                        # Note: these point out of the fragment domain,
-                        # use cfit carefully
-
-                        #ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM - M) ]
-                        #ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL + M) ]
-
-                        # Indices to calculate
-
-                        ddL_index = self.cmap._c2i(dL)
-                        ddM_index = self.cmap._c2i(dM)
-                        ddL_M_index = self.cmap._c2i(dM + M)
-                        ddM_M_index = self.cmap._c2i(dL - M)
-                        mM_index    = self.cmap._c2i(M)
-                        mM__index   = self.cmap._c2i(-M)
-
-
-
-
-
-
-
-                        #print("Queueing ")
-                        #print(ddL)
-
-
-
-                        """
-                        print(dL, M, dM)
-                        print(ddL, mM, ddM)
-                        print(" ==== ")
-                        print(dM -M, M, dL + M)
-                        ## Should test here if mM_ is in set
-                        print(" ==== ")
-                        print(ddL_M, mM,ddM_M)
-                        print(" ")
-                        """
-                        #assert(ddM!=7)
-                        # Negative M - where to store it
-                        mM_ = self.d_ii.mapping[ self.d_ii._c2i(-M) ]
-
-                        # sequence[ ddL, mM, ddM        ,  0 ,   ddL, mM, ddM,    0]
-                        #                ^                 ^           ^          ^
-                        #            Calculate these    ex/direct    store here   1=transpose
-
-                        sequence.append([ddL_index, mM_index, ddM_index,   0, ddL, mM, ddM,   0]) # direct
-
-                        # make sure - M in domain
-                        if mM_<self.d_ii.coords.shape[0]:
-                            sequence.append([ddL_index, mM_index, ddM_index,   0, ddM, mM_, ddL,  1]) # direct, transposed
-
-
-                        if mM == self.mM:
-                            # block inside EOS
-                            sequence.append([ddL_M_index, mM_index, ddM_M_index, 1, ddL, mM , ddM,0])  # exchange
-                            if mM_<self.d_ii.coords.shape[0]:
-                                sequence.append([ddL_M_index, mM_index, ddM_M_index, 1, ddM, mM_, ddL,1]) # exchange, transposed
-
-
-
-        self.initialize_blocks(sequence)
-    def initialize_blocks(self, sequence):
-        #print("Initialization sequence:")
-        sequence = np.array(sequence)
-
-
-
-
-        # Sort blocks by dL:
-        a = np.argsort(sequence[:,0])
-        sequence = sequence[a]
-        #print(sequence.shape)
-        sequence = np.append(sequence, [ [-1000,0,0,0, 0, 0, 0,0] ], axis = 0) #-100 Just to make sure :-)
-        #print(sequence.shape)
-        j = 0
-        for i in np.arange(len(sequence)):
-            #print(sequence[i])
-            if sequence[i,0] != sequence[j,0]:
-                a = np.argsort(sequence[j:i, 2])
-                sq_i = sequence[j:i][a]
-
-                sq_i = np.append(sq_i, [ [-1000,0,-1000,0, 0, 0, 0,0] ], axis = 0) #-100 Just to make sure :-)
-
-
-
-
-                #print(sq_i)
-
-                #dL = self.d_ia.coords[sq_i[0,0]]
-                dL = self.cmap._i2c(np.array([sq_i[0,0]]))[0]
-
-
-                #print(sq_i)
-                k = 0
-                for l in np.arange(len(sq_i)):
-
-
-                    if sq_i[k,2] != sq_i[l,2]:
-                        #print(sq_i[k,2])
-                        #dM = self.d_ia.coords[sq_i[k,2]]
-                        dM = self.cmap._i2c(np.array([sq_i[k,2]]))[0]
-
-
-                        #print(sq_i[k:l])
-                        # Integrate here, loop over M
-                        #print(dL, dM)
-                        I, Ishape = self.f1.ib.getorientation(dL, dM)
-
-                        for m in sq_i[k:l]:
-                            #M = self.d_ii.coords[m[1]]
-                            M = self.cmap._i2c(np.array([m[1]]))[0]
-
-                            ddL, mM, ddM = m[4], m[5], m[6]
-                            #print(self.g_x.shape, ddL, mM, ddM)
-                            #print(dL, M, dM)
-                            #print(I.cget(M).shape, Ishape)
-                            if m[7] == 0:
-                                if m[3] == 0:
-                                    # Direct contribution
-                                    self.g_d[:, ddL, :, mM, :, ddM, :] = I.cget(M).reshape(Ishape)
-                                    self.t2[:,  ddL, :, mM, :, ddM, :] = 0*I.cget(M).reshape(Ishape)*self.f1.e_iajb**-1
-                                if m[3] == 1:
-                                    # Exchange contribution
-                                    ddL_, mM_, ddM_ = m[4], m[5], m[6]
-                                    self.g_x[:, ddL_, :, mM_, :, ddM_, :] = I.cget(M).reshape(Ishape)
-                            if m[7] == 1:
-                                if m[3] == 0:
-                                    # Direct contribution
-                                    self.g_d[:, ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)
-                                    self.t2[:,  ddL, :, mM, :, ddM, :] = 0*I.cget(M).T.reshape(Ishape)*self.f1.e_iajb**-1
-                                if m[3] == 1:
-                                    # Exchange contribution
-                                    ddL_, mM_, ddM_ = m[4], m[5], m[6]
-                                    self.g_x[:, ddL_, :, mM_, :, ddM_, :] = I.cget(M).T.reshape(Ishape)
-
-
-                        k = l*1
-
-                j = i*1
-
-    def initialize_blocks_(self, sequence):
-        sequence = np.array(sequence)
-
-
-        print("Initializing %i blocks of %i integrals." % (sequence.shape[0], self.f1.p.get_nocc()**2*self.f1.p.get_nvirt()**2))
-
-        # Sort blocks by dL:
-        a = np.argsort(sequence[:,0])
-        sequence = sequence[a]
-
-        sequence = np.append(sequence, [ [-1000,0,0,0, 0, 0, 0] ], axis = 0) #-100 Just to make sure :-)
-
-        j = 0
-        for i in np.arange(len(sequence)):
-            if sequence[i,0] != sequence[j,0]:
-                a = np.argsort(sequence[j:i, 2])
-                sq_i = sequence[j:i][a]
-
-                sq_i = np.append(sq_i, [ [-1000,0,-1000,0, 0, 0, 0] ], axis = 0) #-100 Just to make sure :-)
-
-                dL = self.cmap.coords[sq_i[0,0]]
-
-                k = 0
-                for l in np.arange(len(sq_i)):
-                    if sq_i[k,2] != sq_i[l,2]:
-                        #print(sq_i[k,2])
-                        dM = self.cmap.coords[sq_i[k,2]]
-                        #print(dL, dM)
-
-                        # Integrate here, loop over M
-                        I, Ishape = self.f1.ib.getorientation(dL, dM)
-
-                        for m in sq_i[k:l]:
-                            M = self.cmap.coords[m[1]]
-                            ddL, mM, ddM = m[4], m[5], m[6] #this is a little akward, debugging going on
-
-                            if m[3] == 0:
-                                # Direct contribution
-                                self.g_d[:, ddL, :, mM, :, ddM, :] = I.cget(M).reshape(Ishape)
-                                self.t2[:,  ddL, :, mM, :, ddM, :] = 0*I.cget(M).reshape(Ishape)*self.f1.e_iajb**-1
-                            if m[3] == 1:
-                                # Exchange contribution
-                                ddL_, mM_, ddM_ = m[4], m[5], m[6]
-                                self.g_x[:, ddL_, :, mM_, :, ddM_, :] = I.cget(M).reshape(Ishape)
-
-
-                        k = l*1
-
-                j = i*1
-
-        print("Size/shape of fragment amplitude tensor:", self.t2.size, self.t2.shape )
-
-    def compute_pair_fragment_energy(self):
+        print("%i virtual orbitals included in fragment." % self.n_virtual_tot)
+        print("%i occupied orbitals included in fragment." % self.n_occupied_tot)
+
+    def solve(self, norm_thresh = 1e-10, eqtype = "mp2", s_virt = None):
+        if eqtype == "mp2_nonorth":
+            return self.solve_MP2PAO(norm_thresh, s_virt = s_virt)
+        elif eqtype == "paodot":
+            return self.solve_MP2PAO_DOT(norm_thresh, s_virt = s_virt)
+        elif eqtype == "ls":
+            return self.solve_MP2PAO_ls(norm_thresh, s_virt = s_virt)
+        else:
+            return self.solve_MP2(norm_thresh)
+    
+    def bfgs_solve(self, f, x0, N_alpha = 20, thresh = 1e-10):
         """
-        Compute fragment energy
+        Rough outline of bfgs solver
+        f       = objective function
+        x0      = initial state
+        N_alpha = resolution of line search
+        
         """
-
-        e_mp2 = 0
-
-        N_virt = self.n_virtual_cells
-        print("PAir fragment energy")
-
-        for ddL in np.arange(N_virt):
-            dL = self.d_ia.coords[ddL]
-            #dL_i = np.array(self.d_ia.cget(dL)[self.f1.fragment[0],:], dtype = bool) # dL index mask
-            dL_i = np.array(self.d_ia.cget([0,0,0])[self.f1.fragment[0],:], dtype = bool) # dL index mask
-
-
-            for ddM in np.arange(N_virt):
-                dM =  self.d_ia.coords[ddM]
-                #dM_i = np.array(self.d_ia.cget(dM)[self.f2.fragment[0],:], dtype = bool) # dM index mask
-                dM_i = np.array(self.d_ia.cget([0,0,0])[self.f2.fragment[0],:], dtype = bool) # dM index mask
-
-
-                g_direct = self.g_d[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
-                g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
-
-
-
-                t = self.t2[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
-
-                e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-
-        print(e_mp2, 2*e_mp2)
-        return e_mp2
-
-    def solve(self, norm_thresh = 1e-10):
-        """
-        Converge fragment (AOS) amplitudes within occupied and virtual extents
-        """
-        nocc = self.f1.p.get_nocc()
-
-        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-
-
-        vp_indx = mapgen(virtual_extent, pair_extent)
-        pp_indx = mapgen(pair_extent, pair_extent)
-
-        for ti in np.arange(100):
-            t2_new = np.zeros_like(self.t2)
-            for dL in np.arange(self.n_virtual_cells):
-                dLv = self.d_ia.coords[dL]
-                dL_i = np.array(self.d_ia.cget(dLv)[self.f1.fragment[0], :], dtype = bool) # dL index mask
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = np.array(self.d_ia.cget(dMv)[self.f2.fragment[0], :], dtype = bool)# dM index mask
-                    for M in np.arange(self.n_occupied_cells):
-                        Mv = self.d_ii.coords[M]
-                        M_i = np.array(self.d_ii.cget(Mv)[self.f1.fragment[0], :], dtype = bool)  # M index mask
-
-                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                        # generate index mapping of non-zero amplitudes in cell
-                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.f1.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                        # Perform contractions
-
-                        # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{Li,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
-                        Fac = self.f1.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                        tnew -= np.einsum("iKcjb,Kac->iajb", self.t2[:, :, :, M, :, dM, :], Fac)
-
-                        # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
-                        Fbc = self.f1.f_mo_aa.cget(virtual_extent - virtual_extent[dM])
-                        tnew -= np.einsum("iajKc,Kbc->iajb", self.t2[:, dL, :, M, :, :, :], Fbc)
-
-
-
-
-
-
-                        """
-                        # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                        #vpdL = mapgen(virtual_extent-Mv, pair_extent)
-                        #Fki = self.f1.f_mo_ii.cget(-1*pair_extent)
-                        #tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
-
-                        # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                        # revised summation, include all non-zero blocks
-                        #vpdL = mapgen(virtual_extent-Mv, pair_extent)
-                        #Fki = self.f1.f_mo_ii.cget(Mv-1*pair_extent)
-                        #tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vpdL[dL], :, :, :, vpdL[dM], :], Fki)
-
-                        vpdL = mapgen(virtual_extent-Mv, pair_extent)
-
-                        non_zeros = (vpdL[dL]>=0) * (vpdL[dM]>=0)
-
-                        Fki = self.f1.f_mo_ii.cget(Mv-1*pair_extent)
-                        #print(self.t2[:, vpdL[dL], :, :, :, vpdL[dM], :].shape)
-                        tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vpdL[dL][non_zeros], :, np.arange(self.n_occupied_cells)[non_zeros], :, vpdL[dM][non_zeros], :], Fki[non_zeros])
-                        """
-
-
-
-                        # Conceptually simpler approach
-                        # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                        """
-                        Fki = self.f1.f_mo_ii.cget(-1*pair_extent)
-
-                        M_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[M] - pair_extent ) ]
-                        dL_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dL] - pair_extent) ]
-                        dM_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dM] - pair_extent) ]
-                        #make sure indices is in correct domain
-
-                        tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, dL_M, :, M_range, :, dM_M, :], Fki)
-                        """
-
-                        Fki = self.f1.f_mo_ii.cget(-1*pair_extent)
-
-                        M_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[M] - pair_extent ) ]
-                        dL_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dL] - pair_extent) ]
-                        dM_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dM] - pair_extent) ]
-                        #make sure indices is in correct domain (not negative or beyond extent)
-                        nz = (M_range<self.n_occupied_cells)*(dL_M<self.n_virtual_cells)*(dM_M<self.n_virtual_cells)*\
-                             (M_range>=0)*(dL_M>=0)*(dM_M>=0)
-
-                        tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, dL_M[nz], :, M_range[nz], :, dM_M[nz], :], Fki[nz])
-
-
-
-
-                        # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
-                        Fkj = self.f1.f_mo_ii.cget(-1*pair_extent + pair_extent[M])
-                        tnew += np.einsum("iaKkb,Kkj->iajb",self.t2[:, dL, :, :, :, dM, :], Fkj)
-
-                        t2_mapped = np.zeros_like(tnew).ravel()
-                        t2_mapped[cell_map] = (tnew*self.f1.e_iajb**-1).ravel()[cell_map]
-
-                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-
-            self.t2 -= t2_new
-            rnorm = np.linalg.norm(t2_new)
-            #print(ti, np.linalg.norm(self.t2))
-            if rnorm<norm_thresh:
-
-                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
-                break
-
-
-class pair_fragment_amplitudes_():
-    def __init__(self, fragment_amplitudes_1, fragment_amplitudes_2, M):
-        self.M = M
-        self.f1 = fragment_amplitudes_1
-        self.f2 = fragment_amplitudes_2
-
-        self.f1_occupied_cells = self.f1.d_ii.coords[:self.f1.n_occupied_cells]
-        self.f1_virtual_cells = self.f1.d_ia.coords[:self.f1.n_virtual_cells]
-
-        self.f2_occupied_cells = self.f2.d_ii.coords[:self.f2.n_occupied_cells] + M
-        self.f2_virtual_cells = self.f2.d_ia.coords[:self.f2.n_virtual_cells] + M
-
-        # Extend the pair domain with negative M's
-        # (See notes on how the pair fragment energy is expressed for periodic systems)
-        coords_extra = c2_not_in_c1(self.f2_occupied_cells, self.f2.d_ii.coords[:self.f2.n_occupied_cells] - M, sort = True)
-        coords = np.zeros((self.f2_occupied_cells.shape[0]+coords_extra.shape[0], 3))
-        coords[:self.f2_occupied_cells.shape[0]] = self.f2_occupied_cells
-        coords[self.f2_occupied_cells.shape[0]:] = coords_extra
-
-        self.f2_occupied_cells = coords*1 #a copy, not a view (presumtively)
-
-        coords_extra = c2_not_in_c1(self.f2_virtual_cells, self.f2.d_ia.coords[:self.f2.n_virtual_cells] - M, sort = True)
-        coords = np.zeros((self.f2_virtual_cells.shape[0]+coords_extra.shape[0], 3))
-        coords[:self.f2_virtual_cells.shape[0]] = self.f2_virtual_cells
-        coords[self.f2_virtual_cells.shape[0]:] = coords_extra
-
-        self.f2_virtual_cells = coords*1 #a copy, not a view
-
-
-
-
-
-
-        # Set up unified occupied domain
-        coords_extra = c2_not_in_c1(self.f1_occupied_cells, self.f2_occupied_cells, sort = True)
-        self.coords_occupied = np.zeros((self.f1_occupied_cells.shape[0]+coords_extra.shape[0], 3), dtype = int)
-        self.coords_occupied[:self.f1_occupied_cells.shape[0]] = self.f1_occupied_cells
-        self.coords_occupied[self.f1_occupied_cells.shape[0]:] = coords_extra
-
-        self.n_occupied_cells = self.coords_occupied.shape[0]
-
-        # Set up unified amplitude masking matrices for the occupied domain
-        d_ii_blocks = []
-        for c in self.coords_occupied:
-            #print(c)
-            #print(self.f1.d_ii.cget(c))
-            #print(self.f1.d_ii.cget(c)<=self.f1.occupied_cutoff)
-
-            d_ii_blocks.append(np.any(np.array([self.f1.d_ii.cget(c)<=self.f1.occupied_cutoff, \
-                                         self.f2.d_ii.cget(c+M)<=self.f2.occupied_cutoff, \
-                                         self.f2.d_ii.cget(c-M)])<=self.f2.occupied_cutoff, axis = 0))
-
-        self.d_ii = tp.tmat()
-        self.d_ii.load_nparray(np.array(d_ii_blocks, dtype = bool), self.coords_occupied, safemode = False, screening = False)
-
-
-        # Set up unified virtual domain
-        coords_extra = c2_not_in_c1(self.f1_virtual_cells, self.f2_virtual_cells, sort = True)
-        self.coords_virtual = np.zeros((self.f1_virtual_cells.shape[0]+coords_extra.shape[0], 3), dtype = int)
-        self.coords_virtual[:self.f1_virtual_cells.shape[0]] = self.f1_virtual_cells
-        self.coords_virtual[self.f1_virtual_cells.shape[0]:] = coords_extra
-
-        self.n_virtual_cells = self.coords_virtual.shape[0]
-
-        # Set up unified amplitude masking matrices for the virtual domain
-        d_ia_blocks = []
-        for c in self.coords_virtual:
-            d_ia_blocks.append(np.any(np.array([self.f1.d_ia.cget(c)<=self.f1.virtual_cutoff, \
-                                         self.f2.d_ia.cget(c+M)<=self.f2.virtual_cutoff, \
-                                         self.f2.d_ia.cget(c-M)])<=self.f2.virtual_cutoff, axis = 0))
-
-        self.d_ia = tp.tmat()
-        self.d_ia.load_nparray(np.array(d_ia_blocks, dtype = bool), self.coords_virtual, safemode=False, screening = False)
-
-        # Then initialize amplitudes and solve equations as for the fragment-case
-        # Energy evaluation will be kind of different
-
-        #print(np.sum((self.coords_occupied-self.M)**2, axis = 1)==0)
-        self.mM = np.arange(self.coords_occupied.shape[0])[np.sum((self.coords_occupied-self.M)**2, axis = 1)==0][0]
-        self.mM_ = np.arange(self.coords_occupied.shape[0])[np.sum((self.coords_occupied+self.M)**2, axis = 1)==0][0]
-
-        self.vv_indx = mapgen(self.coords_virtual, self.coords_virtual)
-
-        self.init_amplitudes()
-
-
-
-
-
-    def init_amplitudes(self):
-        """
-        Initialize the amplitudes using the MP2-like starting guess
-        """
-
-        n_occ = self.f1.p.get_nocc()     # Number of occupied orbitals per cell
-        N_occ = self.n_occupied_cells    # Number of occupied cells
-        n_virt = self.f1.p.get_nvirt()   # Number of virtual orbitals per cell
-        N_virt = self.n_virtual_cells    # Number of virtual cells
-
-
-        self.t2 = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
-
-        self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
-
-        self.g_x = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
-
-        # Fill in tensors, initial guess, calculate initial energy
-
-        f_aa = np.diag(self.f1.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f1.f_mo_ii.cget([0,0,0]))
-
-        self.e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
-
-        # Initialize cells from the separate fragments
-        self.t2[self.f1.fragment, :self.f1.n_virtual_cells, :, :self.f1.n_occupied_cells, :, :self.f1.n_virtual_cells, :] = self.f1.t2[self.f1.fragment]
-        self.g_d[:, :self.f1.n_virtual_cells, :, :self.f1.n_occupied_cells, :, :self.f1.n_virtual_cells, :] = self.f1.g_d
-        self.g_x[:, :self.f1.n_virtual_cells, :, :self.f1.n_occupied_cells, :, :self.f1.n_virtual_cells, :] = self.f1.g_x
-
-
-        self.t2[self.f2.fragment, :self.f2.n_virtual_cells, :, :self.f2.n_occupied_cells, :, :self.f2.n_virtual_cells, :] = self.f2.t2[self.f2.fragment]
-        self.g_d[:, :self.f2.n_virtual_cells, :, :self.f2.n_occupied_cells, :, :self.f2.n_virtual_cells, :] = self.f2.g_d
-        self.g_x[:, :self.f2.n_virtual_cells, :, :self.f2.n_occupied_cells, :, :self.f2.n_virtual_cells, :] = self.f2.g_x
-
-
-        # Initialize the remaining cells
-        for ddL in np.arange(self.f1.n_virtual_cells, N_virt):
-            for ddM in np.arange(self.f1.n_virtual_cells, N_virt):
-                dL, dM = self.d_ia.coords[ddL], self.d_ia.coords[ddM]
-                for mM in np.arange(self.f1.n_occupied_cells, N_occ):
-                    M = self.d_ii.coords[mM]
-                    #print(M, mM)
-
-
-                    g_direct = self.f1.ib.getcell(dL, M, dM)
-                    g_exchange = self.f1.ib.getcell(dM-M, M, dL+M)
-                    #t = g_direct*self.e_iajb**-1
-                    #print(np.linalg.norm(g_direct*self.e_iajb**-1))
-                    self.t2[:, ddL, :, mM, :, ddM, :] = 0*g_direct*self.e_iajb**-1
-                    self.g_d[:, ddL, :, mM, :, ddM, :] = g_direct
-                    self.g_x[:, ddL, :, mM, :, ddM, :] = g_exchange
-                    #self.e0 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-        #print("Initial energy from dynamic amplitudes:", self.e0)
-        print("Size/shape of amplitude tensor:", self.t2.size, self.t2.shape )
-
-    def compute_pair_fragment_energy(self):
-        """
-        Compute fragment energy
-        """
-        #print(self.mM, type(self.mM))
-        e_mp2 = 0
-        e_mp2_ = 0
-        N_virt = self.n_virtual_cells
-        #print(self.f1.fragment, self.f2.fragment)
-
-        #mM = self.d_ii.coords[] #occupied index only runs over fragment
-        print(self.vv_indx)
-        for ddL in np.arange(N_virt):
-            dL = self.d_ia.coords[ddL]
-            dL_i = np.array(self.d_ia.cget(dL)[self.f1.fragment[0],:], dtype = bool) # dL index mask
-
-            dL_i_ = np.array(self.d_ia.cget(dL - self.M)[self.f1.fragment[0],:], dtype = bool) # dL index mask
-
-            for ddM in np.arange(N_virt):
-                dM =  self.d_ia.coords[ddM]
-                dM_i = np.array(self.d_ia.cget(dM)[self.f2.fragment[0],:], dtype = bool) # dM index mask
-                dM_i_ = np.array(self.d_ia.cget(dM - self.M)[self.f2.fragment[0],:], dtype = bool) # dM index mask
-
-                #print(dM_i, dL_i)
-                # Using multiple levels of masking, probably some other syntax makes more sense
-
-                g_direct = self.g_d[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
-                g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
-
-
-
-                t = self.t2[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
-                #print(np.linalg.norm(t), np.linalg.norm(g_direct), np.linalg.norm(g_exchange))
-                #print(t.shape)
-                e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-                #print("e_mp2:", e_mp2)
-                # Then the other contribution (see notes, expression for pair fragment energy)
-
-                #print(self.mM, self.mM_, self.t2[:,ddL,:,self.mM, :, ddM, :].shape)
-                #print("g_d", self.t2[:,ddL,:,self.mM, :, ddM, :].shape)
-                #print(dM_i_)
-                #print(self.vv_indx[ddL, self.mM], self.vv_indx[ddM])
-
-
-                g_direct = self.g_d[:,self.vv_indx[ddL, self.mM],:,self.mM_, :, self.vv_indx[ddM, self.mM], :] #[self.f2.fragment][:, dL_i_][:, :, self.f1.fragment][:,:,:,dM_i_]
-                g_exchange = self.g_x[:,self.vv_indx[ddL, self.mM],:,self.mM_, :, self.vv_indx[ddM, self.mM], :] #[self.f2.fragment][:, dM_i_][:, :, self.f1.fragment][:,:,:,dL_i_]
-
-                # BUT a,b and cell indices are just dummy-indices; we are iterating over the same space
-
-                g_direct = self.g_d[:,ddL,:,self.mM_, :, ddM, :] #[self.f2.fragment][:, dL_i_][:, :, self.f1.fragment][:,:,:,dM_i_]
-                g_exchange = self.g_x[:,ddL,:,self.mM_, :, ddM, :] #[self.f2.fragment][:, dM_i_][:, :, self.f1.fragment][:,:,:,dL_i_]
-
-
-
-
-                #g_direct = self.g_d[:,ddL,:,self.mM_, :, ddM, :] #[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
-                #g_exchange = self.g_x[:,ddL,:,self.mM_, :, ddM, :] #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
-
-
-                #print(self.vv_indx[ddL, self.mM], dL - self.M, self.d_ia.coords[self.vv_indx[ddL, self.mM]])
-                #print(ddL, self.mM, ddM, self.vv_indx[ddL, self.mM])
-                #print("i", dL-self.M, "a", -self.M, "j", dM-self.M, "b")
-                #print("i", self.d_ia.coords[ self.vv_indx[ddL, self.mM]], "a", - self.M, "j", self.d_ia.coords[self.vv_indx[ddM, self.mM]], "b")
-
-                #print(self.vv_indx[ddL, self.mM], self.vv_indx[ddM, self.mM])
-                if not np.all(dL - self.M == self.d_ia.coords[self.vv_indx[ddL, self.mM]]):
+        
+        xn = x0                                # Initial state
+        df = autograd.grad(f)                  # Gradient of f, could be finite difference based
+        df = lambda x : x[1] - x[0]
+        B = np.eye(xn.shape[0], dtype = float) # Initial guess for approximate Hessian
+
+        for i in np.arange(50):
+            df_ = df(xn)
+
+            dx = np.linalg.solve(B, - df(xn))
+            #dx = np.dot(np.linalg.pinv(B), -df_) #should avoid inversion
+            
+            # line search
+            fj = f(xn) #initial energy
+            for j in np.linspace(0,1,N_alpha)[1:]:
+                fn = f(xn + j*dx) #update energy
+                if fn>fj:
+                    # if energy increase, break
                     break
+                fj = fn
+        
+            xn = xn + j*dx # update state
+            if np.abs(fj)<=thresh:
+                # if energy close to zero, break
+                break
+            
+            # Update approximate Hessian
+            y = df(xn) - df_
+            Bs = np.dot(B, xn)
+            B += np.outer(y,y)/np.outer(xn,y).T  - np.outer(Bs, Bs)/np.outer(xn, Bs).T
+            
+            
 
-                t = self.t2[:,ddL,:,self.mM_, :, ddM, :] #[self.f2.fragment][:, dL_i_][:, :, self.f1.fragment][:,:,:,dM_i_]
+        return xn
 
-                #print(np.linalg.norm(g_direct), np.linalg.norm(g_exchange), np.linalg.norm(t))
-                #print(np.linalg.norm(t), np.linalg.norm(g_direct), np.linalg.norm(g_exchange))
-                #print(t.shape, g_direct.shape, g_exchange.shape)
-                e_mp2_ += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-                #print("e_mp2:", e_mp2)
-                #print(" ")
-        print(e_mp2, e_mp2_)
-        return e_mp2
+    def omega(self, t2):
 
-    def solve(self, norm_thresh = 1e-10):
+        t2_new = np.zeros_like(t2)
+        
+        for dL in np.arange(self.n_virtual_cells):
+            dLv = self.d_ia.coords[dL]
+            dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+            for dM in np.arange(self.n_virtual_cells):
+                dMv = self.d_ia.coords[dM]
+                dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+                for M in np.arange(self.n_occupied_cells):
+                    Mv = self.d_ii.coords[M]
+                    M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
+
+                    tnew = -self.g_d[:, dL, :, M, :, dM, :]
+
+                    # generate index mapping of non-zero amplitudes in cell
+                    cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+
+                    #t2_mask = np.ones(tnew.shape, dtype = np.bool)
+                    #t2_mask[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i] = False
+
+                    #t2[:, :, dL_i==False, M, :, dM, dM_i==False] *= 0
+
+
+
+                    # Perform contractions
+
+                    # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{Li,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
+                    Fac = self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dL])
+                    tnew -= np.einsum("iKcjb,Kac->iajb", t2[:, :, :, M, :, dM, :], Fac)
+
+                    # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
+                    Fbc = self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dM])
+                    tnew -= np.einsum("iajKc,Kbc->iajb", t2[:, dL, :, M, :, :, :], Fbc)
+
+                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
+                    # Fki = self.f_mo_ii.cget(-1*pair_extent)
+                    # tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
+
+
+
+                    """
+                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
+                    vpdL = mapgen(virtual_extent-Mv, pair_extent)
+                    Fki = self.f_mo_ii.cget(Mv-1*pair_extent)
+                    #print(self.t2[:, vpdL[dL], :, :, :, vpdL[dM], :].shape)
+                    #print(vpdL)
+                    #assert(np.all(vpdL>0)), "Negative indexing in vpdL"
+
+                    non_zeros = (vpdL[dL]>=0) *  (vpdL[dM]>=0) #screening matrix to avoid references to amplitudes outside extent
+                    #print(non_zeros)
+                    #print(self.t2[:, vpdL[dL], :, np.arange(self.n_occupied_cells), :, vpdL[dM], :].shape, Fki.shape)
+
+
+                    tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vpdL[dL][non_zeros], :, np.arange(self.n_occupied_cells)[non_zeros], :, vpdL[dM][non_zeros], :], Fki[non_zeros])
+                    """
+
+
+
+
+                    # Conceptually simpler approach
+                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
+                    Fki = self.f_mo_ii.cget(-1*self.pair_extent)
+
+                    M_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[M] - self.pair_extent ) ]
+                    dL_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dL] - self.pair_extent) ]
+                    dM_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dM] - self.pair_extent) ]
+                    #make sure indices is in correct domain (not negative or beyond extent)
+                    nz = (M_range<self.n_occupied_cells)*(dL_M<self.n_virtual_cells)*(dM_M<self.n_virtual_cells)*\
+                            (M_range>=0)*(dL_M>=0)*(dM_M>=0)
+
+                    tnew += np.einsum("Kkajb,Kki->iajb",t2[:, dL_M[nz], :, M_range[nz], :, dM_M[nz], :], Fki[nz])
+
+
+
+                    # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
+                    Fkj = self.f_mo_ii.cget(-1*self.pair_extent + self.pair_extent[M])
+                    tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
+
+                    t2_mapped = np.zeros_like(tnew).ravel()
+                    t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
+                    #t2_mapped[cell_map] = .1*tnew.ravel()[cell_map]
+                    #t2_mapped = (tnew*self.e_iajb**-1).ravel()
+
+                    
+
+                    
+                    t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
+        return t2_new
+
+    def omega_agrad(self, t2):
+
+        t2_new = np.zeros_like(t2)
+        for dL in np.arange(self.n_virtual_cells):
+            dLv = self.d_ia.coords[dL]
+            dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+
+            for dM in np.arange(self.n_virtual_cells):
+                dMv = self.d_ia.coords[dM]
+                dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+                for M in np.arange(self.n_occupied_cells):
+                    Mv = self.d_ii.coords[M]
+                    M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
+
+                    tnew = -self.g_d[:, dL, :, M, :, dM, :]
+
+                    # generate index mapping of non-zero amplitudes in cell
+                    #cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+
+                    # Perform contractions
+
+                    # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{Li,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
+                    Fac = np.array(self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dL]))
+                    tnew -= np.einsum("iKcjb,Kac->iajb", t2[:, :, :, M, :, dM, :], Fac)
+
+                    # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
+                    Fbc = np.array(self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dM]))
+                    tnew -= np.einsum("iajKc,Kbc->iajb", t2[:, dL, :, M, :, :, :], Fbc)
+
+                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
+                    # Fki = self.f_mo_ii.cget(-1*pair_extent)
+                    # tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
+
+
+
+                    """
+                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
+                    vpdL = mapgen(virtual_extent-Mv, pair_extent)
+                    Fki = self.f_mo_ii.cget(Mv-1*pair_extent)
+                    #print(self.t2[:, vpdL[dL], :, :, :, vpdL[dM], :].shape)
+                    #print(vpdL)
+                    #assert(np.all(vpdL>0)), "Negative indexing in vpdL"
+
+                    non_zeros = (vpdL[dL]>=0) *  (vpdL[dM]>=0) #screening matrix to avoid references to amplitudes outside extent
+                    #print(non_zeros)
+                    #print(self.t2[:, vpdL[dL], :, np.arange(self.n_occupied_cells), :, vpdL[dM], :].shape, Fki.shape)
+
+
+                    tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vpdL[dL][non_zeros], :, np.arange(self.n_occupied_cells)[non_zeros], :, vpdL[dM][non_zeros], :], Fki[non_zeros])
+                    """
+
+
+
+
+                    # Conceptually simpler approach
+                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
+                    Fki = np.array(self.f_mo_ii.cget(-1*self.pair_extent))
+
+                    M_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[M] - self.pair_extent ) ]
+                    dL_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dL] - self.pair_extent) ]
+                    dM_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dM] - self.pair_extent) ]
+                    #make sure indices is in correct domain (not negative or beyond extent)
+                    nz = (M_range<self.n_occupied_cells)*(dL_M<self.n_virtual_cells)*(dM_M<self.n_virtual_cells)*\
+                            (M_range>=0)*(dL_M>=0)*(dM_M>=0)
+
+                    tnew += np.einsum("Kkajb,Kki->iajb",t2[:, dL_M[nz], :, M_range[nz], :, dM_M[nz], :], Fki[nz])
+
+
+
+                    # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
+                    Fkj = np.array(self.f_mo_ii.cget(-1*self.pair_extent + self.pair_extent[M]))
+                    tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
+
+                    #t2_mapped = np.zeros_like(tnew).ravel()
+                    #t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
+                    #t2_mapped = (tnew*self.e_iajb**-1).ravel()
+
+
+                    #print(dL, M, dM)
+                    #print(t2_new[:, dL, :, M, :, dM, :].shape,(tnew*self.e_iajb**-1).shape )
+                    t2_new[:, dL, :, M, :, dM, :] = (tnew*self.e_iajb**-1) #t2_mapped.reshape(tnew.shape)
+        return t2_new
+
+
+
+    def solve_MP2(self, norm_thresh = 1e-7):
         """
         Converge fragment (AOS) amplitudes within occupied and virtual extents
         """
-        nocc = self.f1.p.get_nocc()
+        #from autograd import grad, elementwise_grad,jacobian
+
+        nocc = self.p.get_nocc()
+
+        self.virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
+        self.pair_extent = self.d_ii.coords[:self.n_occupied_cells]
+
+        self.vp_indx = mapgen(self.virtual_extent, self.pair_extent)
+        self.pp_indx = mapgen(self.pair_extent, self.pair_extent)
+
+        DIIS = diis(8)
+
+        #print(vp_indx)
+        #print(pp_indx)
+
+        #dt2 = ad.gh(self.omega_agrad)
+        #dt_new = dt2[1](self.t2)
+        for ti in np.arange(500):
+
+
+
+            dt2_new = self.omega(self.t2)
+            #print("dt (max/min/absmin):", np.max(dt2_new), np.min(dt2_new), np.abs(dt2_new).min())
+            #t2_prev =
+
+            # do a line search
+            if False:
+
+                n = 1e10 #np.linalg.norm(dt2)
+                for j in np.arange(20):
+                    dt2 = self.omega(self.t2 - j*0.1*dt2_new)
+                    n_ = np.linalg.norm(dt2)
+                    if n_>=n:
+                        break
+                    n = n_
+                    print("line search", j, ":", n_)
+
+                self.t2 -= j*0.1*dt2_new
+                rnorm = n #np.linalg.norm(n)
+            else:
+                self.t2 -= dt2_new #/np.abs(dt2_new).max()
+                self.t2 = DIIS.advance(self.t2,dt2_new)
+
+
+
+                rnorm = np.linalg.norm(dt2_new)
+                #print("%.10e %.10e" % (self.compute_fragment_energy(),update_max ))
+                #print("%.10e %.10e" % (self.compute_fragment_energy(),np.abs(dt2_new).max() ))
+                if np.abs(dt2_new).max()<1e-7:
+                    break
+                #print("Max update:", np.abs(dt2_new).max())
+                #if np.abs(dt2_new).max() <
+
+
+            if np.abs(dt2_new).max() <norm_thresh:
+
+                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti,rnorm))
+                #print("(Maximum absolute res. norm: %.4e)" % np.max(np.abs(dt2_new)))
+                print("")
+                break
+        self.max_abs_residual = np.max(np.abs(dt2_new))
+        print("Max.abs. deviation in residual post optimization is %.5e" % np.max(np.abs(dt2_new)))
+
+    def solve_MP2PAO_steepdesc(self, norm_thresh = 1e-10, s_virt = None):
+        """
+        Solving the MP2 equations for a non-orthogonal virtual space
+        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
+        """
+        print ('########### PAO_SOLVER_STEEPDESC ##############')
+        print ('########### PAO_SOLVER_STEEPDESC ##############')
+        print ('########### PAO_SOLVER_STEEPDESC ##############')
+        print ('########### PAO_SOLVER_STEEPDESC ##############')
+        print ('########### PAO_SOLVER_STEEPDESC ##############')
+        print ('########### PAO_SOLVER_STEEPDESC ##############')
+        print ('########### PAO_SOLVER_STEEPDESC ##############')
+        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
+        alpha = 0.1
+
+        nocc = self.p.get_nocc()
+        ener_old = self.compute_fragment_energy()
 
         virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
         pair_extent = self.d_ii.coords[:self.n_occupied_cells]
 
+        self.s_pao = s_virt
+        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
 
+        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
+        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
+        s_aa = np.diag(self.s_pao.cget([0,0,0]))
+        f_ij = f_ii[:,None] + f_ii[None,:]
+        sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
+        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        f_iajb = sfs - fs_ab - fs_ba
+        counter = 0
 
-        vp_indx = mapgen(virtual_extent, pair_extent)
-        pp_indx = mapgen(pair_extent, pair_extent)
-
-        for ti in np.arange(100):
-
-
-
+        for ti in np.arange(1000):
+            counter += 1
+            #print ('Iteration no.: ', ti)
             t2_new = np.zeros_like(self.t2)
+            R_new = np.zeros_like(self.t2)
+
+            beta1 = np.zeros_like(self.t2)
+            beta2 = np.zeros_like(self.t2)
+
+            for C in np.arange(self.n_virtual_cells):
+                for D in np.arange(self.n_virtual_cells):
+                    for J in np.arange(self.n_occupied_cells):
+                        Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
+                        beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",self.t2[:,C,:,:,:,D,:],Fkj)
+
+                        Fik = self.f_mo_ii.cget(pair_extent)
+
+                        J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
+                        C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
+                        D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
+
+                        nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
+                             (J_range>=0)*(C_J>=0)*(D_J>=0)
+
+                        beta2[:,C,:,J,:,D,:] = np.einsum("Kkcjd,Kik->icjd",self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:],Fik[nz])
+
+
             for dL in np.arange(self.n_virtual_cells):
                 dLv = self.d_ia.coords[dL]
-                dL_i = np.array(self.d_ia.cget(dLv)[self.f1.fragment[0], :], dtype = bool) # dL index mask
+                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
 
                 for dM in np.arange(self.n_virtual_cells):
                     dMv = self.d_ia.coords[dM]
-                    dM_i = np.array(self.d_ia.cget(dMv)[self.f2.fragment[0], :], dtype = bool)# dM index mask
+                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
                     for M in np.arange(self.n_occupied_cells):
                         Mv = self.d_ii.coords[M]
-                        M_i = np.array(self.d_ii.cget(Mv)[self.f1.fragment[0], :], dtype = bool)  # M index mask
+                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
 
                         tnew = -self.g_d[:, dL, :, M, :, dM, :]
 
                         # generate index mapping of non-zero amplitudes in cell
-                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.f1.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+
+                        #cell_map_bool = np.zeros(tnew.size, dtype = np.bool)
+                        #cell_map_bool[cell_map_bool] = True
+                        #cell_map_bool_full[ :, dL, :, M, :, dM, :] =  cell_map_bool[cell_map_bool].reshape(tnew.shape)
 
                         # Perform contractions
+                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
+                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
+                        Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
+                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
 
-                        # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{Li,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
-                        Fac = self.f1.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                        tnew -= np.einsum("iKcjb,Kac->iajb", self.t2[:, :, :, M, :, dM, :], Fac)
-
-                        # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
-                        Fbc = self.f1.f_mo_aa.cget(virtual_extent - virtual_extent[dM])
-                        tnew -= np.einsum("iajKb,Kbc->iajb", self.t2[:, dL, :, M, :, :, :], Fbc)
-
-
+                        #print ('dL: ', dL)
+                        #print ('dM: ', dM)
+                        #print ('M: ', M)
 
 
+                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
+                        t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :])
+                        tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
+                        #print (np.linalg.norm(tnew))
 
-                        # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                        #vpdL = mapgen(virtual_extent-Mv, pair_extent)
-                        #Fki = self.f1.f_mo_ii.cget(-1*pair_extent)
-                        #tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
+                        # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
+                        t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, self.t2[:, :, :, M, :, :, :])
+                        tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac)
+                        #print (np.linalg.norm(tnew))
 
-                        # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                        # revised summation, include all non-zero blocks
-                        #vpdL = mapgen(virtual_extent-Mv, pair_extent)
-                        #Fki = self.f1.f_mo_ii.cget(Mv-1*pair_extent)
-                        #tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vpdL[dL], :, :, :, vpdL[dM], :], Fki)
+                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
+                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :])
+                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
+                        #print (np.linalg.norm(tnew))
 
-                        vpdL = mapgen(virtual_extent-Mv, pair_extent)
+                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
+                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :])
+                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
+                        #print (np.linalg.norm(tnew))
 
-                        non_zeros = (vpdL[dL]>=0) * (vpdL[dM]>=0)
-
-                        Fki = self.f1.f_mo_ii.cget(Mv-1*pair_extent)
-                        #print(self.t2[:, vpdL[dL], :, :, :, vpdL[dM], :].shape)
-                        tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vpdL[dL][non_zeros], :, np.arange(self.n_occupied_cells)[non_zeros], :, vpdL[dM][non_zeros], :], Fki[non_zeros])
-
-
-
-
-                        # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
-                        Fkj = self.f1.f_mo_ii.cget(-1*pair_extent + pair_extent[M])
-                        tnew += np.einsum("iaKkb,Kkj->iajb",self.t2[:, dL, :, :, :, dM, :], Fkj)
 
                         t2_mapped = np.zeros_like(tnew).ravel()
-                        t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
+                        R_mapped = np.zeros_like(tnew).ravel()
+                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
+                        R_mapped[cell_map] = (tnew).ravel()[cell_map]
 
                         t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
+                        R_new[:, dL, :, M, :, dM, :] = R_mapped.reshape(tnew.shape)
 
-            self.t2 -= t2_new
+            RNORM_new = np.linalg.norm(R_new)
+            self.t2_old = np.copy(self.t2)
+            self.t2 -= 0.1*t2_new
+            if counter >= 15:
+                d_omega = RNORM_new-RNORM_old
+                dt = self.t2-self.t2_old
+                self.t2 = -dt*np.linalg.norm(self.g_d)/d_omega
+                counter = 0
+            RNORM_old = RNORM_new
+            t2_old = np.copy(t2_new)
+            R_old = np.copy(R_new)
             rnorm = np.linalg.norm(t2_new)
-            #print(ti, np.linalg.norm(self.t2))
+            ener = self.compute_fragment_energy()
+            print ('R norm: ',rnorm)
+            print ('Energy: ',ener)
+            print ('dE: ',ener-ener_old)
+            ener_old = ener
             if rnorm<norm_thresh:
-
+                print ()
+                print ('##############')
+                print ('##############')
+                print ('##############')
                 print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
+                print ()
                 break
 
 
-class fragment_amplitudes():
+    def comp_R(self, t2, s_virt=None):
+        nocc = self.p.get_nocc()
+
+        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
+        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
+
+        self.s_pao = s_virt
+        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
+
+        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
+        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
+        s_aa = np.diag(self.s_pao.cget([0,0,0]))
+        f_ij = f_ii[:,None] + f_ii[None,:]
+        sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
+        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        f_iajb = sfs - fs_ab - fs_ba
+        t2_old = np.zeros_like(t2)
+
+        R_new = np.zeros_like(t2)
+
+        beta1 = np.zeros_like(t2)
+        beta2 = np.zeros_like(t2)
+
+        for C in np.arange(self.n_virtual_cells):
+            for D in np.arange(self.n_virtual_cells):
+                for J in np.arange(self.n_occupied_cells):
+                    Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
+                    beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",t2[:,C,:,:,:,D,:],Fkj)
+
+                    Fik = self.f_mo_ii.cget(pair_extent)
+
+                    J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
+                    C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
+                    D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
+
+                    nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
+                         (J_range>=0)*(C_J>=0)*(D_J>=0)
+
+                    beta2[:,C,:,J,:,D,:] = np.einsum("Kkcjd,Kik->icjd",t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:],Fik[nz])
+
+
+        for dL in np.arange(self.n_virtual_cells):
+            dLv = self.d_ia.coords[dL]
+            dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+
+            for dM in np.arange(self.n_virtual_cells):
+                dMv = self.d_ia.coords[dM]
+                dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+                for M in np.arange(self.n_occupied_cells):
+                    Mv = self.d_ii.coords[M]
+                    M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
+
+                    tnew = -self.g_d[:, dL, :, M, :, dM, :]
+
+                    # generate index mapping of non-zero amplitudes in cell
+                    cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+
+                    # Perform contractions
+                    Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
+                    Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
+                    Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
+                    Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
+
+                    #print ('dL: ', dL)
+                    #print ('dM: ', dM)
+                    #print ('M: ', M)
+
+
+                    # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
+                    t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, t2[:, :, :, M, :, :, :])
+                    tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
+                    #print (np.linalg.norm(tnew))
+
+                    # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
+                    t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, t2[:, :, :, M, :, :, :])
+                    tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac)
+                    #print (np.linalg.norm(tnew))
+
+                    # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
+                    t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :])
+                    tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
+                    #print (np.linalg.norm(tnew))
+
+                    # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
+                    t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :])
+                    tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
+                    #print (np.linalg.norm(tnew))
+
+
+                    R_mapped = np.zeros_like(tnew).ravel()
+                    R_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
+
+                    R_new[:, dL, :, M, :, dM, :] = R_mapped.reshape(tnew.shape)
+
+        return R_new
+
+
+    def solve_MP2PAO_ls(self, norm_thresh = 1e-10, s_virt = None):
+        """
+        Solving the MP2 equations for a non-orthogonal virtual space
+        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
+        """
+        print ('########### PAO_SOLVER_LS ##############')
+        print ('########### PAO_SOLVER_LS ##############')
+        print ('########### PAO_SOLVER_LS ##############')
+        print ('########### PAO_SOLVER_LS ##############')
+        print ('########### PAO_SOLVER_LS ##############')
+        print ('########### PAO_SOLVER_LS ##############')
+        print ('########### PAO_SOLVER_LS ##############')
+        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
+
+        alpha = 0.3
+        ener_old = 0
+
+        nocc = self.p.get_nocc()
+        ener_old = self.compute_fragment_energy()
+
+        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
+        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
+
+        self.s_pao = s_virt
+        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
+
+        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
+        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
+        s_aa = np.diag(self.s_pao.cget([0,0,0]))
+        f_ij = f_ii[:,None] + f_ii[None,:]
+        sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
+        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        f_iajb = sfs - fs_ab - fs_ba
+        t2_old = np.zeros_like(self.t2)
+
+        for ti in np.arange(1000):
+            #print ('Iteration no.: ', ti)
+            t2_new = np.zeros_like(self.t2)
+            R_new = np.zeros_like(self.t2)
+
+            beta1 = np.zeros_like(self.t2)
+            beta2 = np.zeros_like(self.t2)
+
+            for C in np.arange(self.n_virtual_cells):
+                for D in np.arange(self.n_virtual_cells):
+                    for J in np.arange(self.n_occupied_cells):
+                        Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
+                        beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",self.t2[:,C,:,:,:,D,:],Fkj)
+
+                        Fik = self.f_mo_ii.cget(pair_extent)
+
+                        J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
+                        C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
+                        D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
+
+                        nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
+                             (J_range>=0)*(C_J>=0)*(D_J>=0)
+
+                        beta2[:,C,:,J,:,D,:] = np.einsum("Kkcjd,Kik->icjd",self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:],Fik[nz])
+
+
+            for dL in np.arange(self.n_virtual_cells):
+                dLv = self.d_ia.coords[dL]
+                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+
+                for dM in np.arange(self.n_virtual_cells):
+                    dMv = self.d_ia.coords[dM]
+                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+                    for M in np.arange(self.n_occupied_cells):
+                        Mv = self.d_ii.coords[M]
+                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
+
+                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
+
+                        # generate index mapping of non-zero amplitudes in cell
+                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+
+                        # Perform contractions
+                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
+                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
+                        Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
+                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
+
+                        #print ('dL: ', dL)
+                        #print ('dM: ', dM)
+                        #print ('M: ', M)
+
+
+                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
+                        t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :])
+                        tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
+                        #print (np.linalg.norm(tnew))
+
+                        # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
+                        t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, self.t2[:, :, :, M, :, :, :])
+                        tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac)
+                        #print (np.linalg.norm(tnew))
+
+                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
+                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :])
+                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
+                        #print (np.linalg.norm(tnew))
+
+                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
+                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :])
+                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
+                        #print (np.linalg.norm(tnew))
+
+
+                        t2_mapped = np.zeros_like(tnew).ravel()
+                        R_mapped = np.zeros_like(tnew).ravel()
+                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
+                        R_mapped[cell_map] = (tnew).ravel()[cell_map]
+
+                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
+                        R_new[:, dL, :, M, :, dM, :] = R_mapped.reshape(tnew.shape)
+
+
+
+            norm_R_old = np.linalg.norm(self.comp_R(self.t2,self.s_pao))
+
+
+
+            print ('ALPHA: ',alpha)
+            #self.t2 =  alpha*(self.t2 - (t2_new)) + (1-alpha)*self.t2
+            norm_old = np.linalg.norm(self.comp_R(self.t2,self.s_pao))
+            print ()
+            print ('Starting microiterations')
+            print ('StartNORM: ', norm_old)
+            """
+            for i in np.linspace(0,1,10):
+                norm_new = (np.linalg.norm(self.comp_R(self.t2-i*t2_new,self.s_pao)))
+                print ('microit',i)
+                print ('RNORM: ',norm_new)
+                if norm_new > norm_old:
+                    self.t2 = self.t2-(i_old)*t2_new
+                    break
+                norm_old = norm_new
+                i_old = i
+            """
+            E_prev = self.compute_fragment_energy_modt2(self.t2)
+            dE_prev = 0
+            dt = t2_new
+            for i in np.linspace(0,1,10):
+                E_new = self.compute_fragment_energy_modt2(self.t2-i*dt)
+                print ('microit',i)
+                #print ('RNORM: ',norm_new)
+                if abs(E_new-E_prev) > dE_prev:
+                    self.t2 = self.t2-(i)*dt
+                    print ('### FOUND alpha: ',i)
+                    break
+                E_prev = E_new
+                dE_prev = np.abs(E_new - E_prev)
+            print ()
+
+            rnorm = np.linalg.norm(t2_new)
+            ener = self.compute_fragment_energy()
+            print ('R norm: ',rnorm)
+            print ('Energy: ',ener)
+            print ('dE: ',ener-ener_old)
+            ener_old = ener
+            if rnorm<norm_thresh:
+                print ()
+                print ('##############')
+                print ('##############')
+                print ('##############')
+                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
+                print ()
+                break
+
+
+    def solve_MP2PAO(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
+        """
+        Solving the MP2 equations for a non-orthogonal virtual space
+        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
+        """
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
+
+        alpha = 0.1
+        ener_old = 0
+
+        nocc = self.p.get_nocc()
+        ener_old = self.compute_fragment_energy()
+
+        self.virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
+        self.pair_extent = self.d_ii.coords[:self.n_occupied_cells]
+
+        self.s_pao = s_virt
+        #self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
+
+        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
+        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
+        s_aa = np.diag(self.s_pao.cget([0,0,0]))
+        f_ij = f_ii[:,None] + f_ii[None,:]
+        sfs    = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
+        fs_ab  = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        fs_ba  = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        f_iajb = sfs - fs_ab - fs_ba
+
+        DIIS = diis(n_diis)
+        opt = True
+
+        ener = [0,0]
+
+        #self.t2 *= 0
+
+        for ti in np.arange(100):
+            
+            t2_new = np.zeros_like(self.t2)
+            t2_bar = np.zeros_like(self.t2)
+
+            # construct tbar
+            for dL in np.arange(self.n_virtual_cells):
+                dLv = self.d_ia.coords[dL]
+                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+
+                for dM in np.arange(self.n_virtual_cells):
+                    dMv = self.d_ia.coords[dM]
+                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+                    for M in np.arange(self.n_occupied_cells):
+                        Mv = self.d_ii.coords[M]
+                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
+
+                        Sac = self.s_pao.cget( self.virtual_extent - self.virtual_extent[dL])
+                        Sdb = self.s_pao.cget(-self.virtual_extent + self.virtual_extent[dM])
+
+
+
+                        t2_bar[:, dL, :, M, :, dM, :] = np.einsum("Cac,iCcjDd,Ddb->iajb", Sac, self.t2[:, :, :, M, :, :, :], Sdb, optimize = True)
+
+
+
+            for dL in np.arange(self.n_virtual_cells):
+                dLv = self.d_ia.coords[dL]
+                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+
+                for dM in np.arange(self.n_virtual_cells):
+                    dMv = self.d_ia.coords[dM]
+                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+                    for M in np.arange(self.n_occupied_cells):
+                        Mv = self.d_ii.coords[M]
+                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
+
+                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
+
+                        # generate index mapping of non-zero amplitudes in cell
+                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+
+
+
+                        
+
+                        # Perform contractions
+                        
+                        Fik = np.array(self.f_mo_ii.cget(-1*self.pair_extent))
+                        Fkj = np.array(self.f_mo_ii.cget(self.pair_extent[M] -1*self.pair_extent))
+
+
+                        Fac = self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dL])
+                        Fdb = self.f_mo_aa.cget(-self.virtual_extent + self.virtual_extent[dM])
+                        Sac = self.s_pao.cget(self.virtual_extent - self.virtual_extent[dL])
+                        Sdb = self.s_pao.cget(-self.virtual_extent + self.virtual_extent[dM])
+
+                        # First term
+                        tnew -= np.einsum("Cac,iCcjDd,Ddb->iajb", Sac, self.t2[:, :, :, M, :, :, :], Fdb, optimize = True)
+
+                        # Second term
+                        tnew -= np.einsum("Cac,iCcjDd,Ddb->iajb", Fac, self.t2[:, :, :, M, :, :, :], Sdb, optimize = True)
+
+                        
+
+                        # Troublesome diagram
+                        M_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[M] - self.pair_extent ) ]
+                        dL_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dL] - self.pair_extent) ]
+                        dM_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dM] - self.pair_extent) ]
+                        # Make sure indices is in correct domain (not negative or beyond extent)
+                        nz = (M_range<self.n_occupied_cells)*(dL_M<self.n_virtual_cells)*(dM_M<self.n_virtual_cells)*\
+                                (M_range>=0)*(dL_M>=0)*(dM_M>=0)
+
+                        tnew += np.einsum("Kkajb,Kik->iajb",t2_bar[:, dL_M[nz], :, M_range[nz], :, dM_M[nz], :], Fik[nz])
+
+
+                        # Final diagram
+                        Fkj = np.array(self.f_mo_ii.cget(-1*self.pair_extent + self.pair_extent[M]))
+                        tnew += np.einsum("iaKkb,Kkj->iajb",t2_bar[:, dL, :, :, :, dM, :], Fkj)
+
+
+
+                        t2_mapped = np.zeros_like(tnew).ravel()
+                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
+                        #print(dLv, dMv, np.abs(np.max(tnew)))
+
+                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
+
+            #t2 = time.time()
+
+            self.t2 -= .1*t2_new
+            self.t2 = DIIS.advance(self.t2,t2_new)
+
+            #t3 = time.time()
+
+            #print ('time(beta):         ',t1-t0)
+            #print ('time(resudial):     ',t2-t1)
+            #print ('time(diis):         ',t3-t2)
+
+            rnorm = np.linalg.norm(t2_new)
+            #ener = self.compute_fragment_energy()
+            #print ('R norm: ',rnorm)
+            #print ('Energy: ',ener)
+            ener.append(self.compute_fragment_energy())
+            #print ('R norm: ',rnorm)
+            print (ti, 'Energy: ',ener[-1], "Diff:",  ener[-1]-ener[-2], "Res.norm:", rnorm, "Abs max norm:", np.abs(t2_new).max()) 
+            #print ('dE: ',ener-ener_old)
+            #ener_old = ener
+            if rnorm<norm_thresh:
+                print ()
+                print ('##############')
+                print ('##############')
+                print ('##############')
+                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
+                print ()
+                break
+        
+
+    def solve_MP2PAO_(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
+        """
+        Solving the MP2 equations for a non-orthogonal virtual space
+        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
+        """
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
+
+        alpha = 0.1
+        ener_old = 0
+
+        nocc = self.p.get_nocc()
+        ener_old = self.compute_fragment_energy()
+
+        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
+        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
+
+        self.s_pao = s_virt
+        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
+
+        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
+        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
+        s_aa = np.diag(self.s_pao.cget([0,0,0]))
+        f_ij = f_ii[:,None] + f_ii[None,:]
+        sfs    = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
+        fs_ab  = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        fs_ba  = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        f_iajb = sfs - fs_ab - fs_ba
+
+        DIIS = diis(n_diis)
+        opt = True
+
+        ener = [0,0]
+
+        for ti in np.arange(1000):
+            #print ('Iteration no.: ', ti)
+            t2_new = np.zeros_like(self.t2)
+
+            beta1 = np.zeros_like(self.t2)
+            beta2 = np.zeros_like(self.t2)
+
+            t0 = time.time()
+            for C in np.arange(self.n_virtual_cells):
+                for D in np.arange(self.n_virtual_cells):
+                    for J in np.arange(self.n_occupied_cells):
+                        Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
+                        beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",self.t2[:,C,:,:,:,D,:],Fkj,optimize=opt)
+
+                        Fik = self.f_mo_ii.cget(pair_extent)
+
+                        J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
+
+                        C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
+                        D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
+
+                        nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
+                             (J_range>=0)*(C_J>=0)*(D_J>=0)
+
+                        beta2[:,C,:,J,:,D,:] = np.einsum("Kkcjd,Kik->icjd",self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:],Fik[nz],optimize=opt)
+
+            t1 = time.time()
+
+            for dL in np.arange(self.n_virtual_cells):
+                dLv = self.d_ia.coords[dL]
+                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+
+                for dM in np.arange(self.n_virtual_cells):
+                    dMv = self.d_ia.coords[dM]
+                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+                    for M in np.arange(self.n_occupied_cells):
+                        Mv = self.d_ii.coords[M]
+                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
+
+                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
+
+                        # generate index mapping of non-zero amplitudes in cell
+                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+
+                        # Perform contractions
+                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
+                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
+                        Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
+                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
+
+                        #print ('dL: ', dL)
+                        #print ('dM: ', dM)
+                        #print ('M: ', M)
+
+
+                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
+                        tc1 = time.time()
+                        t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :],optimize=opt)
+                        tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)
+                        tc2 = time.time()
+                        #print ('Contr.time1: ',tc2-tc1)
+                        #print ('NORM1: ',np.linalg.norm(np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)))
+                        tc3 = time.time()
+                        #print (np.linalg.norm(tnew))
+                        nC, na, nc = Fac.shape
+                        #ts =
+                        ni, nC, nc, nj, nD, nd = self.t2[:, :, :, M, :, :, :].shape
+                        F_a_Cc = Fac.swapaxes(0,1).reshape((na, nC*nc)) # F(C,a,c) -> F(a,Cc)
+
+                        t_Cc_ijDd = self.t2[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
+
+                        FT_a_ijDd = np.dot(F_a_Cc, t_Cc_ijDd)
+                        FT_aij_Dd = FT_a_ijDd.reshape((na*ni*nj, nD*nd))
+
+                        S_Dd_b = Sdb.reshape(nD*nd, nd)
+
+                        FTS_i_a_j_b = np.dot(FT_aij_Dd, S_Dd_b).reshape((na,ni,nj,nd)).swapaxes(0,1)
+                        tc4 = time.time()
+                        #print ('Contr.time2: ',tc4-tc3)
+                        #print ('NORM2: ',np.linalg.norm(FTS_i_a_j_b))
+
+
+
+
+
+                        # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
+                        t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, self.t2[:, :, :, M, :, :, :],optimize=opt)
+                        tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac,optimize=opt)
+                        #print (np.linalg.norm(tnew))
+
+                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
+                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :],optimize=opt)
+                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)
+                        #print (np.linalg.norm(tnew))
+
+                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
+                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :],optimize=opt)
+                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)
+                        #print (np.linalg.norm(tnew))
+
+
+                        t2_mapped = np.zeros_like(tnew).ravel()
+                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
+
+                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
+
+            t2 = time.time()
+
+            self.t2 -= 0.3*t2_new
+            self.t2 = DIIS.advance(self.t2,t2_new)
+
+            t3 = time.time()
+
+            #print ('time(beta):         ',t1-t0)
+            #print ('time(resudial):     ',t2-t1)
+            #print ('time(diis):         ',t3-t2)
+
+            rnorm = np.linalg.norm(t2_new)
+            #ener = self.compute_fragment_energy()
+            #print ('R norm: ',rnorm)
+            #print ('Energy: ',ener)
+            ener.append(self.compute_fragment_energy())
+            #print ('R norm: ',rnorm)
+            print (ti, 'Energy: ',ener[-1], "Diff:",  ener[-1]-ener[-2], "Res.norm:", rnorm) 
+            #print ('dE: ',ener-ener_old)
+            #ener_old = ener
+            if rnorm<norm_thresh:
+                print ()
+                print ('##############')
+                print ('##############')
+                print ('##############')
+                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
+                print ()
+                break
+
+    def solve_MP2PAO_DOT(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
+        """
+        Solving the MP2 equations for a non-orthogonal virtual space
+        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
+        """
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('########### PAO_SOLVER_I ##############')
+        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
+
+        alpha = 0.1
+        ener_old = 0
+
+        nocc = self.p.get_nocc()
+        ener_old = self.compute_fragment_energy()
+
+        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
+        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
+
+        self.s_pao = s_virt
+        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
+
+        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
+        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
+        s_aa = np.diag(self.s_pao.cget([0,0,0]))
+        f_ij = f_ii[:,None] + f_ii[None,:]
+        sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
+        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
+        f_iajb = sfs - fs_ab - fs_ba
+
+        print("denom:", np.abs(f_iajb).min())
+
+        DIIS = diis(n_diis)
+        opt = True
+
+        ener = [0,0] 
+
+        for ti in np.arange(1000):
+            #print ('Iteration no.: ', ti)
+            t2_new = np.zeros_like(self.t2)
+
+            beta1 = np.zeros_like(self.t2)
+            beta2 = np.zeros_like(self.t2)
+
+            t0 = time.time()
+            for C in np.arange(self.n_virtual_cells):
+                for D in np.arange(self.n_virtual_cells):
+                    for J in np.arange(self.n_occupied_cells):
+                        Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
+                        Fik = self.f_mo_ii.cget(pair_extent)
+
+                        ni, nc, nJ, nj, nd = self.t2[:,C,:,:,:,D,:].shape
+
+                        T_icd_Kk = self.t2[:,C,:,:,:,D,:].swapaxes(3,4).swapaxes(2,3).reshape((ni*nc*nd,nJ*nj))
+                        F_Kk_j = Fkj.reshape((nJ*nj,nj))
+                        beta1[:,C,:,J,:,D,:] = np.dot(T_icd_Kk,F_Kk_j).reshape((ni,nc,nd,nj)).swapaxes(2,3)
+
+
+                        J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
+                        C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
+                        D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
+
+                        nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
+                             (J_range>=0)*(C_J>=0)*(D_J>=0)
+
+                        nI,ni,nc,nj,nd = self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:].shape
+
+                        T_Kk_cjd = self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:].reshape((nI*ni,nc*nj*nd))
+                        F_i_Kk = Fik[nz].swapaxes(0,1).reshape((ni,nI*ni))
+                        beta2[:,C,:,J,:,D,:] = np.dot(F_i_Kk,T_Kk_cjd).reshape((ni,nc,nj,nd))
+
+            t1 = time.time()
+
+            for dL in np.arange(self.n_virtual_cells):
+                dLv = self.d_ia.coords[dL]
+                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+
+                for dM in np.arange(self.n_virtual_cells):
+                    dMv = self.d_ia.coords[dM]
+                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+                    for M in np.arange(self.n_occupied_cells):
+                        Mv = self.d_ii.coords[M]
+                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
+
+                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
+
+                        # generate index mapping of non-zero amplitudes in cell
+                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+
+                        # Perform contractions
+                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
+                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
+                        Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
+                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
+
+                        ni, nC, nc, nj, nD, nd = self.t2[:, :, :, M, :, :, :].shape
+                        t_Cc_ijDd = self.t2[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
+                        S_a_Cc = Sac.swapaxes(0,1).reshape((nc, nC*nc)) # F(C,a,c) -> F(a,Cc)
+                        S_Dd_b = Sdb.reshape(nD*nd, nd)
+
+
+                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
+                        F_a_Cc = Fac.swapaxes(0,1).reshape((nc, nC*nc)) # F(C,a,c) -> F(a,Cc)
+
+                        FT_a_ijDd = np.dot(F_a_Cc, t_Cc_ijDd)
+                        FT_aij_Dd = FT_a_ijDd.reshape((nc*ni*nj, nD*nd))
+
+                        tnew -= np.dot(FT_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
+
+
+                        # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
+                        F_Dd_b = Fdb.reshape(nD*nd, nd)
+
+                        ST_a_ijDd = np.dot(S_a_Cc, t_Cc_ijDd)
+                        ST_aij_Dd = ST_a_ijDd.reshape((nc*ni*nj, nD*nd))
+
+                        tnew -= np.dot(ST_aij_Dd, F_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
+
+
+                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
+                        B1_Cc_ijDd = beta1[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
+
+                        B1T_a_ijDd = np.dot(S_a_Cc, B1_Cc_ijDd)
+                        B1T_aij_Dd = B1T_a_ijDd.reshape((nc*ni*nj, nD*nd))
+
+                        tnew += np.dot(B1T_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
+
+
+                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
+                        B2_Cc_ijDd = beta2[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
+
+                        B2T_a_ijDd = np.dot(S_a_Cc, B2_Cc_ijDd)
+                        B2T_aij_Dd = B2T_a_ijDd.reshape((nc*ni*nj, nD*nd))
+
+                        tnew += 0*np.dot(B2T_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
+
+
+
+                        t2_mapped = np.zeros_like(tnew).ravel()
+                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
+
+                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
+
+            t2 = time.time()
+
+            self.t2 -= 0.3*t2_new
+            self.t2 = DIIS.advance(self.t2,t2_new)
+
+            t3 = time.time()
+
+            #print ('time(beta):         ',t1-t0)
+            #print ('time(resudial):     ',t2-t1)
+            #print ('time(diis):         ',t3-t2)
+
+            rnorm = np.linalg.norm(t2_new)
+
+            ener.append(self.compute_fragment_energy())
+            #print ('R norm: ',rnorm)
+            print (ti, 'Energy: ',ener[-1], "Diff:",  ener[-1]-ener[-2])
+            #print ('dE: ',ener-ener_old)
+            #ener_old = ener
+            if rnorm<norm_thresh:
+                print ()
+                print ('##############')
+                print ('##############')
+                print ('##############')
+                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
+                print ()
+                break
+
+    def compute_mp2_density(self, orb_n = 0):
+        """
+        Compute fragment energy
+        """
+        N_virt = self.n_virtual_cells
+
+        mM = 0 #occupied index only runs over fragment
+
+        d_full = np.zeros(self.t2.shape, dtype = np.bool)
+
+        occ_ind = np.zeros(self.p.get_nocc(), dtype = np.bool)
+        occ_ind[orb_n] = True
+
+
+        for ddL in np.arange(N_virt):
+            dL = self.d_ia.coords[ddL]
+            dL_i = self.d_ia.cget(dL)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+            # Doublecount? dL == dM
+
+            for ddM in np.arange(N_virt):
+
+                    dM =  self.d_ia.coords[ddM]
+                    dM_i = self.d_ia.cget(dM)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+
+                    
+                    cell_map = np.arange(d_full[:,ddL,:,0, :, ddM, :].size).reshape(d_full[:,ddL,:,0, :, ddM, :].shape)[occ_ind][:, dL_i][:, :, occ_ind][:,:,:,dM_i].ravel()
+
+                    # Using multiple levels of masking, probably some other syntax could make more sense
+
+                    #g_direct = self.g_d[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
+
+                    #g_exchange = self.g_d[:,ddM,:,0, :, ddL, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
+                    
+                    #t = self.t2[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
+                    
+
+                    d_block_bool = np.zeros(d_full[:,ddL,:,0, :, ddM, :].shape, dtype = np.bool).ravel()
+                    d_block_bool[cell_map] = True
+
+                    #d_full[:,ddL,:,0, :, ddM, :][orb_n][:, dL_i][:, :, orb_n][:,:,:,dM_i] = True
+
+                    d_full[:,ddL,:,0, :, ddM, :] = d_block_bool.reshape(d_full[:,ddL,:,0, :, ddM, :].shape)
+                    
+                    #e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+
+        return self.t2[d_full].reshape(self.n_virtual_tot, self.n_virtual_tot)
+
+
+class fragment_amplitudes(amplitude_solver):
     """
     Class that handles t2 amplitudes with dynamically increasing size
     Input parameters:
@@ -1143,56 +1647,7 @@ class fragment_amplitudes():
         return e_mp2
 
 
-    def compute_fragment_energy_modt2(self,t2):
-        """
-        Compute fragment energy
-        """
-        e_mp2 = 0
-        e_mp2_direct = 0
-        e_mp2_exchange = 0
-        N_virt = self.n_virtual_cells
-
-        mM = 0 #occupied index only runs over fragment
-
-        print("Self.fragment;:", self.fragment)
-
-        for ddL in np.arange(N_virt):
-            dL = self.d_ia.coords[ddL]
-            dL_i = self.d_ia.cget(dL)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-            # Doublecount? dL == dM
-
-
-
-            for ddM in np.arange(N_virt):
-
-                    dM =  self.d_ia.coords[ddM]
-                    dM_i = self.d_ia.cget(dM)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-
-                    # Using multiple levels of masking, probably some other syntax could make more sense
-
-                    g_direct = self.g_d[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-                    #g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
-                    #g_direct = self.g_d[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-                    #g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-
-                    g_exchange = self.g_d[:,ddM,:,0, :, ddL, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
-                    #g_exchange = self.g_d[:,ddM,:,mM, :, ddL, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-
-                    #print(g_direct.shape)
-                    #print(g_exchange.shape)
-                    #print(ddL, mM, ddM, np.max(np.abs(g_direct)), np.max(np.abs(g_exchange)))
-                    t = t2[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-                    #t = self.t2[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-                    #gd2, ex  =np.einsum("iajb,iajb",t,g_direct, optimize = True) , np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-                    #e_mp2_direct += 2*gd2
-                    #e_mp2_exchange += ex
-
-                    #print(np.linalg.norm(self.g_d[:,ddL,:,mM, :, ddM, :].reshape(2*9,2*9).T.reshape(2,9,2,9) - self.g_x[:,ddL,:,mM, :, ddM, :]))
-                    #print("direct, exchange at:", dL, dM, " = ", ddL, ddM, " = ", gd2, ex)# #, np.linalg.norm(self.t2[:,ddL,:,mM, :, ddM, :]),np.linalg.norm(self.g_d[:,ddL,:,mM, :, ddM, :]),np.linalg.norm(self.g_x[:,ddL,:,mM, :, ddM, :]) )
-                    #print(np.max(np.abs(t)), np.max(np.abs(g_direct)), np.max(np.abs(g_exchange)))
-                    e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-        #print("E TOt", e_mp2_direct, e_mp2_exchange)
-        return e_mp2
+ 
 
     def init_cell_batch(self, coords):
         """
@@ -1468,1289 +1923,13 @@ class fragment_amplitudes():
         self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1,self.fragment[0]]<self.virtual_cutoff)
         self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1, self.fragment[0]]<self.occupied_cutoff)
 
-    def print_configuration_space_data(self):
-        """
-        Prints extent sizes in terms of number of orbitals
-        """
-        print("%i virtual orbitals included in fragment." % self.n_virtual_tot)
-        print("%i occupied orbitals included in fragment." % self.n_occupied_tot)
 
-    def solve(self, norm_thresh = 1e-10, eqtype = "mp2", s_virt = None):
-        if eqtype == "mp2_nonorth":
-            return self.solve_MP2PAO(norm_thresh, s_virt = s_virt)
-        elif eqtype == "paodot":
-            return self.solve_MP2PAO_DOT(norm_thresh, s_virt = s_virt)
-        elif eqtype == "ls":
-            return self.solve_MP2PAO_ls(norm_thresh, s_virt = s_virt)
-        else:
-            return self.solve_MP2(norm_thresh)
-    
-    def bfgs_solve(self, f, x0, N_alpha = 20, thresh = 1e-10):
-        """
-        Rough outline of bfgs solver
-        f       = objective function
-        x0      = initial state
-        N_alpha = resolution of line search
-        
-        """
-        
-        xn = x0                                # Initial state
-        df = autograd.grad(f)                  # Gradient of f, could be finite difference based
-        df = lambda x : x[1] - x[0]
-        B = np.eye(xn.shape[0], dtype = float) # Initial guess for approximate Hessian
 
-        for i in np.arange(50):
-            df_ = df(xn)
 
-            dx = np.linalg.solve(B, - df(xn))
-            #dx = np.dot(np.linalg.pinv(B), -df_) #should avoid inversion
-            
-            # line search
-            fj = f(xn) #initial energy
-            for j in np.linspace(0,1,N_alpha)[1:]:
-                fn = f(xn + j*dx) #update energy
-                if fn>fj:
-                    # if energy increase, break
-                    break
-                fj = fn
-        
-            xn = xn + j*dx # update state
-            if np.abs(fj)<=thresh:
-                # if energy close to zero, break
-                break
-            
-            # Update approximate Hessian
-            y = df(xn) - df_
-            Bs = np.dot(B, xn)
-            B += np.outer(y,y)/np.outer(xn,y).T  - np.outer(Bs, Bs)/np.outer(xn, Bs).T
-            
-            
 
-        return xn
 
-    def omega(self, t2):
 
-        t2_new = np.zeros_like(t2)
-        
-        for dL in np.arange(self.n_virtual_cells):
-            dLv = self.d_ia.coords[dL]
-            dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-            for dM in np.arange(self.n_virtual_cells):
-                dMv = self.d_ia.coords[dM]
-                dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                for M in np.arange(self.n_occupied_cells):
-                    Mv = self.d_ii.coords[M]
-                    M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                    tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                    # generate index mapping of non-zero amplitudes in cell
-                    cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                    #t2_mask = np.ones(tnew.shape, dtype = np.bool)
-                    #t2_mask[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i] = False
-
-                    #t2[:, :, dL_i==False, M, :, dM, dM_i==False] *= 0
-
-
-
-                    # Perform contractions
-
-                    # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{Li,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
-                    Fac = self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dL])
-                    tnew -= np.einsum("iKcjb,Kac->iajb", t2[:, :, :, M, :, dM, :], Fac)
-
-                    # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
-                    Fbc = self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dM])
-                    tnew -= np.einsum("iajKc,Kbc->iajb", t2[:, dL, :, M, :, :, :], Fbc)
-
-                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                    # Fki = self.f_mo_ii.cget(-1*pair_extent)
-                    # tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
-
-
-
-                    """
-                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                    vpdL = mapgen(virtual_extent-Mv, pair_extent)
-                    Fki = self.f_mo_ii.cget(Mv-1*pair_extent)
-                    #print(self.t2[:, vpdL[dL], :, :, :, vpdL[dM], :].shape)
-                    #print(vpdL)
-                    #assert(np.all(vpdL>0)), "Negative indexing in vpdL"
-
-                    non_zeros = (vpdL[dL]>=0) *  (vpdL[dM]>=0) #screening matrix to avoid references to amplitudes outside extent
-                    #print(non_zeros)
-                    #print(self.t2[:, vpdL[dL], :, np.arange(self.n_occupied_cells), :, vpdL[dM], :].shape, Fki.shape)
-
-
-                    tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vpdL[dL][non_zeros], :, np.arange(self.n_occupied_cells)[non_zeros], :, vpdL[dM][non_zeros], :], Fki[non_zeros])
-                    """
-
-
-
-
-                    # Conceptually simpler approach
-                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                    Fki = self.f_mo_ii.cget(-1*self.pair_extent)
-
-                    M_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[M] - self.pair_extent ) ]
-                    dL_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dL] - self.pair_extent) ]
-                    dM_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dM] - self.pair_extent) ]
-                    #make sure indices is in correct domain (not negative or beyond extent)
-                    nz = (M_range<self.n_occupied_cells)*(dL_M<self.n_virtual_cells)*(dM_M<self.n_virtual_cells)*\
-                            (M_range>=0)*(dL_M>=0)*(dM_M>=0)
-
-                    tnew += np.einsum("Kkajb,Kki->iajb",t2[:, dL_M[nz], :, M_range[nz], :, dM_M[nz], :], Fki[nz])
-
-
-
-                    # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
-                    Fkj = self.f_mo_ii.cget(-1*self.pair_extent + self.pair_extent[M])
-                    tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
-
-                    t2_mapped = np.zeros_like(tnew).ravel()
-                    t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
-                    #t2_mapped[cell_map] = .1*tnew.ravel()[cell_map]
-                    #t2_mapped = (tnew*self.e_iajb**-1).ravel()
-
-                    
-
-                    
-                    t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-        return t2_new
-
-    def omega_agrad(self, t2):
-
-        t2_new = np.zeros_like(t2)
-        for dL in np.arange(self.n_virtual_cells):
-            dLv = self.d_ia.coords[dL]
-            dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-            for dM in np.arange(self.n_virtual_cells):
-                dMv = self.d_ia.coords[dM]
-                dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                for M in np.arange(self.n_occupied_cells):
-                    Mv = self.d_ii.coords[M]
-                    M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                    tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                    # generate index mapping of non-zero amplitudes in cell
-                    #cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                    # Perform contractions
-
-                    # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{Li,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
-                    Fac = np.array(self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dL]))
-                    tnew -= np.einsum("iKcjb,Kac->iajb", t2[:, :, :, M, :, dM, :], Fac)
-
-                    # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
-                    Fbc = np.array(self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dM]))
-                    tnew -= np.einsum("iajKc,Kbc->iajb", t2[:, dL, :, M, :, :, :], Fbc)
-
-                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                    # Fki = self.f_mo_ii.cget(-1*pair_extent)
-                    # tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
-
-
-
-                    """
-                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                    vpdL = mapgen(virtual_extent-Mv, pair_extent)
-                    Fki = self.f_mo_ii.cget(Mv-1*pair_extent)
-                    #print(self.t2[:, vpdL[dL], :, :, :, vpdL[dM], :].shape)
-                    #print(vpdL)
-                    #assert(np.all(vpdL>0)), "Negative indexing in vpdL"
-
-                    non_zeros = (vpdL[dL]>=0) *  (vpdL[dM]>=0) #screening matrix to avoid references to amplitudes outside extent
-                    #print(non_zeros)
-                    #print(self.t2[:, vpdL[dL], :, np.arange(self.n_occupied_cells), :, vpdL[dM], :].shape, Fki.shape)
-
-
-                    tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vpdL[dL][non_zeros], :, np.arange(self.n_occupied_cells)[non_zeros], :, vpdL[dM][non_zeros], :], Fki[non_zeros])
-                    """
-
-
-
-
-                    # Conceptually simpler approach
-                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                    Fki = np.array(self.f_mo_ii.cget(-1*self.pair_extent))
-
-                    M_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[M] - self.pair_extent ) ]
-                    dL_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dL] - self.pair_extent) ]
-                    dM_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dM] - self.pair_extent) ]
-                    #make sure indices is in correct domain (not negative or beyond extent)
-                    nz = (M_range<self.n_occupied_cells)*(dL_M<self.n_virtual_cells)*(dM_M<self.n_virtual_cells)*\
-                            (M_range>=0)*(dL_M>=0)*(dM_M>=0)
-
-                    tnew += np.einsum("Kkajb,Kki->iajb",t2[:, dL_M[nz], :, M_range[nz], :, dM_M[nz], :], Fki[nz])
-
-
-
-                    # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
-                    Fkj = np.array(self.f_mo_ii.cget(-1*self.pair_extent + self.pair_extent[M]))
-                    tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
-
-                    #t2_mapped = np.zeros_like(tnew).ravel()
-                    #t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
-                    #t2_mapped = (tnew*self.e_iajb**-1).ravel()
-
-
-                    #print(dL, M, dM)
-                    #print(t2_new[:, dL, :, M, :, dM, :].shape,(tnew*self.e_iajb**-1).shape )
-                    t2_new[:, dL, :, M, :, dM, :] = (tnew*self.e_iajb**-1) #t2_mapped.reshape(tnew.shape)
-        return t2_new
-
-
-
-    def solve_MP2(self, norm_thresh = 1e-7):
-        """
-        Converge fragment (AOS) amplitudes within occupied and virtual extents
-        """
-        #from autograd import grad, elementwise_grad,jacobian
-
-        nocc = self.p.get_nocc()
-
-        self.virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        self.pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.vp_indx = mapgen(self.virtual_extent, self.pair_extent)
-        self.pp_indx = mapgen(self.pair_extent, self.pair_extent)
-
-        DIIS = diis(8)
-
-        #print(vp_indx)
-        #print(pp_indx)
-
-        #dt2 = ad.gh(self.omega_agrad)
-        #dt_new = dt2[1](self.t2)
-        for ti in np.arange(500):
-
-
-
-            dt2_new = self.omega(self.t2)
-            #print("dt (max/min/absmin):", np.max(dt2_new), np.min(dt2_new), np.abs(dt2_new).min())
-            #t2_prev =
-
-            # do a line search
-            if False:
-
-                n = 1e10 #np.linalg.norm(dt2)
-                for j in np.arange(20):
-                    dt2 = self.omega(self.t2 - j*0.1*dt2_new)
-                    n_ = np.linalg.norm(dt2)
-                    if n_>=n:
-                        break
-                    n = n_
-                    print("line search", j, ":", n_)
-
-                self.t2 -= j*0.1*dt2_new
-                rnorm = n #np.linalg.norm(n)
-            else:
-                self.t2 -= dt2_new #/np.abs(dt2_new).max()
-                self.t2 = DIIS.advance(self.t2,dt2_new)
-
-
-
-                rnorm = np.linalg.norm(dt2_new)
-                #print("%.10e %.10e" % (self.compute_fragment_energy(),update_max ))
-                #print("%.10e %.10e" % (self.compute_fragment_energy(),np.abs(dt2_new).max() ))
-                if np.abs(dt2_new).max()<1e-7:
-                    break
-                #print("Max update:", np.abs(dt2_new).max())
-                #if np.abs(dt2_new).max() <
-
-
-            if np.abs(dt2_new).max() <norm_thresh:
-
-                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti,rnorm))
-                #print("(Maximum absolute res. norm: %.4e)" % np.max(np.abs(dt2_new)))
-                print("")
-                break
-        self.max_abs_residual = np.max(np.abs(dt2_new))
-        print("Max.abs. deviation in residual post optimization is %.5e" % np.max(np.abs(dt2_new)))
-
-    def solve_MP2PAO_steepdesc(self, norm_thresh = 1e-10, s_virt = None):
-        """
-        Solving the MP2 equations for a non-orthogonal virtual space
-        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
-        """
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
-        alpha = 0.1
-
-        nocc = self.p.get_nocc()
-        ener_old = self.compute_fragment_energy()
-
-        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.s_pao = s_virt
-        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
-
-        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
-        s_aa = np.diag(self.s_pao.cget([0,0,0]))
-        f_ij = f_ii[:,None] + f_ii[None,:]
-        sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        f_iajb = sfs - fs_ab - fs_ba
-        counter = 0
-
-        for ti in np.arange(1000):
-            counter += 1
-            #print ('Iteration no.: ', ti)
-            t2_new = np.zeros_like(self.t2)
-            R_new = np.zeros_like(self.t2)
-
-            beta1 = np.zeros_like(self.t2)
-            beta2 = np.zeros_like(self.t2)
-
-            for C in np.arange(self.n_virtual_cells):
-                for D in np.arange(self.n_virtual_cells):
-                    for J in np.arange(self.n_occupied_cells):
-                        Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
-                        beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",self.t2[:,C,:,:,:,D,:],Fkj)
-
-                        Fik = self.f_mo_ii.cget(pair_extent)
-
-                        J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
-                        C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
-                        D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
-
-                        nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
-                             (J_range>=0)*(C_J>=0)*(D_J>=0)
-
-                        beta2[:,C,:,J,:,D,:] = np.einsum("Kkcjd,Kik->icjd",self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:],Fik[nz])
-
-
-            for dL in np.arange(self.n_virtual_cells):
-                dLv = self.d_ia.coords[dL]
-                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                    for M in np.arange(self.n_occupied_cells):
-                        Mv = self.d_ii.coords[M]
-                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                        # generate index mapping of non-zero amplitudes in cell
-                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                        #cell_map_bool = np.zeros(tnew.size, dtype = np.bool)
-                        #cell_map_bool[cell_map_bool] = True
-                        #cell_map_bool_full[ :, dL, :, M, :, dM, :] =  cell_map_bool[cell_map_bool].reshape(tnew.shape)
-
-                        # Perform contractions
-                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
-                        Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
-                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
-
-                        #print ('dL: ', dL)
-                        #print ('dM: ', dM)
-                        #print ('M: ', M)
-
-
-                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :])
-                        tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
-                        t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, self.t2[:, :, :, M, :, :, :])
-                        tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :])
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :])
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                        #print (np.linalg.norm(tnew))
-
-
-                        t2_mapped = np.zeros_like(tnew).ravel()
-                        R_mapped = np.zeros_like(tnew).ravel()
-                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
-                        R_mapped[cell_map] = (tnew).ravel()[cell_map]
-
-                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-                        R_new[:, dL, :, M, :, dM, :] = R_mapped.reshape(tnew.shape)
-
-            RNORM_new = np.linalg.norm(R_new)
-            self.t2_old = np.copy(self.t2)
-            self.t2 -= 0.1*t2_new
-            if counter >= 15:
-                d_omega = RNORM_new-RNORM_old
-                dt = self.t2-self.t2_old
-                self.t2 = -dt*np.linalg.norm(self.g_d)/d_omega
-                counter = 0
-            RNORM_old = RNORM_new
-            t2_old = np.copy(t2_new)
-            R_old = np.copy(R_new)
-            rnorm = np.linalg.norm(t2_new)
-            ener = self.compute_fragment_energy()
-            print ('R norm: ',rnorm)
-            print ('Energy: ',ener)
-            print ('dE: ',ener-ener_old)
-            ener_old = ener
-            if rnorm<norm_thresh:
-                print ()
-                print ('##############')
-                print ('##############')
-                print ('##############')
-                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
-                print ()
-                break
-
-
-    def comp_R(self, t2, s_virt=None):
-        nocc = self.p.get_nocc()
-
-        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.s_pao = s_virt
-        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
-
-        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
-        s_aa = np.diag(self.s_pao.cget([0,0,0]))
-        f_ij = f_ii[:,None] + f_ii[None,:]
-        sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        f_iajb = sfs - fs_ab - fs_ba
-        t2_old = np.zeros_like(t2)
-
-        R_new = np.zeros_like(t2)
-
-        beta1 = np.zeros_like(t2)
-        beta2 = np.zeros_like(t2)
-
-        for C in np.arange(self.n_virtual_cells):
-            for D in np.arange(self.n_virtual_cells):
-                for J in np.arange(self.n_occupied_cells):
-                    Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
-                    beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",t2[:,C,:,:,:,D,:],Fkj)
-
-                    Fik = self.f_mo_ii.cget(pair_extent)
-
-                    J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
-                    C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
-                    D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
-
-                    nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
-                         (J_range>=0)*(C_J>=0)*(D_J>=0)
-
-                    beta2[:,C,:,J,:,D,:] = np.einsum("Kkcjd,Kik->icjd",t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:],Fik[nz])
-
-
-        for dL in np.arange(self.n_virtual_cells):
-            dLv = self.d_ia.coords[dL]
-            dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-            for dM in np.arange(self.n_virtual_cells):
-                dMv = self.d_ia.coords[dM]
-                dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                for M in np.arange(self.n_occupied_cells):
-                    Mv = self.d_ii.coords[M]
-                    M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                    tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                    # generate index mapping of non-zero amplitudes in cell
-                    cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                    # Perform contractions
-                    Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                    Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
-                    Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
-                    Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
-
-                    #print ('dL: ', dL)
-                    #print ('dM: ', dM)
-                    #print ('M: ', M)
-
-
-                    # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                    t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, t2[:, :, :, M, :, :, :])
-                    tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                    #print (np.linalg.norm(tnew))
-
-                    # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
-                    t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, t2[:, :, :, M, :, :, :])
-                    tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac)
-                    #print (np.linalg.norm(tnew))
-
-                    # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                    t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :])
-                    tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                    #print (np.linalg.norm(tnew))
-
-                    # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
-                    t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :])
-                    tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                    #print (np.linalg.norm(tnew))
-
-
-                    R_mapped = np.zeros_like(tnew).ravel()
-                    R_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
-
-                    R_new[:, dL, :, M, :, dM, :] = R_mapped.reshape(tnew.shape)
-
-        return R_new
-
-
-    def solve_MP2PAO_ls(self, norm_thresh = 1e-10, s_virt = None):
-        """
-        Solving the MP2 equations for a non-orthogonal virtual space
-        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
-        """
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
-
-        alpha = 0.3
-        ener_old = 0
-
-        nocc = self.p.get_nocc()
-        ener_old = self.compute_fragment_energy()
-
-        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.s_pao = s_virt
-        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
-
-        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
-        s_aa = np.diag(self.s_pao.cget([0,0,0]))
-        f_ij = f_ii[:,None] + f_ii[None,:]
-        sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        f_iajb = sfs - fs_ab - fs_ba
-        t2_old = np.zeros_like(self.t2)
-
-        for ti in np.arange(1000):
-            #print ('Iteration no.: ', ti)
-            t2_new = np.zeros_like(self.t2)
-            R_new = np.zeros_like(self.t2)
-
-            beta1 = np.zeros_like(self.t2)
-            beta2 = np.zeros_like(self.t2)
-
-            for C in np.arange(self.n_virtual_cells):
-                for D in np.arange(self.n_virtual_cells):
-                    for J in np.arange(self.n_occupied_cells):
-                        Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
-                        beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",self.t2[:,C,:,:,:,D,:],Fkj)
-
-                        Fik = self.f_mo_ii.cget(pair_extent)
-
-                        J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
-                        C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
-                        D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
-
-                        nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
-                             (J_range>=0)*(C_J>=0)*(D_J>=0)
-
-                        beta2[:,C,:,J,:,D,:] = np.einsum("Kkcjd,Kik->icjd",self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:],Fik[nz])
-
-
-            for dL in np.arange(self.n_virtual_cells):
-                dLv = self.d_ia.coords[dL]
-                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                    for M in np.arange(self.n_occupied_cells):
-                        Mv = self.d_ii.coords[M]
-                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                        # generate index mapping of non-zero amplitudes in cell
-                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                        # Perform contractions
-                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
-                        Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
-                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
-
-                        #print ('dL: ', dL)
-                        #print ('dM: ', dM)
-                        #print ('M: ', M)
-
-
-                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :])
-                        tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
-                        t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, self.t2[:, :, :, M, :, :, :])
-                        tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :])
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :])
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                        #print (np.linalg.norm(tnew))
-
-
-                        t2_mapped = np.zeros_like(tnew).ravel()
-                        R_mapped = np.zeros_like(tnew).ravel()
-                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
-                        R_mapped[cell_map] = (tnew).ravel()[cell_map]
-
-                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-                        R_new[:, dL, :, M, :, dM, :] = R_mapped.reshape(tnew.shape)
-
-
-
-            norm_R_old = np.linalg.norm(self.comp_R(self.t2,self.s_pao))
-
-
-
-            print ('ALPHA: ',alpha)
-            #self.t2 =  alpha*(self.t2 - (t2_new)) + (1-alpha)*self.t2
-            norm_old = np.linalg.norm(self.comp_R(self.t2,self.s_pao))
-            print ()
-            print ('Starting microiterations')
-            print ('StartNORM: ', norm_old)
-            """
-            for i in np.linspace(0,1,10):
-                norm_new = (np.linalg.norm(self.comp_R(self.t2-i*t2_new,self.s_pao)))
-                print ('microit',i)
-                print ('RNORM: ',norm_new)
-                if norm_new > norm_old:
-                    self.t2 = self.t2-(i_old)*t2_new
-                    break
-                norm_old = norm_new
-                i_old = i
-            """
-            E_prev = self.compute_fragment_energy_modt2(self.t2)
-            dE_prev = 0
-            dt = t2_new
-            for i in np.linspace(0,1,10):
-                E_new = self.compute_fragment_energy_modt2(self.t2-i*dt)
-                print ('microit',i)
-                #print ('RNORM: ',norm_new)
-                if abs(E_new-E_prev) > dE_prev:
-                    self.t2 = self.t2-(i)*dt
-                    print ('### FOUND alpha: ',i)
-                    break
-                E_prev = E_new
-                dE_prev = np.abs(E_new - E_prev)
-            print ()
-
-            rnorm = np.linalg.norm(t2_new)
-            ener = self.compute_fragment_energy()
-            print ('R norm: ',rnorm)
-            print ('Energy: ',ener)
-            print ('dE: ',ener-ener_old)
-            ener_old = ener
-            if rnorm<norm_thresh:
-                print ()
-                print ('##############')
-                print ('##############')
-                print ('##############')
-                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
-                print ()
-                break
-
-
-    def solve_MP2PAO(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
-        """
-        Solving the MP2 equations for a non-orthogonal virtual space
-        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
-        """
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
-
-        alpha = 0.1
-        ener_old = 0
-
-        nocc = self.p.get_nocc()
-        ener_old = self.compute_fragment_energy()
-
-        self.virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        self.pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.s_pao = s_virt
-        #self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
-
-        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
-        s_aa = np.diag(self.s_pao.cget([0,0,0]))
-        f_ij = f_ii[:,None] + f_ii[None,:]
-        sfs    = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab  = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba  = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        f_iajb = sfs - fs_ab - fs_ba
-
-        DIIS = diis(n_diis)
-        opt = True
-
-        ener = [0,0]
-
-        #self.t2 *= 0
-
-        for ti in np.arange(100):
-            
-            t2_new = np.zeros_like(self.t2)
-            t2_bar = np.zeros_like(self.t2)
-
-            # construct tbar
-            for dL in np.arange(self.n_virtual_cells):
-                dLv = self.d_ia.coords[dL]
-                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                    for M in np.arange(self.n_occupied_cells):
-                        Mv = self.d_ii.coords[M]
-                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                        Sac = self.s_pao.cget( self.virtual_extent - self.virtual_extent[dL])
-                        Sdb = self.s_pao.cget(-self.virtual_extent + self.virtual_extent[dM])
-
-
-
-                        t2_bar[:, dL, :, M, :, dM, :] = np.einsum("Cac,iCcjDd,Ddb->iajb", Sac, self.t2[:, :, :, M, :, :, :], Sdb, optimize = True)
-
-
-
-            for dL in np.arange(self.n_virtual_cells):
-                dLv = self.d_ia.coords[dL]
-                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                    for M in np.arange(self.n_occupied_cells):
-                        Mv = self.d_ii.coords[M]
-                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                        # generate index mapping of non-zero amplitudes in cell
-                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-
-
-                        
-
-                        # Perform contractions
-                        
-                        Fik = np.array(self.f_mo_ii.cget(-1*self.pair_extent))
-                        Fkj = np.array(self.f_mo_ii.cget(self.pair_extent[M] -1*self.pair_extent))
-
-
-                        Fac = self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dL])
-                        Fdb = self.f_mo_aa.cget(-self.virtual_extent + self.virtual_extent[dM])
-                        Sac = self.s_pao.cget(self.virtual_extent - self.virtual_extent[dL])
-                        Sdb = self.s_pao.cget(-self.virtual_extent + self.virtual_extent[dM])
-
-                        # First term
-                        tnew -= np.einsum("Cac,iCcjDd,Ddb->iajb", Sac, self.t2[:, :, :, M, :, :, :], Fdb, optimize = True)
-
-                        # Second term
-                        tnew -= np.einsum("Cac,iCcjDd,Ddb->iajb", Fac, self.t2[:, :, :, M, :, :, :], Sdb, optimize = True)
-
-                        
-
-                        # Troublesome diagram
-                        M_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[M] - self.pair_extent ) ]
-                        dL_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dL] - self.pair_extent) ]
-                        dM_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dM] - self.pair_extent) ]
-                        # Make sure indices is in correct domain (not negative or beyond extent)
-                        nz = (M_range<self.n_occupied_cells)*(dL_M<self.n_virtual_cells)*(dM_M<self.n_virtual_cells)*\
-                                (M_range>=0)*(dL_M>=0)*(dM_M>=0)
-
-                        tnew += np.einsum("Kkajb,Kik->iajb",t2_bar[:, dL_M[nz], :, M_range[nz], :, dM_M[nz], :], Fik[nz])
-
-
-                        # Final diagram
-                        Fkj = np.array(self.f_mo_ii.cget(-1*self.pair_extent + self.pair_extent[M]))
-                        tnew += np.einsum("iaKkb,Kkj->iajb",t2_bar[:, dL, :, :, :, dM, :], Fkj)
-
-
-
-                        t2_mapped = np.zeros_like(tnew).ravel()
-                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
-                        #print(dLv, dMv, np.abs(np.max(tnew)))
-
-                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-
-            #t2 = time.time()
-
-            self.t2 -= .1*t2_new
-            self.t2 = DIIS.advance(self.t2,t2_new)
-
-            #t3 = time.time()
-
-            #print ('time(beta):         ',t1-t0)
-            #print ('time(resudial):     ',t2-t1)
-            #print ('time(diis):         ',t3-t2)
-
-            rnorm = np.linalg.norm(t2_new)
-            #ener = self.compute_fragment_energy()
-            #print ('R norm: ',rnorm)
-            #print ('Energy: ',ener)
-            ener.append(self.compute_fragment_energy())
-            #print ('R norm: ',rnorm)
-            print (ti, 'Energy: ',ener[-1], "Diff:",  ener[-1]-ener[-2], "Res.norm:", rnorm, "Abs max norm:", np.abs(t2_new).max()) 
-            #print ('dE: ',ener-ener_old)
-            #ener_old = ener
-            if rnorm<norm_thresh:
-                print ()
-                print ('##############')
-                print ('##############')
-                print ('##############')
-                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
-                print ()
-                break
-        
-
-    def solve_MP2PAO_(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
-        """
-        Solving the MP2 equations for a non-orthogonal virtual space
-        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
-        """
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
-
-        alpha = 0.1
-        ener_old = 0
-
-        nocc = self.p.get_nocc()
-        ener_old = self.compute_fragment_energy()
-
-        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.s_pao = s_virt
-        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
-
-        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
-        s_aa = np.diag(self.s_pao.cget([0,0,0]))
-        f_ij = f_ii[:,None] + f_ii[None,:]
-        sfs    = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab  = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba  = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        f_iajb = sfs - fs_ab - fs_ba
-
-        DIIS = diis(n_diis)
-        opt = True
-
-        ener = [0,0]
-
-        for ti in np.arange(1000):
-            #print ('Iteration no.: ', ti)
-            t2_new = np.zeros_like(self.t2)
-
-            beta1 = np.zeros_like(self.t2)
-            beta2 = np.zeros_like(self.t2)
-
-            t0 = time.time()
-            for C in np.arange(self.n_virtual_cells):
-                for D in np.arange(self.n_virtual_cells):
-                    for J in np.arange(self.n_occupied_cells):
-                        Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
-                        beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",self.t2[:,C,:,:,:,D,:],Fkj,optimize=opt)
-
-                        Fik = self.f_mo_ii.cget(pair_extent)
-
-                        J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
-
-                        C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
-                        D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
-
-                        nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
-                             (J_range>=0)*(C_J>=0)*(D_J>=0)
-
-                        beta2[:,C,:,J,:,D,:] = np.einsum("Kkcjd,Kik->icjd",self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:],Fik[nz],optimize=opt)
-
-            t1 = time.time()
-
-            for dL in np.arange(self.n_virtual_cells):
-                dLv = self.d_ia.coords[dL]
-                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                    for M in np.arange(self.n_occupied_cells):
-                        Mv = self.d_ii.coords[M]
-                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                        # generate index mapping of non-zero amplitudes in cell
-                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                        # Perform contractions
-                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
-                        Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
-                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
-
-                        #print ('dL: ', dL)
-                        #print ('dM: ', dM)
-                        #print ('M: ', M)
-
-
-                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        tc1 = time.time()
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :],optimize=opt)
-                        tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)
-                        tc2 = time.time()
-                        #print ('Contr.time1: ',tc2-tc1)
-                        #print ('NORM1: ',np.linalg.norm(np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)))
-                        tc3 = time.time()
-                        #print (np.linalg.norm(tnew))
-                        nC, na, nc = Fac.shape
-                        #ts =
-                        ni, nC, nc, nj, nD, nd = self.t2[:, :, :, M, :, :, :].shape
-                        F_a_Cc = Fac.swapaxes(0,1).reshape((na, nC*nc)) # F(C,a,c) -> F(a,Cc)
-
-                        t_Cc_ijDd = self.t2[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
-
-                        FT_a_ijDd = np.dot(F_a_Cc, t_Cc_ijDd)
-                        FT_aij_Dd = FT_a_ijDd.reshape((na*ni*nj, nD*nd))
-
-                        S_Dd_b = Sdb.reshape(nD*nd, nd)
-
-                        FTS_i_a_j_b = np.dot(FT_aij_Dd, S_Dd_b).reshape((na,ni,nj,nd)).swapaxes(0,1)
-                        tc4 = time.time()
-                        #print ('Contr.time2: ',tc4-tc3)
-                        #print ('NORM2: ',np.linalg.norm(FTS_i_a_j_b))
-
-
-
-
-
-                        # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
-                        t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, self.t2[:, :, :, M, :, :, :],optimize=opt)
-                        tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac,optimize=opt)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :],optimize=opt)
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :],optimize=opt)
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)
-                        #print (np.linalg.norm(tnew))
-
-
-                        t2_mapped = np.zeros_like(tnew).ravel()
-                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
-
-                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-
-            t2 = time.time()
-
-            self.t2 -= 0.3*t2_new
-            self.t2 = DIIS.advance(self.t2,t2_new)
-
-            t3 = time.time()
-
-            #print ('time(beta):         ',t1-t0)
-            #print ('time(resudial):     ',t2-t1)
-            #print ('time(diis):         ',t3-t2)
-
-            rnorm = np.linalg.norm(t2_new)
-            #ener = self.compute_fragment_energy()
-            #print ('R norm: ',rnorm)
-            #print ('Energy: ',ener)
-            ener.append(self.compute_fragment_energy())
-            #print ('R norm: ',rnorm)
-            print (ti, 'Energy: ',ener[-1], "Diff:",  ener[-1]-ener[-2], "Res.norm:", rnorm) 
-            #print ('dE: ',ener-ener_old)
-            #ener_old = ener
-            if rnorm<norm_thresh:
-                print ()
-                print ('##############')
-                print ('##############')
-                print ('##############')
-                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
-                print ()
-                break
-
-    def solve_MP2PAO_DOT(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
-        """
-        Solving the MP2 equations for a non-orthogonal virtual space
-        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
-        """
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
-
-        alpha = 0.1
-        ener_old = 0
-
-        nocc = self.p.get_nocc()
-        ener_old = self.compute_fragment_energy()
-
-        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.s_pao = s_virt
-        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
-
-        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
-        s_aa = np.diag(self.s_pao.cget([0,0,0]))
-        f_ij = f_ii[:,None] + f_ii[None,:]
-        sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        f_iajb = sfs - fs_ab - fs_ba
-
-        print("denom:", np.abs(f_iajb).min())
-
-        DIIS = diis(n_diis)
-        opt = True
-
-        ener = [0,0] 
-
-        for ti in np.arange(1000):
-            #print ('Iteration no.: ', ti)
-            t2_new = np.zeros_like(self.t2)
-
-            beta1 = np.zeros_like(self.t2)
-            beta2 = np.zeros_like(self.t2)
-
-            t0 = time.time()
-            for C in np.arange(self.n_virtual_cells):
-                for D in np.arange(self.n_virtual_cells):
-                    for J in np.arange(self.n_occupied_cells):
-                        Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
-                        Fik = self.f_mo_ii.cget(pair_extent)
-
-                        ni, nc, nJ, nj, nd = self.t2[:,C,:,:,:,D,:].shape
-
-                        T_icd_Kk = self.t2[:,C,:,:,:,D,:].swapaxes(3,4).swapaxes(2,3).reshape((ni*nc*nd,nJ*nj))
-                        F_Kk_j = Fkj.reshape((nJ*nj,nj))
-                        beta1[:,C,:,J,:,D,:] = np.dot(T_icd_Kk,F_Kk_j).reshape((ni,nc,nd,nj)).swapaxes(2,3)
-
-
-                        J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
-                        C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
-                        D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
-
-                        nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
-                             (J_range>=0)*(C_J>=0)*(D_J>=0)
-
-                        nI,ni,nc,nj,nd = self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:].shape
-
-                        T_Kk_cjd = self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:].reshape((nI*ni,nc*nj*nd))
-                        F_i_Kk = Fik[nz].swapaxes(0,1).reshape((ni,nI*ni))
-                        beta2[:,C,:,J,:,D,:] = np.dot(F_i_Kk,T_Kk_cjd).reshape((ni,nc,nj,nd))
-
-            t1 = time.time()
-
-            for dL in np.arange(self.n_virtual_cells):
-                dLv = self.d_ia.coords[dL]
-                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                    for M in np.arange(self.n_occupied_cells):
-                        Mv = self.d_ii.coords[M]
-                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                        # generate index mapping of non-zero amplitudes in cell
-                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                        # Perform contractions
-                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
-                        Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
-                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
-
-                        ni, nC, nc, nj, nD, nd = self.t2[:, :, :, M, :, :, :].shape
-                        t_Cc_ijDd = self.t2[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
-                        S_a_Cc = Sac.swapaxes(0,1).reshape((nc, nC*nc)) # F(C,a,c) -> F(a,Cc)
-                        S_Dd_b = Sdb.reshape(nD*nd, nd)
-
-
-                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        F_a_Cc = Fac.swapaxes(0,1).reshape((nc, nC*nc)) # F(C,a,c) -> F(a,Cc)
-
-                        FT_a_ijDd = np.dot(F_a_Cc, t_Cc_ijDd)
-                        FT_aij_Dd = FT_a_ijDd.reshape((nc*ni*nj, nD*nd))
-
-                        tnew -= np.dot(FT_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
-
-
-                        # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
-                        F_Dd_b = Fdb.reshape(nD*nd, nd)
-
-                        ST_a_ijDd = np.dot(S_a_Cc, t_Cc_ijDd)
-                        ST_aij_Dd = ST_a_ijDd.reshape((nc*ni*nj, nD*nd))
-
-                        tnew -= np.dot(ST_aij_Dd, F_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
-
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        B1_Cc_ijDd = beta1[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
-
-                        B1T_a_ijDd = np.dot(S_a_Cc, B1_Cc_ijDd)
-                        B1T_aij_Dd = B1T_a_ijDd.reshape((nc*ni*nj, nD*nd))
-
-                        tnew += np.dot(B1T_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
-
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
-                        B2_Cc_ijDd = beta2[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
-
-                        B2T_a_ijDd = np.dot(S_a_Cc, B2_Cc_ijDd)
-                        B2T_aij_Dd = B2T_a_ijDd.reshape((nc*ni*nj, nD*nd))
-
-                        tnew += 0*np.dot(B2T_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
-
-
-
-                        t2_mapped = np.zeros_like(tnew).ravel()
-                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
-
-                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-
-            t2 = time.time()
-
-            self.t2 -= 0.3*t2_new
-            self.t2 = DIIS.advance(self.t2,t2_new)
-
-            t3 = time.time()
-
-            #print ('time(beta):         ',t1-t0)
-            #print ('time(resudial):     ',t2-t1)
-            #print ('time(diis):         ',t3-t2)
-
-            rnorm = np.linalg.norm(t2_new)
-
-            ener.append(self.compute_fragment_energy())
-            #print ('R norm: ',rnorm)
-            print (ti, 'Energy: ',ener[-1], "Diff:",  ener[-1]-ener[-2])
-            #print ('dE: ',ener-ener_old)
-            #ener_old = ener
-            if rnorm<norm_thresh:
-                print ()
-                print ('##############')
-                print ('##############')
-                print ('##############')
-                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
-                print ()
-                break
-
-    def compute_mp2_density(self, orb_n = 0):
-        """
-        Compute fragment energy
-        """
-        N_virt = self.n_virtual_cells
-
-        mM = 0 #occupied index only runs over fragment
-
-        d_full = np.zeros(self.t2.shape, dtype = np.bool)
-
-        occ_ind = np.zeros(self.p.get_nocc(), dtype = np.bool)
-        occ_ind[orb_n] = True
-
-
-        for ddL in np.arange(N_virt):
-            dL = self.d_ia.coords[ddL]
-            dL_i = self.d_ia.cget(dL)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-            # Doublecount? dL == dM
-
-            for ddM in np.arange(N_virt):
-
-                    dM =  self.d_ia.coords[ddM]
-                    dM_i = self.d_ia.cget(dM)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-
-                    
-                    cell_map = np.arange(d_full[:,ddL,:,0, :, ddM, :].size).reshape(d_full[:,ddL,:,0, :, ddM, :].shape)[occ_ind][:, dL_i][:, :, occ_ind][:,:,:,dM_i].ravel()
-
-                    # Using multiple levels of masking, probably some other syntax could make more sense
-
-                    #g_direct = self.g_d[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-
-                    #g_exchange = self.g_d[:,ddM,:,0, :, ddL, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
-                    
-                    #t = self.t2[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-                    
-
-                    d_block_bool = np.zeros(d_full[:,ddL,:,0, :, ddM, :].shape, dtype = np.bool).ravel()
-                    d_block_bool[cell_map] = True
-
-                    #d_full[:,ddL,:,0, :, ddM, :][orb_n][:, dL_i][:, :, orb_n][:,:,:,dM_i] = True
-
-                    d_full[:,ddL,:,0, :, ddM, :] = d_block_bool.reshape(d_full[:,ddL,:,0, :, ddM, :].shape)
-                    
-                    #e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-
-        return self.t2[d_full].reshape(self.n_virtual_tot, self.n_virtual_tot)
-
-
-
-
-
-class pair_fragment_amplitudes_2():
+class pair_fragment_amplitudes(amplitude_solver):
     """
     Class that handles t2 amplitudes with dynamically increasing size
     Input parameters:
@@ -2779,7 +1958,6 @@ class pair_fragment_amplitudes_2():
 
 
     """
-    #def __init__(self, p, wannier_centers, coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0, float_precision = np.float64, d_ia = None):
     def __init__(self, fragment_1, fragment_2, M):
 
         self.f1 = fragment_1
@@ -2839,7 +2017,7 @@ class pair_fragment_amplitudes_2():
         d_ia.load_nparray(self.d_ia.cget(self.d_ia.coords[order]), self.d_ia.coords[order] )
         #print(self.d_ia.coords[order])
         self.d_ia = d_ia
-        print(self.d_ii.coords)
+        #print(self.d_ii.coords)
         #print(self.d_ia.coords)
         #print(self.d_ia.coords.shape)
         
@@ -2888,6 +2066,12 @@ class pair_fragment_amplitudes_2():
         self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
         self.g_x = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
+
+        print(self.t2.shape)
+        print("Virtual domain:")
+        print(self.d_ia.coords[:N_virt])
+        print("Occupied domain:")
+        print(self.d_ii.coords[:N_occ])
 
         
 
@@ -3177,1611 +2361,6 @@ class pair_fragment_amplitudes_2():
         print(e_mp2, 2*e_mp2)
         return e_mp2
 
-
-    def compute_fragment_energy_modt2(self,t2):
-        """
-        Compute fragment energy
-        """
-        e_mp2 = 0
-        e_mp2_direct = 0
-        e_mp2_exchange = 0
-        N_virt = self.n_virtual_cells
-
-        mM = 0 #occupied index only runs over fragment
-
-        print("Self.fragment;:", self.fragment)
-
-        for ddL in np.arange(N_virt):
-            dL = self.d_ia.coords[ddL]
-            dL_i = self.d_ia.cget(dL)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-            # Doublecount? dL == dM
-
-
-
-            for ddM in np.arange(N_virt):
-
-                    dM =  self.d_ia.coords[ddM]
-                    dM_i = self.d_ia.cget(dM)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-
-                    # Using multiple levels of masking, probably some other syntax could make more sense
-
-                    g_direct = self.g_d[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-                    #g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
-                    #g_direct = self.g_d[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-                    #g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-
-                    g_exchange = self.g_d[:,ddM,:,0, :, ddL, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
-
-                    
-                    #g_exchange = self.g_d[:,ddM,:,mM, :, ddL, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-
-                    #print(g_direct.shape)
-                    #print(g_exchange.shape)
-                    #print(ddL, mM, ddM, np.max(np.abs(g_direct)), np.max(np.abs(g_exchange)))
-                    t = t2[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-                    #t = self.t2[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-                    #gd2, ex  =np.einsum("iajb,iajb",t,g_direct, optimize = True) , np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-                    #e_mp2_direct += 2*gd2
-                    #e_mp2_exchange += ex
-
-                    #print(np.linalg.norm(self.g_d[:,ddL,:,mM, :, ddM, :].reshape(2*9,2*9).T.reshape(2,9,2,9) - self.g_x[:,ddL,:,mM, :, ddM, :]))
-                    #print("direct, exchange at:", dL, dM, " = ", ddL, ddM, " = ", gd2, ex)# #, np.linalg.norm(self.t2[:,ddL,:,mM, :, ddM, :]),np.linalg.norm(self.g_d[:,ddL,:,mM, :, ddM, :]),np.linalg.norm(self.g_x[:,ddL,:,mM, :, ddM, :]) )
-                    #print(np.max(np.abs(t)), np.max(np.abs(g_direct)), np.max(np.abs(g_exchange)))
-                    e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-        #print("E TOt", e_mp2_direct, e_mp2_exchange)
-        return e_mp2
-
-    def init_cell_batch(self, coords):
-        """
-        Could perhaps save some seconds when initializing new cells
-        """
-        pass
-
-    def init_cell(self, ddL, mmM, ddM):
-        """
-        Initialize tensors in cell ( 0 i , dL a | M j , dM b )
-        ddL, mmM and ddM are integer numbers
-        """
-        dL, dM = self.d_ia.coords[ddL], self.d_ia.coords[ddM]
-        M = self.d_ii.coords[mmM]
-
-        g_direct = self.ib.getcell(dL, M, dM)
-        g_exchange = self.ib.getcell(dM+M, M, dL-M)
-
-        self.t2[:, ddL, :, mmM, :, ddM, :]  = g_direct*self.e_iajb**-1
-        self.g_d[:, ddL, :, mmM, :, ddM, :] = g_direct
-        self.g_x[:, ddL, :, mmM, :, ddM, :] = g_exchange
-
-    def autoexpand_virtual_space(self, n_orbs = 10):
-        """
-        Include n_orbs more virtual orbitals in the virtual extent
-        """
-        new_cut = np.sort(self.d_ia.blocks[:-1, self.fragment[0]][self.d_ia.blocks[:-1, self.fragment[0]]>self.virtual_cutoff])[n_orbs -1]
-        #print("Increasing virtual cutoff:", self.virtual_cutoff, "->", new_cut)
-        self.set_extent(new_cut, self.occupied_cutoff)
-
-    def autoexpand_occupied_space(self, n_orbs = 10):
-        """
-        Include n_orbs more orbitals in the occupied extent
-        """
-        new_cut = np.sort(self.d_ii.blocks[:-1, self.fragment[0]][self.d_ii.blocks[:-1, self.fragment[0]]>self.occupied_cutoff])[n_orbs-1]
-        #print("Increasing occupied cutoff:", self.occupied_cutoff, "->", new_cut)
-        self.set_extent(self.virtual_cutoff, new_cut)
-
-    def set_extent(self, virtual_cutoff, occupied_cutoff):
-        """
-        Set extent of local domain
-        Cutoffs are given in bohr, all orbitals within the specified cutoffs are included
-        """
-        self.virtual_cutoff = virtual_cutoff
-        self.occupied_cutoff = occupied_cutoff
-
-        Nv = np.sum(self.min_elm_ia<self.virtual_cutoff)
-        No = np.sum(self.min_elm_ii<self.occupied_cutoff)
-
-        n_occ = self.p.get_nocc()
-        n_virt = self.p.get_nvirt()
-
-        # Note: forking here is due to intended future implementation of block-specific initialization
-        if Nv > self.n_virtual_cells:
-            if No > self.n_occupied_cells:
-                print("Extending both occupied and virtuals")
-                # Extend tensors in both occupied and virtual direction
-                t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
-                t2new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.t2
-                self.t2 = t2new
-
-                g_d_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
-                g_d_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_d
-                self.g_d = g_d_new
-
-                g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
-                g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
-                self.g_x = g_x_new
-
-                # Initialize empty blocks
-                sequence = []
-                for ddL in np.arange(Nv):
-                    dL = self.d_ia.coords[ddL]
-                    for ddM in np.arange(ddL, Nv):
-                        dM = self.d_ia.coords[ddM]
-                        for mmM in np.arange(No):
-                            M = self.d_ii.coords[mmM]
-                            #t0 = time.time()
-                            if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12: # and M[0]>=0:
-
-
-                                M = self.d_ii.coords[mmM]
-
-                                # Get exchange block coordinates
-                                ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM - M) ] # dL to calculate
-                                ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL + M) ]
-
-
-
-
-
-                                # Negative M
-                                mmM_ = self.d_ia.mapping[ self.d_ia._c2i(-M) ]
-
-                                # sequence[ ddL, mM, ddM        ,  0 ,   ddL, mM, ddM,    0]
-                                #                ^                 ^           ^          ^
-                                #            Calculate these    ex/direct    store here   1=transpose
-
-                                sequence.append([ddL, mmM, ddM,   0, ddL, mmM, ddM,   0]) # direct
-                                if mmM_<=No: # if the transpose is in the domain
-                                    sequence.append([ddL, mmM, ddM,   0, ddM, mmM_, ddL,  1]) # direct, transposed
-
-
-
-                                #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
-                                #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
-                                # For fragments, exchange only required for only M = (0,0,0)
-                                # EOS always has the two occupied indices in the fragment, i.e. inside the refcell
-                                if np.sum(M**2) == 0:
-                                    #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
-                                    #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
-                                    sequence.append([ddL, mmM, ddM,   1, ddL, mmM, ddM,   1]) # direct
-                                    sequence.append([ddL, mmM, ddM,   1, ddM, mmM_, ddL,  0]) # direct, transposed
-
-
-
-                                #self.init_cell(ddL, mmM, ddM)
-                            #print(ddL, mmM, ddM, time.time()-t0)
-                #print(time.time()-t0, " s spent on cell init.")
-                self.initialize_blocks(sequence)
-
-
-
-
-
-
-
-            else:
-                print("Extending virtuals.")
-                # Extend tensors in the virtual direction
-
-                t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
-                t2new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.t2
-                self.t2 = t2new
-
-                g_d_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
-                g_d_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_d
-                self.g_d = g_d_new
-
-                g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
-                g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
-                self.g_x = g_x_new
-
-                # Initialize empty blocks
-                sequence = []
-                for ddL in np.arange(Nv):
-                    dL = self.d_ia.coords[ddL]
-                    for ddM in np.arange(ddL, Nv):
-                        dM = self.d_ia.coords[ddM]
-                        for mmM in np.arange(No):
-                            M = self.d_ii.coords[mmM]
-                            #t0 = time.time()
-                            if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12 and M[0]>=0:
-
-                                M = self.d_ii.coords[mmM]
-
-                                # Get exchange block coordinates
-                                ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM + M) ]
-                                ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL - M) ]
-
-
-
-
-
-                                # Negative M
-                                mmM_ = self.d_ia.mapping[ self.d_ia._c2i(-M) ]
-
-                                # sequence[ ddL, mM, ddM        ,  0 ,   ddL, mM, ddM,    0]
-                                #                ^                 ^           ^          ^
-                                #            Calculate these    ex/direct    store here   1=transpose
-
-                                sequence.append([ddL, mmM, ddM,   0, ddL, mmM , ddM,  0]) # direct
-                                if mmM_<=No: # if the transpose is in the domain
-                                    sequence.append([ddL, mmM, ddM,   0, ddM, mmM_, ddL,  1]) # direct, transposed
-
-
-
-                                #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
-                                #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
-
-                                # For fragments, exchange only required for only M = (0,0,0)
-                                # EOS always has the two occupied indices in the fragment, ie the refcell
-                                if np.abs(mmM) < 1:
-                                    #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0]) # exchange
-                                    #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
-                                    sequence.append([ddL, 0, ddM,   1, ddL, 0, ddM,   1]) # exchange
-                                    sequence.append([ddL, 0, ddM,   1, ddM, 0, ddL,   0]) # exchange, transposed
-
-
-
-                                #self.init_cell(ddL, mmM, ddM)
-                            #print(ddL, mmM, ddM, time.time()-t0)
-                #print(time.time()-t0, " s spent on cell init.")
-                self.initialize_blocks(sequence)
-
-        else:
-            if No > self.n_occupied_cells:
-                print("extending occupied")
-                # Extend tensors in the occupied dimension
-                t2new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
-                t2new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.t2
-                self.t2 = t2new
-
-                g_d_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
-                g_d_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_d
-                self.g_d = g_d_new
-
-                g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
-                g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
-                self.g_x = g_x_new
-
-                # Initialize empty blocks
-                sequence = []
-                for ddL in np.arange(Nv):
-                    dL = self.d_ia.coords[ddL]
-                    for ddM in np.arange(ddL,Nv):
-                        dM = self.d_ia.coords[ddM]
-                        for mmM in np.arange(No):
-                            M = self.d_ii.coords[mmM]
-                            #t0 = time.time()
-                            if np.abs(self.t2[:,ddL, :, mmM, :, ddM, :]).max()<=10e-12 and M[0]>=0:
-
-
-                                M = self.d_ii.coords[mmM]
-
-                                # Get exchange block coordinates
-                                ddL_M = self.d_ia.mapping[self.d_ia._c2i(dM + M) ]
-                                ddM_M = self.d_ia.mapping[self.d_ia._c2i(dL - M) ]
-
-
-
-
-
-                                # Negative M
-                                mmM_ = self.d_ia.mapping[ self.d_ia._c2i(-M) ]
-
-                                # sequence[ ddL, mM, ddM        ,  0 ,   ddL, mM, ddM,    0]
-                                #                ^                 ^           ^          ^
-                                #            Calculate these    ex/direct    store here   1=transpose
-
-                                sequence.append([ddL, mmM, ddM,   0, ddL, mmM, ddM,   0]) # direct
-                                if mmM_<=No: # if the transpose is in the domain
-                                    sequence.append([ddL, mmM, ddM,   0, ddM, mmM_, ddL,  1]) # direct, transposed
-
-                                # For fragments, exchange only required for only M = (0,0,0)
-                                # EOS always has the two occupied indices in the fragment, ie the refcell
-                                if np.sum(M**2) == 0:
-                                    #sequence.append([ddL_M, mmM, ddM_M, 1, ddL, mmM , ddM,0])  # exchange
-                                    #sequence.append([ddL_M, mmM, ddM_M, 1, ddM, mmM_, ddL,1]) # exchange, transposed
-                                    sequence.append([ddL, mmM, ddM,   1, ddL, mmM, ddM,   1]) # direct
-                                    sequence.append([ddL, mmM, ddM,   1, ddM, mmM_, ddL,  0]) # direct, transposed
-
-
-
-
-                                #self.init_cell(ddL, mmM, ddM)
-                            #print(ddL, mmM, ddM, time.time()-t0)
-                #print(time.time()-t0, " s spent on cell init.")
-                self.initialize_blocks(sequence)
-
-            else:
-
-
-
-                self.t2 = self.t2[:, :Nv, :, :No, :, :Nv, :]
-                self.g_d = self.g_d[:, :Nv, :, :No, :, :Nv, :]
-                self.g_x = self.g_x[:, :Nv, :, :No, :, :Nv, :]
-
-        # Update domain measures
-        self.n_virtual_cells = Nv
-        self.n_occupied_cells = No
-
-        self.n_virtual_tot = np.sum(self.d_ia.blocks[:-1,self.fragment[0]]<self.virtual_cutoff)
-        self.n_occupied_tot = np.sum(self.d_ii.blocks[:-1, self.fragment[0]]<self.occupied_cutoff)
-
-    def print_configuration_space_data(self):
-        """
-        Prints extent sizes in terms of number of orbitals
-        """
-        print("%i virtual orbitals included in fragment." % self.n_virtual_tot)
-        print("%i occupied orbitals included in fragment." % self.n_occupied_tot)
-
-    def solve(self, norm_thresh = 1e-10, eqtype = "mp2", s_virt = None):
-        if eqtype == "mp2_nonorth":
-            return self.solve_MP2PAO(norm_thresh, s_virt = s_virt)
-        elif eqtype == "paodot":
-            return self.solve_MP2PAO_DOT(norm_thresh, s_virt = s_virt)
-        elif eqtype == "ls":
-            return self.solve_MP2PAO_ls(norm_thresh, s_virt = s_virt)
-        else:
-            return self.solve_MP2(norm_thresh)
-    
-    def bfgs_solve(self, f, x0, N_alpha = 20, thresh = 1e-10):
-        """
-        Rough outline of bfgs solver
-        f       = objective function
-        x0      = initial state
-        N_alpha = resolution of line search
-        
-        """
-        
-        xn = x0                                # Initial state
-        df = autograd.grad(f)                  # Gradient of f, could be finite difference based
-        df = lambda x : x[1] - x[0]
-        B = np.eye(xn.shape[0], dtype = float) # Initial guess for approximate Hessian
-
-        for i in np.arange(50):
-            df_ = df(xn)
-
-            dx = np.linalg.solve(B, - df(xn))
-            #dx = np.dot(np.linalg.pinv(B), -df_) #should avoid inversion
-            
-            # line search
-            fj = f(xn) #initial energy
-            for j in np.linspace(0,1,N_alpha)[1:]:
-                fn = f(xn + j*dx) #update energy
-                if fn>fj:
-                    # if energy increase, break
-                    break
-                fj = fn
-        
-            xn = xn + j*dx # update state
-            if np.abs(fj)<=thresh:
-                # if energy close to zero, break
-                break
-            
-            # Update approximate Hessian
-            y = df(xn) - df_
-            Bs = np.dot(B, xn)
-            B += np.outer(y,y)/np.outer(xn,y).T  - np.outer(Bs, Bs)/np.outer(xn, Bs).T
-            
-            
-
-        return xn
-
-    def omega(self, t2):
-
-        t2_new = np.zeros_like(t2)
-        
-        for dL in np.arange(self.n_virtual_cells):
-            dLv = self.d_ia.coords[dL]
-            dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-            for dM in np.arange(self.n_virtual_cells):
-                dMv = self.d_ia.coords[dM]
-                dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                for M in np.arange(self.n_occupied_cells):
-                    Mv = self.d_ii.coords[M]
-                    M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                    tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                    # generate index mapping of non-zero amplitudes in cell
-                    cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                    #t2_mask = np.ones(tnew.shape, dtype = np.bool)
-                    #t2_mask[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i] = False
-
-                    #t2[:, :, dL_i==False, M, :, dM, dM_i==False] *= 0
-
-
-
-                    # Perform contractions
-
-                    # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{Li,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
-                    Fac = self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dL])
-                    tnew -= np.einsum("iKcjb,Kac->iajb", t2[:, :, :, M, :, dM, :], Fac)
-
-                    # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
-                    Fbc = self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dM])
-                    tnew -= np.einsum("iajKc,Kbc->iajb", t2[:, dL, :, M, :, :, :], Fbc)
-
-                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                    # Fki = self.f_mo_ii.cget(-1*pair_extent)
-                    # tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
-
-
-
-                    """
-                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                    vpdL = mapgen(virtual_extent-Mv, pair_extent)
-                    Fki = self.f_mo_ii.cget(Mv-1*pair_extent)
-                    #print(self.t2[:, vpdL[dL], :, :, :, vpdL[dM], :].shape)
-                    #print(vpdL)
-                    #assert(np.all(vpdL>0)), "Negative indexing in vpdL"
-
-                    non_zeros = (vpdL[dL]>=0) *  (vpdL[dM]>=0) #screening matrix to avoid references to amplitudes outside extent
-                    #print(non_zeros)
-                    #print(self.t2[:, vpdL[dL], :, np.arange(self.n_occupied_cells), :, vpdL[dM], :].shape, Fki.shape)
-
-
-                    tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vpdL[dL][non_zeros], :, np.arange(self.n_occupied_cells)[non_zeros], :, vpdL[dM][non_zeros], :], Fki[non_zeros])
-                    """
-
-
-
-
-                    # Conceptually simpler approach
-                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                    Fki = self.f_mo_ii.cget(-1*self.pair_extent)
-
-                    M_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[M] - self.pair_extent ) ]
-                    dL_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dL] - self.pair_extent) ]
-                    dM_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dM] - self.pair_extent) ]
-                    #make sure indices is in correct domain (not negative or beyond extent)
-                    nz = (M_range<self.n_occupied_cells)*(dL_M<self.n_virtual_cells)*(dM_M<self.n_virtual_cells)*\
-                            (M_range>=0)*(dL_M>=0)*(dM_M>=0)
-
-                    tnew += np.einsum("Kkajb,Kki->iajb",t2[:, dL_M[nz], :, M_range[nz], :, dM_M[nz], :], Fki[nz])
-
-
-
-                    # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
-                    Fkj = self.f_mo_ii.cget(-1*self.pair_extent + self.pair_extent[M])
-                    tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
-
-                    t2_mapped = np.zeros_like(tnew).ravel()
-                    t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
-                    #t2_mapped[cell_map] = .1*tnew.ravel()[cell_map]
-                    #t2_mapped = (tnew*self.e_iajb**-1).ravel()
-
-                    
-
-                    
-                    t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-        return t2_new
-
-    def omega_agrad(self, t2):
-
-        t2_new = np.zeros_like(t2)
-        for dL in np.arange(self.n_virtual_cells):
-            dLv = self.d_ia.coords[dL]
-            dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-            for dM in np.arange(self.n_virtual_cells):
-                dMv = self.d_ia.coords[dM]
-                dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                for M in np.arange(self.n_occupied_cells):
-                    Mv = self.d_ii.coords[M]
-                    M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                    tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                    # generate index mapping of non-zero amplitudes in cell
-                    #cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                    # Perform contractions
-
-                    # + \sum_{\Delta L' c} \left(t^{\Delta L' c, \Delta Mb}_{Li,Mj}\right)_{n} f_{\Delta L a \Delta L' c}
-                    Fac = np.array(self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dL]))
-                    tnew -= np.einsum("iKcjb,Kac->iajb", t2[:, :, :, M, :, dM, :], Fac)
-
-                    # + \sum_{\Delta L' c} \left(t^{\Delta L a, \Delta L'c}_{0i,Mj}\right)_{n} f_{\Delta M b \Delta L' c} \\
-                    Fbc = np.array(self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dM]))
-                    tnew -= np.einsum("iajKc,Kbc->iajb", t2[:, dL, :, M, :, :, :], Fbc)
-
-                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                    # Fki = self.f_mo_ii.cget(-1*pair_extent)
-                    # tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vp_indx[dL], :, pp_indx[M], :, vp_indx[dM], :], Fki)
-
-
-
-                    """
-                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                    vpdL = mapgen(virtual_extent-Mv, pair_extent)
-                    Fki = self.f_mo_ii.cget(Mv-1*pair_extent)
-                    #print(self.t2[:, vpdL[dL], :, :, :, vpdL[dM], :].shape)
-                    #print(vpdL)
-                    #assert(np.all(vpdL>0)), "Negative indexing in vpdL"
-
-                    non_zeros = (vpdL[dL]>=0) *  (vpdL[dM]>=0) #screening matrix to avoid references to amplitudes outside extent
-                    #print(non_zeros)
-                    #print(self.t2[:, vpdL[dL], :, np.arange(self.n_occupied_cells), :, vpdL[dM], :].shape, Fki.shape)
-
-
-                    tnew += np.einsum("Kkajb,Kki->iajb",self.t2[:, vpdL[dL][non_zeros], :, np.arange(self.n_occupied_cells)[non_zeros], :, vpdL[dM][non_zeros], :], Fki[non_zeros])
-                    """
-
-
-
-
-                    # Conceptually simpler approach
-                    # - \sum_{L' k} \left(t^{\Delta L - L'a, \Delta M-L' b}_{0k,M-L'j}\right)_{n} f_{0 k -L' i}
-                    Fki = np.array(self.f_mo_ii.cget(-1*self.pair_extent))
-
-                    M_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[M] - self.pair_extent ) ]
-                    dL_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dL] - self.pair_extent) ]
-                    dM_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dM] - self.pair_extent) ]
-                    #make sure indices is in correct domain (not negative or beyond extent)
-                    nz = (M_range<self.n_occupied_cells)*(dL_M<self.n_virtual_cells)*(dM_M<self.n_virtual_cells)*\
-                            (M_range>=0)*(dL_M>=0)*(dM_M>=0)
-
-                    tnew += np.einsum("Kkajb,Kki->iajb",t2[:, dL_M[nz], :, M_range[nz], :, dM_M[nz], :], Fki[nz])
-
-
-
-                    # - \sum_{L' k} \left(t^{\Delta L a, \Delta Mb}_{0i,L'k}\right)_{n} f_{0 k M-L'j}
-                    Fkj = np.array(self.f_mo_ii.cget(-1*self.pair_extent + self.pair_extent[M]))
-                    tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
-
-                    #t2_mapped = np.zeros_like(tnew).ravel()
-                    #t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
-                    #t2_mapped = (tnew*self.e_iajb**-1).ravel()
-
-
-                    #print(dL, M, dM)
-                    #print(t2_new[:, dL, :, M, :, dM, :].shape,(tnew*self.e_iajb**-1).shape )
-                    t2_new[:, dL, :, M, :, dM, :] = (tnew*self.e_iajb**-1) #t2_mapped.reshape(tnew.shape)
-        return t2_new
-
-
-
-    def solve_MP2(self, norm_thresh = 1e-7):
-        """
-        Converge fragment (AOS) amplitudes within occupied and virtual extents
-        """
-        #from autograd import grad, elementwise_grad,jacobian
-
-        nocc = self.p.get_nocc()
-
-        self.virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        self.pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.vp_indx = mapgen(self.virtual_extent, self.pair_extent)
-        self.pp_indx = mapgen(self.pair_extent, self.pair_extent)
-
-        DIIS = diis(8)
-
-        #print(vp_indx)
-        #print(pp_indx)
-
-        #dt2 = ad.gh(self.omega_agrad)
-        #dt_new = dt2[1](self.t2)
-        for ti in np.arange(500):
-
-
-
-            dt2_new = self.omega(self.t2)
-            #print("dt (max/min/absmin):", np.max(dt2_new), np.min(dt2_new), np.abs(dt2_new).min())
-            #t2_prev =
-
-            # do a line search
-            if False:
-
-                n = 1e10 #np.linalg.norm(dt2)
-                for j in np.arange(20):
-                    dt2 = self.omega(self.t2 - j*0.1*dt2_new)
-                    n_ = np.linalg.norm(dt2)
-                    if n_>=n:
-                        break
-                    n = n_
-                    print("line search", j, ":", n_)
-
-                self.t2 -= j*0.1*dt2_new
-                rnorm = n #np.linalg.norm(n)
-            else:
-                self.t2 -= dt2_new #/np.abs(dt2_new).max()
-                self.t2 = DIIS.advance(self.t2,dt2_new)
-
-
-
-                rnorm = np.linalg.norm(dt2_new)
-                #print("%.10e %.10e" % (self.compute_fragment_energy(),update_max ))
-                #print("%.10e %.10e" % (self.compute_fragment_energy(),np.abs(dt2_new).max() ))
-                if np.abs(dt2_new).max()<1e-7:
-                    break
-                #print("Max update:", np.abs(dt2_new).max())
-                #if np.abs(dt2_new).max() <
-
-
-            if np.abs(dt2_new).max() <norm_thresh:
-
-                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti,rnorm))
-                #print("(Maximum absolute res. norm: %.4e)" % np.max(np.abs(dt2_new)))
-                print("")
-                break
-        self.max_abs_residual = np.max(np.abs(dt2_new))
-        print("Max.abs. deviation in residual post optimization is %.5e" % np.max(np.abs(dt2_new)))
-
-    def solve_MP2PAO_steepdesc(self, norm_thresh = 1e-10, s_virt = None):
-        """
-        Solving the MP2 equations for a non-orthogonal virtual space
-        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
-        """
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('########### PAO_SOLVER_STEEPDESC ##############')
-        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
-        alpha = 0.1
-
-        nocc = self.p.get_nocc()
-        ener_old = self.compute_fragment_energy()
-
-        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.s_pao = s_virt
-        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
-
-        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
-        s_aa = np.diag(self.s_pao.cget([0,0,0]))
-        f_ij = f_ii[:,None] + f_ii[None,:]
-        sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        f_iajb = sfs - fs_ab - fs_ba
-        counter = 0
-
-        for ti in np.arange(1000):
-            counter += 1
-            #print ('Iteration no.: ', ti)
-            t2_new = np.zeros_like(self.t2)
-            R_new = np.zeros_like(self.t2)
-
-            beta1 = np.zeros_like(self.t2)
-            beta2 = np.zeros_like(self.t2)
-
-            for C in np.arange(self.n_virtual_cells):
-                for D in np.arange(self.n_virtual_cells):
-                    for J in np.arange(self.n_occupied_cells):
-                        Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
-                        beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",self.t2[:,C,:,:,:,D,:],Fkj)
-
-                        Fik = self.f_mo_ii.cget(pair_extent)
-
-                        J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
-                        C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
-                        D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
-
-                        nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
-                             (J_range>=0)*(C_J>=0)*(D_J>=0)
-
-                        beta2[:,C,:,J,:,D,:] = np.einsum("Kkcjd,Kik->icjd",self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:],Fik[nz])
-
-
-            for dL in np.arange(self.n_virtual_cells):
-                dLv = self.d_ia.coords[dL]
-                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                    for M in np.arange(self.n_occupied_cells):
-                        Mv = self.d_ii.coords[M]
-                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                        # generate index mapping of non-zero amplitudes in cell
-                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                        #cell_map_bool = np.zeros(tnew.size, dtype = np.bool)
-                        #cell_map_bool[cell_map_bool] = True
-                        #cell_map_bool_full[ :, dL, :, M, :, dM, :] =  cell_map_bool[cell_map_bool].reshape(tnew.shape)
-
-                        # Perform contractions
-                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
-                        Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
-                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
-
-                        #print ('dL: ', dL)
-                        #print ('dM: ', dM)
-                        #print ('M: ', M)
-
-
-                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :])
-                        tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
-                        t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, self.t2[:, :, :, M, :, :, :])
-                        tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :])
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :])
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                        #print (np.linalg.norm(tnew))
-
-
-                        t2_mapped = np.zeros_like(tnew).ravel()
-                        R_mapped = np.zeros_like(tnew).ravel()
-                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
-                        R_mapped[cell_map] = (tnew).ravel()[cell_map]
-
-                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-                        R_new[:, dL, :, M, :, dM, :] = R_mapped.reshape(tnew.shape)
-
-            RNORM_new = np.linalg.norm(R_new)
-            self.t2_old = np.copy(self.t2)
-            self.t2 -= 0.1*t2_new
-            if counter >= 15:
-                d_omega = RNORM_new-RNORM_old
-                dt = self.t2-self.t2_old
-                self.t2 = -dt*np.linalg.norm(self.g_d)/d_omega
-                counter = 0
-            RNORM_old = RNORM_new
-            t2_old = np.copy(t2_new)
-            R_old = np.copy(R_new)
-            rnorm = np.linalg.norm(t2_new)
-            ener = self.compute_fragment_energy()
-            print ('R norm: ',rnorm)
-            print ('Energy: ',ener)
-            print ('dE: ',ener-ener_old)
-            ener_old = ener
-            if rnorm<norm_thresh:
-                print ()
-                print ('##############')
-                print ('##############')
-                print ('##############')
-                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
-                print ()
-                break
-
-
-    def comp_R(self, t2, s_virt=None):
-        nocc = self.p.get_nocc()
-
-        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.s_pao = s_virt
-        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
-
-        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
-        s_aa = np.diag(self.s_pao.cget([0,0,0]))
-        f_ij = f_ii[:,None] + f_ii[None,:]
-        sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        f_iajb = sfs - fs_ab - fs_ba
-        t2_old = np.zeros_like(t2)
-
-        R_new = np.zeros_like(t2)
-
-        beta1 = np.zeros_like(t2)
-        beta2 = np.zeros_like(t2)
-
-        for C in np.arange(self.n_virtual_cells):
-            for D in np.arange(self.n_virtual_cells):
-                for J in np.arange(self.n_occupied_cells):
-                    Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
-                    beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",t2[:,C,:,:,:,D,:],Fkj)
-
-                    Fik = self.f_mo_ii.cget(pair_extent)
-
-                    J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
-                    C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
-                    D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
-
-                    nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
-                         (J_range>=0)*(C_J>=0)*(D_J>=0)
-
-                    beta2[:,C,:,J,:,D,:] = np.einsum("Kkcjd,Kik->icjd",t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:],Fik[nz])
-
-
-        for dL in np.arange(self.n_virtual_cells):
-            dLv = self.d_ia.coords[dL]
-            dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-            for dM in np.arange(self.n_virtual_cells):
-                dMv = self.d_ia.coords[dM]
-                dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                for M in np.arange(self.n_occupied_cells):
-                    Mv = self.d_ii.coords[M]
-                    M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                    tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                    # generate index mapping of non-zero amplitudes in cell
-                    cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                    # Perform contractions
-                    Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                    Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
-                    Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
-                    Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
-
-                    #print ('dL: ', dL)
-                    #print ('dM: ', dM)
-                    #print ('M: ', M)
-
-
-                    # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                    t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, t2[:, :, :, M, :, :, :])
-                    tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                    #print (np.linalg.norm(tnew))
-
-                    # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
-                    t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, t2[:, :, :, M, :, :, :])
-                    tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac)
-                    #print (np.linalg.norm(tnew))
-
-                    # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                    t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :])
-                    tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                    #print (np.linalg.norm(tnew))
-
-                    # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
-                    t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :])
-                    tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                    #print (np.linalg.norm(tnew))
-
-
-                    R_mapped = np.zeros_like(tnew).ravel()
-                    R_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
-
-                    R_new[:, dL, :, M, :, dM, :] = R_mapped.reshape(tnew.shape)
-
-        return R_new
-
-
-    def solve_MP2PAO_ls(self, norm_thresh = 1e-10, s_virt = None):
-        """
-        Solving the MP2 equations for a non-orthogonal virtual space
-        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
-        """
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('########### PAO_SOLVER_LS ##############')
-        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
-
-        alpha = 0.3
-        ener_old = 0
-
-        nocc = self.p.get_nocc()
-        ener_old = self.compute_fragment_energy()
-
-        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.s_pao = s_virt
-        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
-
-        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
-        s_aa = np.diag(self.s_pao.cget([0,0,0]))
-        f_ij = f_ii[:,None] + f_ii[None,:]
-        sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        f_iajb = sfs - fs_ab - fs_ba
-        t2_old = np.zeros_like(self.t2)
-
-        for ti in np.arange(1000):
-            #print ('Iteration no.: ', ti)
-            t2_new = np.zeros_like(self.t2)
-            R_new = np.zeros_like(self.t2)
-
-            beta1 = np.zeros_like(self.t2)
-            beta2 = np.zeros_like(self.t2)
-
-            for C in np.arange(self.n_virtual_cells):
-                for D in np.arange(self.n_virtual_cells):
-                    for J in np.arange(self.n_occupied_cells):
-                        Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
-                        beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",self.t2[:,C,:,:,:,D,:],Fkj)
-
-                        Fik = self.f_mo_ii.cget(pair_extent)
-
-                        J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
-                        C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
-                        D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
-
-                        nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
-                             (J_range>=0)*(C_J>=0)*(D_J>=0)
-
-                        beta2[:,C,:,J,:,D,:] = np.einsum("Kkcjd,Kik->icjd",self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:],Fik[nz])
-
-
-            for dL in np.arange(self.n_virtual_cells):
-                dLv = self.d_ia.coords[dL]
-                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                    for M in np.arange(self.n_occupied_cells):
-                        Mv = self.d_ii.coords[M]
-                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                        # generate index mapping of non-zero amplitudes in cell
-                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                        # Perform contractions
-                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
-                        Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
-                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
-
-                        #print ('dL: ', dL)
-                        #print ('dM: ', dM)
-                        #print ('M: ', M)
-
-
-                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :])
-                        tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
-                        t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, self.t2[:, :, :, M, :, :, :])
-                        tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :])
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :])
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb)
-                        #print (np.linalg.norm(tnew))
-
-
-                        t2_mapped = np.zeros_like(tnew).ravel()
-                        R_mapped = np.zeros_like(tnew).ravel()
-                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
-                        R_mapped[cell_map] = (tnew).ravel()[cell_map]
-
-                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-                        R_new[:, dL, :, M, :, dM, :] = R_mapped.reshape(tnew.shape)
-
-
-
-            norm_R_old = np.linalg.norm(self.comp_R(self.t2,self.s_pao))
-
-
-
-            print ('ALPHA: ',alpha)
-            #self.t2 =  alpha*(self.t2 - (t2_new)) + (1-alpha)*self.t2
-            norm_old = np.linalg.norm(self.comp_R(self.t2,self.s_pao))
-            print ()
-            print ('Starting microiterations')
-            print ('StartNORM: ', norm_old)
-            """
-            for i in np.linspace(0,1,10):
-                norm_new = (np.linalg.norm(self.comp_R(self.t2-i*t2_new,self.s_pao)))
-                print ('microit',i)
-                print ('RNORM: ',norm_new)
-                if norm_new > norm_old:
-                    self.t2 = self.t2-(i_old)*t2_new
-                    break
-                norm_old = norm_new
-                i_old = i
-            """
-            E_prev = self.compute_fragment_energy_modt2(self.t2)
-            dE_prev = 0
-            dt = t2_new
-            for i in np.linspace(0,1,10):
-                E_new = self.compute_fragment_energy_modt2(self.t2-i*dt)
-                print ('microit',i)
-                #print ('RNORM: ',norm_new)
-                if abs(E_new-E_prev) > dE_prev:
-                    self.t2 = self.t2-(i)*dt
-                    print ('### FOUND alpha: ',i)
-                    break
-                E_prev = E_new
-                dE_prev = np.abs(E_new - E_prev)
-            print ()
-
-            rnorm = np.linalg.norm(t2_new)
-            ener = self.compute_fragment_energy()
-            print ('R norm: ',rnorm)
-            print ('Energy: ',ener)
-            print ('dE: ',ener-ener_old)
-            ener_old = ener
-            if rnorm<norm_thresh:
-                print ()
-                print ('##############')
-                print ('##############')
-                print ('##############')
-                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
-                print ()
-                break
-
-
-    def solve_MP2PAO(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
-        """
-        Solving the MP2 equations for a non-orthogonal virtual space
-        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
-        """
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
-
-        alpha = 0.1
-        ener_old = 0
-
-        nocc = self.p.get_nocc()
-        ener_old = self.compute_fragment_energy()
-
-        self.virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        self.pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.s_pao = s_virt
-        #self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
-
-        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
-        s_aa = np.diag(self.s_pao.cget([0,0,0]))
-        f_ij = f_ii[:,None] + f_ii[None,:]
-        sfs    = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab  = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba  = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        f_iajb = sfs - fs_ab - fs_ba
-
-        DIIS = diis(n_diis)
-        opt = True
-
-        ener = [0,0]
-
-        #self.t2 *= 0
-
-        for ti in np.arange(100):
-            
-            t2_new = np.zeros_like(self.t2)
-            t2_bar = np.zeros_like(self.t2)
-
-            # construct tbar
-            for dL in np.arange(self.n_virtual_cells):
-                dLv = self.d_ia.coords[dL]
-                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                    for M in np.arange(self.n_occupied_cells):
-                        Mv = self.d_ii.coords[M]
-                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                        Sac = self.s_pao.cget( self.virtual_extent - self.virtual_extent[dL])
-                        Sdb = self.s_pao.cget(-self.virtual_extent + self.virtual_extent[dM])
-
-
-
-                        t2_bar[:, dL, :, M, :, dM, :] = np.einsum("Cac,iCcjDd,Ddb->iajb", Sac, self.t2[:, :, :, M, :, :, :], Sdb, optimize = True)
-
-
-
-            for dL in np.arange(self.n_virtual_cells):
-                dLv = self.d_ia.coords[dL]
-                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                    for M in np.arange(self.n_occupied_cells):
-                        Mv = self.d_ii.coords[M]
-                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                        # generate index mapping of non-zero amplitudes in cell
-                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-
-
-                        
-
-                        # Perform contractions
-                        
-                        Fik = np.array(self.f_mo_ii.cget(-1*self.pair_extent))
-                        Fkj = np.array(self.f_mo_ii.cget(self.pair_extent[M] -1*self.pair_extent))
-
-
-                        Fac = self.f_mo_aa.cget(self.virtual_extent - self.virtual_extent[dL])
-                        Fdb = self.f_mo_aa.cget(-self.virtual_extent + self.virtual_extent[dM])
-                        Sac = self.s_pao.cget(self.virtual_extent - self.virtual_extent[dL])
-                        Sdb = self.s_pao.cget(-self.virtual_extent + self.virtual_extent[dM])
-
-                        # First term
-                        tnew -= np.einsum("Cac,iCcjDd,Ddb->iajb", Sac, self.t2[:, :, :, M, :, :, :], Fdb, optimize = True)
-
-                        # Second term
-                        tnew -= np.einsum("Cac,iCcjDd,Ddb->iajb", Fac, self.t2[:, :, :, M, :, :, :], Sdb, optimize = True)
-
-                        
-
-                        # Troublesome diagram
-                        M_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[M] - self.pair_extent ) ]
-                        dL_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dL] - self.pair_extent) ]
-                        dM_M = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[dM] - self.pair_extent) ]
-                        # Make sure indices is in correct domain (not negative or beyond extent)
-                        nz = (M_range<self.n_occupied_cells)*(dL_M<self.n_virtual_cells)*(dM_M<self.n_virtual_cells)*\
-                                (M_range>=0)*(dL_M>=0)*(dM_M>=0)
-
-                        tnew += np.einsum("Kkajb,Kik->iajb",t2_bar[:, dL_M[nz], :, M_range[nz], :, dM_M[nz], :], Fik[nz])
-
-
-                        # Final diagram
-                        Fkj = np.array(self.f_mo_ii.cget(-1*self.pair_extent + self.pair_extent[M]))
-                        tnew += np.einsum("iaKkb,Kkj->iajb",t2_bar[:, dL, :, :, :, dM, :], Fkj)
-
-
-
-                        t2_mapped = np.zeros_like(tnew).ravel()
-                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
-                        #print(dLv, dMv, np.abs(np.max(tnew)))
-
-                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-
-            #t2 = time.time()
-
-            self.t2 -= .1*t2_new
-            self.t2 = DIIS.advance(self.t2,t2_new)
-
-            #t3 = time.time()
-
-            #print ('time(beta):         ',t1-t0)
-            #print ('time(resudial):     ',t2-t1)
-            #print ('time(diis):         ',t3-t2)
-
-            rnorm = np.linalg.norm(t2_new)
-            #ener = self.compute_fragment_energy()
-            #print ('R norm: ',rnorm)
-            #print ('Energy: ',ener)
-            ener.append(self.compute_fragment_energy())
-            #print ('R norm: ',rnorm)
-            print (ti, 'Energy: ',ener[-1], "Diff:",  ener[-1]-ener[-2], "Res.norm:", rnorm, "Abs max norm:", np.abs(t2_new).max()) 
-            #print ('dE: ',ener-ener_old)
-            #ener_old = ener
-            if rnorm<norm_thresh:
-                print ()
-                print ('##############')
-                print ('##############')
-                print ('##############')
-                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
-                print ()
-                break
-        
-
-    def solve_MP2PAO_(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
-        """
-        Solving the MP2 equations for a non-orthogonal virtual space
-        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
-        """
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
-
-        alpha = 0.1
-        ener_old = 0
-
-        nocc = self.p.get_nocc()
-        ener_old = self.compute_fragment_energy()
-
-        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.s_pao = s_virt
-        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
-
-        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
-        s_aa = np.diag(self.s_pao.cget([0,0,0]))
-        f_ij = f_ii[:,None] + f_ii[None,:]
-        sfs    = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab  = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba  = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        f_iajb = sfs - fs_ab - fs_ba
-
-        DIIS = diis(n_diis)
-        opt = True
-
-        ener = [0,0]
-
-        for ti in np.arange(1000):
-            #print ('Iteration no.: ', ti)
-            t2_new = np.zeros_like(self.t2)
-
-            beta1 = np.zeros_like(self.t2)
-            beta2 = np.zeros_like(self.t2)
-
-            t0 = time.time()
-            for C in np.arange(self.n_virtual_cells):
-                for D in np.arange(self.n_virtual_cells):
-                    for J in np.arange(self.n_occupied_cells):
-                        Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
-                        beta1[:,C,:,J,:,D,:] = np.einsum("icKkd,Kkj->icjd",self.t2[:,C,:,:,:,D,:],Fkj,optimize=opt)
-
-                        Fik = self.f_mo_ii.cget(pair_extent)
-
-                        J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
-
-                        C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
-                        D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
-
-                        nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
-                             (J_range>=0)*(C_J>=0)*(D_J>=0)
-
-                        beta2[:,C,:,J,:,D,:] = np.einsum("Kkcjd,Kik->icjd",self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:],Fik[nz],optimize=opt)
-
-            t1 = time.time()
-
-            for dL in np.arange(self.n_virtual_cells):
-                dLv = self.d_ia.coords[dL]
-                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                    for M in np.arange(self.n_occupied_cells):
-                        Mv = self.d_ii.coords[M]
-                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                        # generate index mapping of non-zero amplitudes in cell
-                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                        # Perform contractions
-                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
-                        Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
-                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
-
-                        #print ('dL: ', dL)
-                        #print ('dM: ', dM)
-                        #print ('M: ', M)
-
-
-                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        tc1 = time.time()
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Fac, self.t2[:, :, :, M, :, :, :],optimize=opt)
-                        tnew -= np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)
-                        tc2 = time.time()
-                        #print ('Contr.time1: ',tc2-tc1)
-                        #print ('NORM1: ',np.linalg.norm(np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)))
-                        tc3 = time.time()
-                        #print (np.linalg.norm(tnew))
-                        nC, na, nc = Fac.shape
-                        #ts =
-                        ni, nC, nc, nj, nD, nd = self.t2[:, :, :, M, :, :, :].shape
-                        F_a_Cc = Fac.swapaxes(0,1).reshape((na, nC*nc)) # F(C,a,c) -> F(a,Cc)
-
-                        t_Cc_ijDd = self.t2[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
-
-                        FT_a_ijDd = np.dot(F_a_Cc, t_Cc_ijDd)
-                        FT_aij_Dd = FT_a_ijDd.reshape((na*ni*nj, nD*nd))
-
-                        S_Dd_b = Sdb.reshape(nD*nd, nd)
-
-                        FTS_i_a_j_b = np.dot(FT_aij_Dd, S_Dd_b).reshape((na,ni,nj,nd)).swapaxes(0,1)
-                        tc4 = time.time()
-                        #print ('Contr.time2: ',tc4-tc3)
-                        #print ('NORM2: ',np.linalg.norm(FTS_i_a_j_b))
-
-
-
-
-
-                        # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
-                        t_int = np.einsum("Ddb,iCcjDd->iCcjb", Fdb, self.t2[:, :, :, M, :, :, :],optimize=opt)
-                        tnew -= np.einsum("iCcjb,Cac->iajb", t_int, Sac,optimize=opt)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta1[:, :, :, M, :, :, :],optimize=opt)
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)
-                        #print (np.linalg.norm(tnew))
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
-                        t_int = np.einsum("Cac,iCcjDd->aijDd", Sac, beta2[:, :, :, M, :, :, :],optimize=opt)
-                        tnew += np.einsum("aijDd,Ddb->iajb", t_int, Sdb,optimize=opt)
-                        #print (np.linalg.norm(tnew))
-
-
-                        t2_mapped = np.zeros_like(tnew).ravel()
-                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
-
-                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-
-            t2 = time.time()
-
-            self.t2 -= 0.3*t2_new
-            self.t2 = DIIS.advance(self.t2,t2_new)
-
-            t3 = time.time()
-
-            #print ('time(beta):         ',t1-t0)
-            #print ('time(resudial):     ',t2-t1)
-            #print ('time(diis):         ',t3-t2)
-
-            rnorm = np.linalg.norm(t2_new)
-            #ener = self.compute_fragment_energy()
-            #print ('R norm: ',rnorm)
-            #print ('Energy: ',ener)
-            ener.append(self.compute_fragment_energy())
-            #print ('R norm: ',rnorm)
-            print (ti, 'Energy: ',ener[-1], "Diff:",  ener[-1]-ener[-2], "Res.norm:", rnorm) 
-            #print ('dE: ',ener-ener_old)
-            #ener_old = ener
-            if rnorm<norm_thresh:
-                print ()
-                print ('##############')
-                print ('##############')
-                print ('##############')
-                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
-                print ()
-                break
-
-    def solve_MP2PAO_DOT(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
-        """
-        Solving the MP2 equations for a non-orthogonal virtual space
-        (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
-        """
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('########### PAO_SOLVER_I ##############')
-        print ('AMPLITUDE NORM: ',np.linalg.norm(self.t2))
-
-        alpha = 0.1
-        ener_old = 0
-
-        nocc = self.p.get_nocc()
-        ener_old = self.compute_fragment_energy()
-
-        virtual_extent = self.d_ia.coords[:self.n_virtual_cells]
-        pair_extent = self.d_ii.coords[:self.n_occupied_cells]
-
-        self.s_pao = s_virt
-        self.s_pao1 = tp.get_identity_tmat(self.p.get_nvirt())
-
-        f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(self.f_mo_ii.cget([0,0,0]))
-        s_aa = np.diag(self.s_pao.cget([0,0,0]))
-        f_ij = f_ii[:,None] + f_ii[None,:]
-        sfs = np.einsum("a,ij,b->iajb",s_aa,f_ij,s_aa)
-        fs_ab = np.einsum("a,b,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        fs_ba = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
-        f_iajb = sfs - fs_ab - fs_ba
-
-        print("denom:", np.abs(f_iajb).min())
-
-        DIIS = diis(n_diis)
-        opt = True
-
-        ener = [0,0] 
-
-        for ti in np.arange(1000):
-            #print ('Iteration no.: ', ti)
-            t2_new = np.zeros_like(self.t2)
-
-            beta1 = np.zeros_like(self.t2)
-            beta2 = np.zeros_like(self.t2)
-
-            t0 = time.time()
-            for C in np.arange(self.n_virtual_cells):
-                for D in np.arange(self.n_virtual_cells):
-                    for J in np.arange(self.n_occupied_cells):
-                        Fkj = self.f_mo_ii.cget(-pair_extent + pair_extent[J])
-                        Fik = self.f_mo_ii.cget(pair_extent)
-
-                        ni, nc, nJ, nj, nd = self.t2[:,C,:,:,:,D,:].shape
-
-                        T_icd_Kk = self.t2[:,C,:,:,:,D,:].swapaxes(3,4).swapaxes(2,3).reshape((ni*nc*nd,nJ*nj))
-                        F_Kk_j = Fkj.reshape((nJ*nj,nj))
-                        beta1[:,C,:,J,:,D,:] = np.dot(T_icd_Kk,F_Kk_j).reshape((ni,nc,nd,nj)).swapaxes(2,3)
-
-
-                        J_range = self.d_ii.mapping[self.d_ii._c2i(  self.d_ii.coords[J] - pair_extent ) ]
-                        C_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[C] - pair_extent) ]
-                        D_J = self.d_ia.mapping[self.d_ia._c2i( self.d_ia.coords[D] - pair_extent) ]
-
-                        nz = (J_range<self.n_occupied_cells)*(C_J<self.n_virtual_cells)*(D_J<self.n_virtual_cells)*\
-                             (J_range>=0)*(C_J>=0)*(D_J>=0)
-
-                        nI,ni,nc,nj,nd = self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:].shape
-
-                        T_Kk_cjd = self.t2[:,C_J[nz],:,J_range[nz],:,D_J[nz],:].reshape((nI*ni,nc*nj*nd))
-                        F_i_Kk = Fik[nz].swapaxes(0,1).reshape((ni,nI*ni))
-                        beta2[:,C,:,J,:,D,:] = np.dot(F_i_Kk,T_Kk_cjd).reshape((ni,nc,nj,nd))
-
-            t1 = time.time()
-
-            for dL in np.arange(self.n_virtual_cells):
-                dLv = self.d_ia.coords[dL]
-                dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                    for M in np.arange(self.n_occupied_cells):
-                        Mv = self.d_ii.coords[M]
-                        M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-                        tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                        # generate index mapping of non-zero amplitudes in cell
-                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-
-                        # Perform contractions
-                        Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
-                        Fdb = self.f_mo_aa.cget(-virtual_extent + virtual_extent[dM])
-                        Sac = self.s_pao.cget(virtual_extent - virtual_extent[dL])
-                        Sdb = self.s_pao.cget(-virtual_extent + virtual_extent[dM])
-
-                        ni, nC, nc, nj, nD, nd = self.t2[:, :, :, M, :, :, :].shape
-                        t_Cc_ijDd = self.t2[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
-                        S_a_Cc = Sac.swapaxes(0,1).reshape((nc, nC*nc)) # F(C,a,c) -> F(a,Cc)
-                        S_Dd_b = Sdb.reshape(nD*nd, nd)
-
-
-                        # \sum_{CcDd} f_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        F_a_Cc = Fac.swapaxes(0,1).reshape((nc, nC*nc)) # F(C,a,c) -> F(a,Cc)
-
-                        FT_a_ijDd = np.dot(F_a_Cc, t_Cc_ijDd)
-                        FT_aij_Dd = FT_a_ijDd.reshape((nc*ni*nj, nD*nd))
-
-                        tnew -= np.dot(FT_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
-
-
-                        # \sum_{CcDd} s_{ac}^{C-A} \left(t_{0i,Jj}^{Cc,Dd}\right)_n f_{db}^{B-D}
-                        F_Dd_b = Fdb.reshape(nD*nd, nd)
-
-                        ST_a_ijDd = np.dot(S_a_Cc, t_Cc_ijDd)
-                        ST_aij_Dd = ST_a_ijDd.reshape((nc*ni*nj, nD*nd))
-
-                        tnew -= np.dot(ST_aij_Dd, F_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
-
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{jk}^{J-K} \left(t_{0i,Kk}^{Cc,Dd}\right)_n s_{db}^{B-D}
-                        B1_Cc_ijDd = beta1[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
-
-                        B1T_a_ijDd = np.dot(S_a_Cc, B1_Cc_ijDd)
-                        B1T_aij_Dd = B1T_a_ijDd.reshape((nc*ni*nj, nD*nd))
-
-                        tnew += np.dot(B1T_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
-
-
-                        # \sum_{CcDdKk} s_{ac}^{C-A} f_{ik}^{K} \left(t_{0k,J-Kk}^{C-Kc,D-Kd}\right)_n s_{db}^{B-D}
-                        B2_Cc_ijDd = beta2[:, :, :, M, :, :, :].swapaxes(0,1).swapaxes(1,2).reshape(nC*nc, ni*nj*nD*nd )# t2(i,C,c,j,D,d) -> t2(Cc, ijDd)
-
-                        B2T_a_ijDd = np.dot(S_a_Cc, B2_Cc_ijDd)
-                        B2T_aij_Dd = B2T_a_ijDd.reshape((nc*ni*nj, nD*nd))
-
-                        tnew += 0*np.dot(B2T_aij_Dd, S_Dd_b).reshape((nc,ni,nj,nd)).swapaxes(0,1)
-
-
-
-                        t2_mapped = np.zeros_like(tnew).ravel()
-                        t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
-
-                        t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-
-            t2 = time.time()
-
-            self.t2 -= 0.3*t2_new
-            self.t2 = DIIS.advance(self.t2,t2_new)
-
-            t3 = time.time()
-
-            #print ('time(beta):         ',t1-t0)
-            #print ('time(resudial):     ',t2-t1)
-            #print ('time(diis):         ',t3-t2)
-
-            rnorm = np.linalg.norm(t2_new)
-
-            ener.append(self.compute_fragment_energy())
-            #print ('R norm: ',rnorm)
-            print (ti, 'Energy: ',ener[-1], "Diff:",  ener[-1]-ener[-2])
-            #print ('dE: ',ener-ener_old)
-            #ener_old = ener
-            if rnorm<norm_thresh:
-                print ()
-                print ('##############')
-                print ('##############')
-                print ('##############')
-                print("Converged in %i iterations with amplitude gradient norm %.2e." % (ti, np.linalg.norm(t2_new)))
-                print ()
-                break
-
-    def compute_mp2_density(self, orb_n = 0):
-        """
-        Compute fragment energy
-        """
-        N_virt = self.n_virtual_cells
-
-        mM = 0 #occupied index only runs over fragment
-
-        d_full = np.zeros(self.t2.shape, dtype = np.bool)
-
-        occ_ind = np.zeros(self.p.get_nocc(), dtype = np.bool)
-        occ_ind[orb_n] = True
-
-
-        for ddL in np.arange(N_virt):
-            dL = self.d_ia.coords[ddL]
-            dL_i = self.d_ia.cget(dL)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-            # Doublecount? dL == dM
-
-            for ddM in np.arange(N_virt):
-
-                    dM =  self.d_ia.coords[ddM]
-                    dM_i = self.d_ia.cget(dM)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-
-                    
-                    cell_map = np.arange(d_full[:,ddL,:,0, :, ddM, :].size).reshape(d_full[:,ddL,:,0, :, ddM, :].shape)[occ_ind][:, dL_i][:, :, occ_ind][:,:,:,dM_i].ravel()
-
-                    # Using multiple levels of masking, probably some other syntax could make more sense
-
-                    #g_direct = self.g_d[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-
-                    #g_exchange = self.g_d[:,ddM,:,0, :, ddL, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
-                    
-                    #t = self.t2[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-                    
-
-                    d_block_bool = np.zeros(d_full[:,ddL,:,0, :, ddM, :].shape, dtype = np.bool).ravel()
-                    d_block_bool[cell_map] = True
-
-                    #d_full[:,ddL,:,0, :, ddM, :][orb_n][:, dL_i][:, :, orb_n][:,:,:,dM_i] = True
-
-                    d_full[:,ddL,:,0, :, ddM, :] = d_block_bool.reshape(d_full[:,ddL,:,0, :, ddM, :].shape)
-                    
-                    #e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-
-        return self.t2[d_full].reshape(self.n_virtual_tot, self.n_virtual_tot)
 
 
 class diis():
@@ -5304,7 +2883,7 @@ if __name__ == "__main__":
 
                 
 
-                    pair = pair_fragment_amplitudes_2(frag_a, frag_b, M = c)
+                    pair = pair_fragment_amplitudes(frag_a, frag_b, M = c)
                     #print(pair.compute_pair_fragment_energy())
                     pair.solve()
                     p_energy = pair.compute_pair_fragment_energy()
