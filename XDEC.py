@@ -2067,11 +2067,11 @@ class pair_fragment_amplitudes(amplitude_solver):
 
         self.g_x = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
-        print(self.t2.shape)
-        print("Virtual domain:")
-        print(self.d_ia.coords[:N_virt])
-        print("Occupied domain:")
-        print(self.d_ii.coords[:N_occ])
+        #print(self.t2.shape)
+        #print("Virtual domain:")
+        #print(self.d_ia.coords[:N_virt])
+        #print("Occupied domain:")
+        #print(self.d_ii.coords[:N_occ])
 
         
 
@@ -2228,85 +2228,13 @@ class pair_fragment_amplitudes(amplitude_solver):
                                     #ddL_, mM_, ddM_ = m[4], m[5], m[6]
                                     self.g_x[:, ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)
                                     n_computed_ex += 1
-                        print("Computed RI-integrals ", dL, dM, " in %.2f seconds." % (time.time()-t0))
+                        #print("Computed RI-integrals ", dL, dM, " in %.2f seconds." % (time.time()-t0))
                         #print(sq_i)
 
 
                         k = l*1
 
                 j = i*1
-        
-    def compute_energy(self):
-        """
-        Computes the energy of entire AOS
-        """
-        e_mp2 = 0
-        N_virt = self.n_virtual_cells
-        N_occ = self.n_occupied_cells
-
-        for ddL in np.arange(N_virt):
-            for ddM in np.arange(N_virt):
-                dL, dM = self.d_ia.coords[ddL], self.d_ia.coords[ddM]
-                for mM in np.arange(N_occ):
-                    M = self.d_ii.coords[mM]
-
-
-                    g_direct = self.g_d[:,ddL,:,mM, :, ddM, :]
-                    g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :]
-                    t = self.t2[:,ddL,:,mM, :, ddM, :]
-                    e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-        return e_mp2
-
-    def compute_fragment_energy(self):
-        """
-        Compute fragment energy
-        """
-        e_mp2 = 0
-        e_mp2_direct = 0
-        e_mp2_exchange = 0
-        N_virt = self.n_virtual_cells
-
-        mM = 0 #occupied index only runs over fragment
-
-        #print("Self.fragment;:", self.fragment)
-
-        for ddL in np.arange(N_virt):
-            dL = self.d_ia.coords[ddL]
-            dL_i = self.d_ia.cget(dL)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-            # Doublecount? dL == dM
-
-
-
-            for ddM in np.arange(N_virt):
-
-                    dM =  self.d_ia.coords[ddM]
-                    dM_i = self.d_ia.cget(dM)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-
-                    # Using multiple levels of masking, probably some other syntax could make more sense
-
-                    g_direct = self.g_d[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-                    #g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
-                    #g_direct = self.g_d[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-                    #g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-
-                    g_exchange = self.g_d[:,ddM,:,0, :, ddL, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
-                    #g_exchange = self.g_d[:,ddM,:,mM, :, ddL, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-
-                    #print(g_direct.shape)
-                    #print(g_exchange.shape)
-                    #print(ddL, mM, ddM, np.max(np.abs(g_direct)), np.max(np.abs(g_exchange)))
-                    t = self.t2[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
-                    #t = self.t2[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
-                    #gd2, ex  =np.einsum("iajb,iajb",t,g_direct, optimize = True) , np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-                    #e_mp2_direct += 2*gd2
-                    #e_mp2_exchange += ex
-
-                    #print(np.linalg.norm(self.g_d[:,ddL,:,mM, :, ddM, :].reshape(2*9,2*9).T.reshape(2,9,2,9) - self.g_x[:,ddL,:,mM, :, ddM, :]))
-                    #print("direct, exchange at:", dL, dM, " = ", ddL, ddM, " = ", gd2, ex)# #, np.linalg.norm(self.t2[:,ddL,:,mM, :, ddM, :]),np.linalg.norm(self.g_d[:,ddL,:,mM, :, ddM, :]),np.linalg.norm(self.g_x[:,ddL,:,mM, :, ddM, :]) )
-                    #print(ddL, ddM, np.max(np.abs(t)), np.max(np.abs(g_direct)), np.max(np.abs(g_exchange)))
-                    e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-        #print("E TOt", e_mp2_direct, e_mp2_exchange)
-        return e_mp2
 
     def compute_pair_fragment_energy(self):
         """
@@ -2328,9 +2256,7 @@ class pair_fragment_amplitudes(amplitude_solver):
 
         N_virt = self.n_virtual_cells
 
-        #print(self.mM)
-        #print(self.g_d.shape)
-        print("Compute PAIR FRAGMENT")
+        
 
         for ddL in np.arange(N_virt):
             dL = self.d_ia.coords[ddL]
@@ -2348,7 +2274,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                 #g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
                 
                 #g_exchange = self.cfit.()
-                print(" Energy:", dL, dM, dM+self.M, dL-self.M)
+                #print(" Energy:", dL, dM, dM+self.M, dL-self.M)
                 I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
                 g_exchange = I.cget(self.M).reshape(Ishape)[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
 
@@ -2358,7 +2284,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                 
                 e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
 
-        print(e_mp2, 2*e_mp2)
+        #print(e_mp2, 2*e_mp2)
         return e_mp2
 
 
@@ -2713,6 +2639,7 @@ if __name__ == "__main__":
     occ_cut = 6.0
 
     refcell_fragments = []
+    fragment_energy_total = 0
 
     for fragment in center_fragments:
         
@@ -2864,20 +2791,33 @@ if __name__ == "__main__":
             print(" ")
             print(" ")
             refcell_fragments.append(a_frag)
+            fragment_energy_total += E_new
+    print("Total fragment energy:", fragment_energy_total)
+
+    
 
     if args.pairs:
 
         # Outline of pair fragment calcs
 
         pair_coords = tp.lattice_coords([10,10,10])
-        pair_coords = pair_coords[np.argsort(np.sum(p.coor2vec(pair_coords)**2, axis = 1))[1:]] #Sort in increasing distance
+        pair_coords = pair_coords[np.argsort(np.sum(p.coor2vec(pair_coords)**2, axis = 1))[0:]] #Sort in increasing distance
+        #pair_coords = pair_coords[pair_coords[:,0]>=0]
         pair_total = 0
 
         for c in pair_coords:
+            if np.sum(c**2) == 0:
+                deg = 1
+            else:
+                deg = 2
+
             for fa in np.arange(len(refcell_fragments)):
-                for fb in np.arange(fa, len(refcell_fragments)):
+                for fb in np.arange(len(refcell_fragments)):
                     frag_a = refcell_fragments[fa]
                     frag_b = refcell_fragments[fb]
+
+                    pos_a = wcenters[refcell_fragments[fa].fragment[0]]
+                    pos_b = wcenters[refcell_fragments[fb].fragment[0]]
 
 
 
@@ -2887,10 +2827,19 @@ if __name__ == "__main__":
                     #print(pair.compute_pair_fragment_energy())
                     pair.solve()
                     p_energy = pair.compute_pair_fragment_energy()
-                    pair_total += 2*p_energy
-                    print("Pair fragment energy for ",c," is ", 2*p_energy, " (total: ", pair_total + 0*E_new, " )")
-                    print("R = ", np.sum(p.coor2vec(c)**2)**.5, fa, fb)
-                    print(fa, fb, np.sum(p.coor2vec(c)**2)**.5)
+                    pair_total += p_energy
+                    print("_________________________________________________________")
+                    print("Pair fragment %i %i for cell " % (fa,fb), c)
+                    print("Converged pair fragment energy: %.12f" % p_energy)
+                    print("Distance between pair = ", np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
+                    print("Multiplicity of pair =", deg)
+                    #print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+                    #print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+                    print("_________________________________________________________")
+                    print(" ")
+                    print("Accumulated energy = ", pair_total)
+                    #print("Pair fragment energy for ",c," is ", p_energy, " (total: ", pair_total, " )")
+                    #print("R = ", np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, fa, fb)
 
 
         
