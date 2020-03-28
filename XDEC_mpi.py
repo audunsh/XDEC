@@ -2724,172 +2724,9 @@ if __name__ == "__main__":
 
     comm.barrier()
     print ('Process no.',mpi_rank,'has passed the first barrier',flush=True)
-
-    # Converge atomic fragment energies
-
-    """
-    if mpi_rank == 0:
-        # Initial fragment extents
-        virt_cut = 3.0
-        occ_cut = 6.0
-
-        refcell_fragments = []
-
-        for fragment in center_fragments:
+    comm.barrier()
 
 
-            #ib.fragment = fragment
-            t0 = time.time()
-            if args.pao_sorting:
-                d_ia = build_weight_matrix(p, c, s.coords)
-                a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0, float_precision = args.float_precision, d_ia = d_ia)
-
-
-            else:
-                a_frag = fragment_amplitudes(p, wcenters, c.coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0, float_precision = args.float_precision)
-
-            #print("Frag init:", time.time()-t0)
-
-            a_frag.solve(eqtype = args.solver, s_virt = s_virt)
-
-            #print("t2 (max/min/absmin):", np.max(a_frag.t2), np.min(a_frag.t2), np.abs(a_frag.t2).min())
-            #print("g_d (max/min/absmin):", np.max(a_frag.g_d), np.min(a_frag.g_d), np.abs(a_frag.g_d).min())
-
-            # Converge to fot
-            E_prev_outer = a_frag.compute_fragment_energy()
-            E_prev = E_prev_outer*1.0
-            dE_outer = 10
-
-            print("Initial fragment energy: %.8f" % E_prev)
-
-            print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
-            print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
-
-            virtual_cutoff_prev = a_frag.virtual_cutoff
-            occupied_cutoff_prev = a_frag.occupied_cutoff
-
-
-            if not args.skip_fragment_optimization:
-                print("Running fragment optimization for:")
-                print(fragment)
-                #print("Initial cutoffs:")
-
-                n_virtuals_ = []
-                virtu_cut_  = []
-
-
-
-                while dE_outer>args.fot:
-                    dE = 10
-                    e_virt = []
-                    #
-                    e_virt.append(E_prev)
-                    n_virtuals_.append(a_frag.n_virtual_tot)
-                    virtu_cut_.append(a_frag.virtual_cutoff)
-                    while dE>args.fot:
-                        virtual_cutoff_prev = a_frag.virtual_cutoff
-                        occupied_cutoff_prev = a_frag.occupied_cutoff
-
-                        t_0 = time.time()
-                        a_frag.autoexpand_virtual_space(n_orbs=args.orb_increment)
-                        print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
-                        print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
-
-
-
-                        t_1 = time.time()
-                        a_frag.solve(eqtype = args.solver, s_virt = s_virt)
-                        t_2 = time.time()
-                        E_new = a_frag.compute_fragment_energy()
-                        t_3 = time.time()
-                        dE = np.abs(E_prev - E_new)
-                        print("D_ii = ", a_frag.compute_mp2_density(orb_n = 0).shape)
-
-                        print("_________________________________________________________")
-                        print("E(fragment): %.8f      DE(fragment): %.8e" % (E_new, dE))
-                        print("_________________________________________________________")
-                        print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
-                        print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
-                        print(" ")
-                        e_virt.append(E_new)
-                        E_prev = E_new
-
-                        n_virtuals_.append(a_frag.n_virtual_tot)
-                        virtu_cut_.append(a_frag.virtual_cutoff)
-
-                        #print("---")
-                        print("Energy")
-                        print(e_virt)
-                        print("Number of virtuals")
-                        print(n_virtuals_)
-                        print("Virtual cutoff distance")
-                        print(virtu_cut_)
-                    a_frag.set_extent(virtual_cutoff_prev, occupied_cutoff_prev)
-
-
-
-                    print("Converged virtual space, expanding occupied space")
-                    print(e_virt)
-                    #dE = 10
-                    #print("--- occupied")
-                    a_frag.autoexpand_occupied_space(n_orbs=args.orb_increment)
-                    print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
-                    print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
-
-                    a_frag.solve(eqtype = args.solver, s_virt = s_virt)
-                    E_new = a_frag.compute_fragment_energy()
-
-                    #a_frag.print_configuration_space_data()
-                    dE = np.abs(E_prev - E_new)
-
-                    print("_________________________________________________________")
-                    print("E(fragment): %.6f        DE(fragment): %.6e" % (E_new, dE))
-                    print("_________________________________________________________")
-                    print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
-                    print(" ")
-                    E_prev = E_new
-                    #print("---")
-
-                    while dE>args.fot:
-                        virtual_cutoff_prev = a_frag.virtual_cutoff
-                        occupied_cutoff_prev = a_frag.occupied_cutoff
-
-                        #print("--- occupied")
-                        a_frag.autoexpand_occupied_space(n_orbs=args.orb_increment)
-                        print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
-                        print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
-
-                        a_frag.solve(eqtype = args.solver, s_virt = s_virt)
-                        E_new = a_frag.compute_fragment_energy()
-
-                        #a_frag.print_configuration_space_data()
-                        dE = np.abs(E_prev - E_new)
-
-                        print("_________________________________________________________")
-                        print("E(fragment): %.6f        DE(fragment): %.6e" % (E_new, dE))
-                        print("_________________________________________________________")
-                        print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
-                        print(" ")
-                        E_prev = E_new
-                        #print("---")
-                    a_frag.set_extent(virtual_cutoff_prev, occupied_cutoff_prev)
-                    dE_outer = np.abs(E_prev_outer - E_prev)
-                    print("dE_outer:", dE_outer)
-                    E_prev_outer = E_prev
-                #print("Current memory usage of integrals (in MB):", ib.nbytes())
-                print("_________________________________________________________")
-                print("Final fragment containing occupied orbitals:", a_frag.fragment)
-                print("Converged fragment energy: %.12f" % E_new)
-                print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
-                print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
-                print("_________________________________________________________")
-                print(" ")
-                print(" ")
-                refcell_fragments.append(a_frag)
-
-    else:
-        pass
-    """
 
     # Initial fragment extents
     virt_cut = 3.0
@@ -2907,7 +2744,7 @@ if __name__ == "__main__":
         ib = None
         wcenters = None
     else:
-        pass
+        print (flush=True)
 
     p = comm.bcast(p,root=0)
     c = comm.bcast(c,root=0)
@@ -2933,10 +2770,11 @@ if __name__ == "__main__":
 
 
 
-    E_new = 0
+    fragment_total = 0
 
     T1 = time.time()
 
+    # Converge atomic fragment energies
     for fragment in center_fragments_r:
 
 
@@ -3086,26 +2924,25 @@ if __name__ == "__main__":
             print(" ")
             print(" ",flush = True)
             refcell_fragments.append(a_frag)
+            fragment_total += E_new
 
-    print ('RANK',mpi_rank,'finished opt')
-
+    T2 = time.time()
 
     comm.barrier()
-    T2 = time.time()
+    print ('Time for process',mpi_rank,'was',T2-T1,flush=True)
+    comm.barrier()
+    T_tot = time.time()
     if mpi_rank == 0:
-        print ('Time used to optimize fragments: ',T2-T1)
+        print ()
+        print ('Total time used to optimize fragments: ',T_tot-T1,flush=True)
     else:
         pass
 
 
-    E_new_list = comm.gather(E_new,root=0)
+    fragment_total = comm.reduce(fragment_total,root=0)
+    fragment_total = comm.bcast(fragment_total,root=0)
 
-    if mpi_rank == 0:
-        E_new = sum(E_new_list)
-    else:
-        pass
 
-    E_new = comm.bcast(E_new,root=0)
     refcell_fragments_gathered = comm.gather(refcell_fragments,root=0)
 
 
@@ -3127,17 +2964,16 @@ if __name__ == "__main__":
         if mpi_rank != 0:
             pair_coords = None
             refcell_fragments = None
-            E_new = None
         else:
-            pass
+            print (flush=True)
 
-        E_new = comm.bcast(E_new,root=0)
         refcell_fragments = comm.bcast(refcell_fragments,root=0)
 
         loop_setup = 1
 
         #pair fragments
         if loop_setup == 0:
+            #parallilization of the pair_coords loop
             def fix_pair_coords(pc):
                 """
                 adds reference cell and removes opposing cells
@@ -3150,11 +2986,11 @@ if __name__ == "__main__":
 
             if mpi_rank == 0:
                 if p.cperiodicity == "POLYMER":
-                    pair_coords = tp.lattice_coords([4,0,0])
+                    pair_coords = tp.lattice_coords([6,0,0])
                 elif p.cperiodicity == "SLAB":
-                    pair_coords = tp.lattice_coords([4,4,0])
+                    pair_coords = tp.lattice_coords([6,6,0])
                 else:
-                    pair_coords = tp.lattice_coords([4,4,4])
+                    pair_coords = tp.lattice_coords([6,6,6])
 
                 pair_coords = pair_coords[np.argsort(np.sum(p.coor2vec(pair_coords)**2, axis = 1))[1:]] #Sort in increasing distance
                 pair_coords = fix_pair_coords(pair_coords)
@@ -3189,32 +3025,35 @@ if __name__ == "__main__":
                         pair.solve()
                         p_energy = pair.compute_pair_fragment_energy()
                         pair_total += 2*p_energy
-                        print ()
+                        print ('_________________________________________________________')
                         print ('Computed by process: ',mpi_rank)
                         print ('IND_A:',fa,'IND_B:',fb,'CELL_B',c)
-                        print("Pair fragment energy for ",c," is ", 2*p_energy, " (total: ", pair_total + 0*E_new, " )")
-                        print("R = ", np.sum(p.coor2vec(c)**2)**.5, fa, fb)
-                        print(fa, fb, np.sum(p.coor2vec(c)**2)**.5,flush=True)
+                        print ("Pair fragment energy for ",c," is ", 2*p_energy, " (total: ", pair_total , " )")
+                        print ("R = ", np.sum(p.coor2vec(c)**2)**.5, fa, fb)
+                        print (fa, fb, np.sum(p.coor2vec(c)**2)**.5)
+                        print (flush=True)
 
-            time_temp = time.time()
-            print ('Time for process',mpi_rank,'was',time_temp-T1)
-
-
-            pair_energies = comm.gather(pair_total)
-            if mpi_rank == 0:
-                print ('Total pair energy: ',np.sum(np.array(pair_energies)))
-            else:
-                pass
+            T2 = time.time()
 
             comm.barrier()
-            T2 = time.time()
+            print ('Time for process',mpi_rank,'was',T2-T1)
+
+            T_total = time.time()
+            pair_total = comm.reduce(pair_total,root=0)
             if mpi_rank == 0:
-                print ('Total time used to compute pair energies: ',T2-T1)
+                print ()
+                print ('Total time used to compute pair energies: ',T_total-T1)
+                print ('Total fragment energy: ',fragment_total)
+                print ('Total pair energy: ',pair_total)
+                print ('Total correlation energy: ',fragment_total + pair_total)
             else:
                 pass
+
 
 
         elif loop_setup == 1:
+            #setting up complete pair array before parallelizing to share pairs
+            #more evenly among the processes
             def fix_pairs(pc,fragms):
                 """
                 creates a full pair array with columns cell_x,cell_y,cell_z,ind_a,ind_b
@@ -3268,9 +3107,9 @@ if __name__ == "__main__":
                 if p.cperiodicity == "POLYMER":
                     pair_coords = tp.lattice_coords([6,0,0])
                 elif p.cperiodicity == "SLAB":
-                    pair_coords = tp.lattice_coords([4,4,0])
+                    pair_coords = tp.lattice_coords([6,6,0])
                 else:
-                    pair_coords = tp.lattice_coords([4,4,4])
+                    pair_coords = tp.lattice_coords([6,6,6])
 
                 pair_coords = pair_coords[np.argsort(np.sum(p.coor2vec(pair_coords)**2, axis = 1))[1:]] #Sort in increasing distance
                 pairs = fix_pairs(pair_coords,center_fragments)
@@ -3303,28 +3142,29 @@ if __name__ == "__main__":
                 pair.solve()
                 p_energy = pair.compute_pair_fragment_energy()
                 pair_total += 2*p_energy
-                print ()
+                print ('_________________________________________________________')
                 print ('Computed by process: ',mpi_rank)
                 print ('IND_A:',fa,'IND_B:',fb,'CELL_B',c)
-                print("Pair fragment energy for ",c," is ", 2*p_energy, " (total: ", pair_total + 0*E_new, " )")
-                print("R = ", np.sum(p.coor2vec(c)**2)**.5, fa, fb)
-                print(fa, fb, np.sum(p.coor2vec(c)**2)**.5,flush=True)
+                print ("Pair fragment energy for ",c," is ", 2*p_energy, " (total: ", pair_total , " )")
+                print ("R = ", np.sum(p.coor2vec(c)**2)**.5, fa, fb)
+                print (fa, fb, np.sum(p.coor2vec(c)**2)**.5)
+                print (flush=True)
 
 
-            time_temp = time.time()
-            print ('Time for process',mpi_rank,'was',time_temp-T1)
 
-
-            pair_energies = comm.gather(pair_total)
-            if mpi_rank == 0:
-                print ('Total pair energy: ',np.sum(np.array(pair_energies)))
-            else:
-                pass
+            T2 = time.time()
 
             comm.barrier()
-            T2 = time.time()
+            print ('Time for process',mpi_rank,'was',T2-T1)
+
+            T_total = time.time()
+            pair_total = comm.reduce(pair_total,root=0)
             if mpi_rank == 0:
-                print ('Total time used to compute pair energies: ',T2-T1)
+                print ()
+                print ('Total time used to compute pair energies: ',T_total-T1)
+                print ('Total fragment energy: ',fragment_total)
+                print ('Total pair energy: ',pair_total)
+                print ('Total correlation energy: ',fragment_total + pair_total)
             else:
                 pass
 
