@@ -1998,10 +1998,18 @@ class pair_fragment_amplitudes(amplitude_solver):
             #print(" ")
             self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.99
             self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.99
+            
+            
+            ##
+            self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.99
 
 
             elmn = self.f1.d_ii.cget(coord)[self.f1.fragment[0], :] < self.f1.occupied_cutoff
 
+            self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.99
+            
+            ##
+            
             self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.99
 
 
@@ -2036,6 +2044,7 @@ class pair_fragment_amplitudes(amplitude_solver):
 
         # Set index of f2 coordinate (for energy summations)
         self.mM = np.argwhere(np.sum((self.d_ii.coords-M)**2, axis = 1)==0)[0,0]
+        self.mM_ = np.argwhere(np.sum((self.d_ii.coords+M)**2, axis = 1)==0)[0,0]
         #print(self.mM, self.d_ii.coords[self.mM], self.M)
         #print(self.d_ii.coords)
         #print(" ..... ")
@@ -2044,7 +2053,7 @@ class pair_fragment_amplitudes(amplitude_solver):
         #if d_ia is None:
         #    self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[p.get_nocc():])
         #else:
-        self.d_ia = self.f1.d_ia*1.0
+        self.d_ia = copy.deepcopy(self.f1.d_ia)
         #print(self.d_ia.coords)
 
         # Unify virtual domains
@@ -2065,9 +2074,11 @@ class pair_fragment_amplitudes(amplitude_solver):
             
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
+            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
 
             elmn = self.f1.d_ia.cget(coord)[self.f1.fragment[0], :] < self.f1.virtual_cutoff
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
+            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
             
             """
             if np.any(elmn):
@@ -2467,7 +2478,8 @@ class pair_fragment_amplitudes(amplitude_solver):
 
 
         #print(self.f1.fragment, self.f2.fragment, self.mM, self.d_ii.coords[self.mM])
-        #print("g_d norm:", np.linalg.norm(self.g_d))
+        print("g_d norm:", np.linalg.norm(self.g_d))
+        print("t2 norm:", np.linalg.norm(self.t2))
         for ddL in np.arange(N_virt):
             dL = self.d_ia.coords[ddL]
             #dL_i = np.array(self.d_ia.cget(dL)[self.f1.fragment[0],:], dtype = bool)<self.virtual_cutoff # dL index mask
@@ -2483,10 +2495,14 @@ class pair_fragment_amplitudes(amplitude_solver):
 
 
             for ddM in np.arange(N_virt):
-                dM =  self.d_ia.coords[ddM] #- self.M
+                dM =  self.d_ia.coords[ddM] # - self.M
                 #dM_i = np.array(self.d_ia.cget(dM) [self.f1.fragment[0],:], dtype = bool)<self.virtual_cutoff # dM index mask
                 dM_i = self.d_ia.cget(dM)[self.f1.fragment[0],:]<self.virtual_cutoff
                 if np.sum(dM_i)>0 and np.sum(dL_i)>0:
+                    I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
+                    g_exchange = I.cget(self.M).reshape(Ishape)[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+
+
                     
                     #print(dL_i)
                     #print(dM_i)
@@ -2494,13 +2510,13 @@ class pair_fragment_amplitudes(amplitude_solver):
 
 
                     g_direct = self.g_d[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
+
+                    #g_ex = g_exchange[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
                     #g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
 
                     #g_exchange = self.cfit.()
                     #print(" Energy:", dL, dM, dM+self.M, dL-self.M)
-                    I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
-                    g_exchange = I.cget(self.M).reshape(Ishape)[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
-
+                    
 
 
                     t = self.t2[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
@@ -2512,6 +2528,31 @@ class pair_fragment_amplitudes(amplitude_solver):
                     #print(dL, dM, np.linalg.norm(self.g_d[:,ddL,:,self.mM, :, ddM, :]), np.linalg.norm(I.cget(self.M)), np.linalg.norm(self.t2[:,ddL,:,self.mM, :, ddM, :]))
 
                     e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+
+
+
+                    # The opposite case
+
+                    g_direct = self.g_d[:,ddL,:,self.mM_, :, ddM, :][self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i]
+
+                    I, Ishape = self.ib.getorientation(dM-self.M, dL+self.M)
+                    g_exchange = I.cget(-self.M).reshape(Ishape)[self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
+
+                    #g_ex = g_exchange
+                    #g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+
+                    #g_exchange = self.cfit.()
+                    #print(" Energy:", dL, dM, dM+self.M, dL-self.M)
+                    
+
+
+                    t = self.t2[:,ddL,:,self.mM_, :, ddM, :][self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i]
+
+                    e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+
+
+
+
 
         #print(e_mp2, 2*e_mp2)
         return e_mp2
@@ -2530,7 +2571,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                 dLv = self.d_ia.coords[dL]
                 dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
                 for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM] 
+                    dMv = self.d_ia.coords[dM]  #- self.M
                     dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
                     
                     tnew = -self.g_d[:, dL, :, M, :, dM, :]
@@ -3213,15 +3254,7 @@ if __name__ == "__main__":
                         print("_________________________________________________________")
 
 
-                        print(np.linalg.norm(frag_a.d_ii.blocks))
-                        print(np.linalg.norm(frag_a.d_ia.blocks))
-                        print(frag_a.virtual_cutoff)
-                        print(frag_a.occupied_cutoff)
-                        print(np.linalg.norm(frag_b.d_ii.blocks))
-                        print(np.linalg.norm(frag_b.d_ia.blocks))
-                        print(frag_b.virtual_cutoff)
-                        print(frag_b.occupied_cutoff)
-
+                        
 
 
 
