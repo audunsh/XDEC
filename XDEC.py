@@ -3206,7 +3206,7 @@ if __name__ == "__main__":
             pair_coords = pair_coords[np.argsort(np.sum(p.coor2vec(pair_coords)**2, axis = 1))[1:]] #Sort in increasing distance
             pair_total = 0
 
-            pair_coords = np.array([[1,0,0], [-1,0,0]])
+            #pair_coords = np.array([[1,0,0], [-1,0,0]])
 
             domain = tp.lattice_coords([10,0,0])
             #print(domain)
@@ -3250,7 +3250,7 @@ if __name__ == "__main__":
                         #print( pair.d_ii.cget(domain)[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff)
                         #print( pair.d_ia.cget(domain)[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff)
 
-                        print(np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
+                        print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
                         print("_________________________________________________________")
 
 
@@ -3260,7 +3260,7 @@ if __name__ == "__main__":
 
 
 
-
+                        """
                         frag_a = refcell_fragments[fa]
                         frag_b = refcell_fragments[fb]
                         pos_a = wcenters[refcell_fragments[fa].fragment[0]]
@@ -3279,6 +3279,8 @@ if __name__ == "__main__":
 
                         #print("_________________________________________________________")
                         print(np.sum((pos_b - p.coor2vec(-c) - pos_a)**2)**.5, -c, fb, fa, p_energy,np.sum(pair.d_ii.blocks[:, frag_b.fragment[0], :]<frag_b.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_b.fragment[0], :]<frag_b.virtual_cutoff))
+                        """
+
                         
                         #print("Pair fragment %i %i for cell " % (fa,fb), c)
                         #print("Converged pair fragment energy: %.12f" % p_energy)
