@@ -1391,6 +1391,8 @@ class fragment_amplitudes(amplitude_solver):
 
         self.float_precision = float_precision
 
+        
+
         #self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[:p.get_nocc()])
         #self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[p.get_nocc():])
         self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[:p.get_nocc()])
@@ -2055,11 +2057,13 @@ class pair_fragment_amplitudes(amplitude_solver):
 
 
     """
-    def __init__(self, fragment_1, fragment_2, M):
+    def __init__(self, fragment_1, fragment_2, M, recycle_integrals = True):
         import copy
 
         self.f1 = fragment_1
         self.f2 = fragment_2
+
+        self.recycle_integrals = recycle_integrals
 
         self.p = self.f1.p #prism object
         self.d = self.f1.d*1 #  dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers) # distance matrix
@@ -2297,29 +2301,34 @@ class pair_fragment_amplitudes(amplitude_solver):
         reuse = 0    # count instances where coulomb integrals are recycled
         compute = 0  # count instances where coulomb integrals are computed
 
-        for mM in np.arange(self.n_occupied_cells):
-            for ddL in np.arange(self.n_virtual_cells):
-                for ddM in np.arange(self.n_virtual_cells):
-                    ddLf1 =  get_index_where(self.f1.d_ia.coords, self.d_ia.coords[ddL])  
-                    ddMf1  =  get_index_where(self.f1.d_ia.coords, self.d_ia.coords[ddM])
-                    mMf1   =  get_index_where(self.f1.d_ii.coords, self.d_ii.coords[mM])
-                    #print("dL=", ddLf1, self.d_ia.coords[ddLf1])
-                    #print("M=", mMf1, self.d_ii.coords[mMf1])
-                    #print("dM=", ddMf1, self.d_ia.coords[ddMf1])
-                    #print(self.d_ia.coords[:2*ddMf1])
-                    #print(N_virt)
-                    
+        if self.recycle_integrals:
+            """
+            Recycle integrals from fragment 1
+            """
+
+            for mM in np.arange(self.n_occupied_cells):
+                for ddL in np.arange(self.n_virtual_cells):
+                    for ddM in np.arange(self.n_virtual_cells):
+                        ddLf1 =  get_index_where(self.f1.d_ia.coords, self.d_ia.coords[ddL])  
+                        ddMf1  =  get_index_where(self.f1.d_ia.coords, self.d_ia.coords[ddM])
+                        mMf1   =  get_index_where(self.f1.d_ii.coords, self.d_ii.coords[mM])
+                        #print("dL=", ddLf1, self.d_ia.coords[ddLf1])
+                        #print("M=", mMf1, self.d_ii.coords[mMf1])
+                        #print("dM=", ddMf1, self.d_ia.coords[ddMf1])
+                        #print(self.d_ia.coords[:2*ddMf1])
+                        #print(N_virt)
+                        
 
 
 
 
-                    try:
-                        #assert(False)
-                        self.g_d[:,ddL,:,mM,:,ddM,:] = self.f1.g_d[:,ddLf1,:,mMf1,:,ddMf1,:]
-                        reuse += 1
-                    except:
-                        compute += 1
-                        #pass
+                        try:
+                            #assert(False)
+                            self.g_d[:,ddL,:,mM,:,ddM,:] = self.f1.g_d[:,ddLf1,:,mMf1,:,ddMf1,:]
+                            reuse += 1
+                        except:
+                            compute += 1
+                            #pass
 
 
         #print("Recycled %i coulomb integral cells from fragment 1, will compute %i cells" % (reuse, compute))
@@ -2969,12 +2978,14 @@ if __name__ == "__main__":
     parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
     parser.add_argument("-virtual_space", type = str, default = None, help = "Alternative representation of virtual space, provided as tmat file." )
     parser.add_argument("-solver", type = str, default = "mp2", help = "Solver model." )
-    parser.add_argument("-N_c", type = int, default = 6, help = "Number of layers in Coulomb BvK-cell." )
+    parser.add_argument("-N_c", type = int, default = 8, help = "Number of layers in Coulomb BvK-cell." )
     parser.add_argument("-pairs", type = bool, default = False, help = "Compute pair fragments" )
     parser.add_argument("-print_level", type = int, default = 0, help = "Print level" )
     parser.add_argument("-orb_increment", type = int, default = 6, help = "Number of orbitals to include at every XDEC-iteration." )
     parser.add_argument("-pao_sorting", type = bool, default = False, help = "Sort LVOs in order of decreasing PAO-coefficient" )
     parser.add_argument("-adaptive_domains", default = False, action = "store_true", help = "Activate adaptive Coulomb matrix calculation.")
+    parser.add_argument("-recycle_integrals", type = bool, default = True, help = "Recycle fragment integrals when computing pairs." )
+
 
     args = parser.parse_args()
 
@@ -3377,7 +3388,7 @@ if __name__ == "__main__":
                         pos_a = wcenters[refcell_fragments[fa].fragment[0]]
                         pos_b = wcenters[refcell_fragments[fb].fragment[0]]
 
-                        pair = pair_fragment_amplitudes(frag_a, frag_b, M = c)
+                        pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals)
                         #print(pair.compute_pair_fragment_energy())
                         rn, it = pair.solve(norm_thresh=1e-9)
                         print("Convergence:", rn, it)
@@ -3443,7 +3454,7 @@ if __name__ == "__main__":
                         #print("Multiplicity of pair =", deg)
                         #print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                         #print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
-                        print("_________________________________________________________")
+                        #print("_________________________________________________________")
 
 
                         # ensure that 
