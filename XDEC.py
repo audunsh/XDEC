@@ -2294,8 +2294,8 @@ class pair_fragment_amplitudes(amplitude_solver):
 
         self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
-        reuse = 0
-        compute = 0
+        reuse = 0    # count instances where coulomb integrals are recycled
+        compute = 0  # count instances where coulomb integrals are computed
 
         for mM in np.arange(self.n_occupied_cells):
             for ddL in np.arange(self.n_virtual_cells):
@@ -2322,7 +2322,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                         #pass
 
 
-        print("Recycled %i coulomb integral cells from fragment 1, will compute %i cells" % (reuse, compute))
+        #print("Recycled %i coulomb integral cells from fragment 1, will compute %i cells" % (reuse, compute))
 
 
 
@@ -2351,14 +2351,14 @@ class pair_fragment_amplitudes(amplitude_solver):
         sequence = []
 
 
-        print("N_occ:", N_occ)
-        print("N_occ in f1:", np.sum(self.f1.min_elm_ii<self.f1.occupied_cutoff))
-        print("N_virt:", N_virt)
-        print("N_virt in f1:", np.sum(self.f1.min_elm_ia<self.f1.virtual_cutoff))
+        #print("N_occ:", N_occ)
+        #print("N_occ in f1:", np.sum(self.f1.min_elm_ii<self.f1.occupied_cutoff))
+        #print("N_virt:", N_virt)
+        #print("N_virt in f1:", np.sum(self.f1.min_elm_ia<self.f1.virtual_cutoff))
         #print(self.d_ii.coords[:N_occ])
         #print("N_virt:", N_virt)
         #print(self.d_ia.coords[:N_virt])
-        print("")
+        #print("")
 
 
 
@@ -2582,15 +2582,15 @@ class pair_fragment_amplitudes(amplitude_solver):
 
 
         #print(self.f1.fragment, self.f2.fragment, self.mM, self.d_ii.coords[self.mM])
-        print("g_d norm:", np.linalg.norm(self.g_d))
-        print("t2 norm:", np.linalg.norm(self.t2))
-        print("Pair domains:")
-        print("Virtual")
-        print(self.d_ia.coords[:N_virt])
-        print("Occupied")
-        print(self.d_ii.coords[:N_occ])
-        reuse = 0
-        computed = 0
+        #print("g_d norm:", np.linalg.norm(self.g_d))
+        #print("t2 norm:", np.linalg.norm(self.t2))
+        #print("Pair domains:")
+        #print("Virtual")
+        #print(self.d_ia.coords[:N_virt])
+        #print("Occupied")
+        #print(self.d_ii.coords[:N_occ])
+        reuse = 0     #count instances where exchange integrals can be recycled
+        computed = 0  #count instances where exchange integrals are computed
         for ddL in np.arange(N_virt):
             dL = self.d_ia.coords[ddL]
             #dL_i = np.array(self.d_ia.cget(dL)[self.f1.fragment[0],:], dtype = bool)<self.virtual_cutoff # dL index mask
@@ -2663,24 +2663,24 @@ class pair_fragment_amplitudes(amplitude_solver):
                     # The opposite case
 
                     g_direct = self.g_d[:,ddL,:,self.mM_, :, ddM, :][self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i]
-                    """
+                    
 
 
                     try:
                         # Get exchange index / np.argwhere
-                        assert(False)
+                        #assert(False)
                         ddM_M, ddL_M = get_index_where(self.d_ia.coords, dM-self.M), get_index_where(self.d_ia.coords, dL+self.M)
-                        g_exchange = self.g_d[:,ddM_M,:,self.mM_, :, ddL_M, :][self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+                        g_exchange = self.g_d[:,ddM_M,:,self.mM_, :, ddL_M, :][self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
                         #print("Reuse integrals for exchange")
                         #assert(False), "no"
                         reuse += 1
                     except:
                         #print("Exchange not precomputed")
-                    """
+                    
 
-                    I, Ishape = self.ib.getorientation(dM-self.M, dL+self.M)
-                    g_exchange = I.cget(-self.M).reshape(Ishape)[self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
-                    computed += 1
+                        I, Ishape = self.ib.getorientation(dM-self.M, dL+self.M)
+                        g_exchange = I.cget(-self.M).reshape(Ishape)[self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
+                        computed += 1
 
                     #g_ex = g_exchange
                     #g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
@@ -2699,7 +2699,7 @@ class pair_fragment_amplitudes(amplitude_solver):
 
 
         #print(e_mp2, 2*e_mp2)
-        print("Exchange reused %i instances, computed %i instances." % (reuse, computed))
+        #print("Exchange recycled %i instances, computed %i instances." % (reuse, computed))
         return e_mp2
     
     def omega(self, t2):
@@ -3082,8 +3082,7 @@ if __name__ == "__main__":
 
     s_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
 
-
-
+    
     # AO Fock matrix
     f_ao = tp.tmat()
     f_ao.load(args.fock_matrix)
@@ -3120,9 +3119,9 @@ if __name__ == "__main__":
         np.save("integral_build.npy", np.array([ib]), allow_pickle = True)
     else:
         ib = np.load(args.ibuild, allow_pickle = True)[0]
-        print(ib.getorientation([0,0,0],[0,0,0]))
+        #print(ib.getorientation([0,0,0],[0,0,0]))
 
-
+    """
     # test integrator domain
     I, Ishape = ib.getorientation([-1,0,0], [0,0,0])
     oc = np.arange(Ishape[0])
@@ -3132,6 +3131,7 @@ if __name__ == "__main__":
     m_2 = I.cget([1,0,0])
 
     print(np.linalg.norm(m_1-m_2.T),np.linalg.norm(m_1), np.linalg.norm(m_2))
+    
 
 
     # test integrator domain
@@ -3143,6 +3143,7 @@ if __name__ == "__main__":
     #m_2 = I.cget([1,0,0])
 
     print(np.linalg.norm(m_1-m_2.T),np.linalg.norm(m_1), np.linalg.norm(m_2))
+    """
 
 
 
