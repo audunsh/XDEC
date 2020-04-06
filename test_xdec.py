@@ -20,6 +20,8 @@ import utils.prism as pr
 
 import PRI
 
+import XDEC
+
 import time
 
 def test_prism():
@@ -180,118 +182,3 @@ def test_pri():
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-"""
-def test_ao_refcell(attenuation = .2):
-    p = pr.prism("inputs/neon_3d.d12")
-
-    # Compute overlap matrix
-    #s = PRI.compute_onebody(p, s)
-
-    # temporary libint data path
-    # datapath = os.environ["LIBINT_DATA_PATH"]
-
-    os.environ["LIBINT_DATA_PATH"] = os.getcwd()
-
-    
-
-    # build ao coeff matrix so that (i,a|i,a)_mo = (p,q,p,q)_ao
-    # (0,0|0,0)_mo =  (2,2|2,2)_ao
-    # (1,1|2,2)_mo  = (6,6|T_1|2,3)_ao #translated
-    
-
-    coords = tp.lattice_coords([1,1,1])
-    c = tp.tmat()
-    c.load_nparray(np.ones((coords.shape[0], p.get_n_ao(),p.get_n_ao()), dtype = float), coords)
-    c.blocks *= 0
-
-    c0 = np.zeros((p.get_n_ao(),p.get_n_ao()), dtype = float) #coefficients in refcell
-    c0[2,0] = 1.0              # first occupied, ao # 2 is a diffuse s-type gaussian
-    c0[6,1] = 1.0              # second occupied, ao # 2 is a diffuse s-type gaussian
-    c0[2,p.get_nocc()] = 1.0   # first virtual
-    c0[6,p.get_nocc()+1] = 1.0 # second virtual 
-    c0[:,p.get_nocc()+3] = 1.0 # fourth virtual
-
-    c.blocks[ c.mapping[ c._c2i([0,0,0])]] = c0
-
-    c1 = np.zeros((p.get_n_ao(),p.get_n_ao()), dtype = float) #coefficients in refcell
-    c1[2,2] = 1.0              #third occupied, ao # 2 is a diffuse s-type gaussian
-    c1[3,p.get_nocc()+2] = 1.0 #third virtual
-    
-
-    c.blocks[ c.mapping[ c._c2i([1,0,0])]] = c1
-
-    print(c.cget([0,0,0]))
-
-    # generate fit-basis
-
-    auxbasis = PRI.basis_trimmer(p, "inputs/cc-pvdz-ri.g94", alphacut = .9)
-    f = open("ri-fitbasis.g94", "w")
-    f.write(auxbasis)
-    f.close()
-
-    # test integrals in refcell 
-
-    ib = PRI.integral_builder_static(c,p,attenuation = attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=True, extent_thresh=1e-10, robust = False)
-    
-    i0, ishape = ib.getorientation([0,0,0],[0,0,0])
-    pqrs_ex = PRI.compute_pqrs(p, np.array([[0,0,0]]))
-
-    # Test max deviation
-    #print("Maxdev:", np.max(np.abs(pqrs_ex[:p.get_nocc(), p.get_nocc():, :p.get_nocc(), p.get_nocc():] - i0.cget([0,0,0]).reshape(ishape))))
-     
-    #import matplotlib.pyplot as plt
-    #np.save("pqrs_ex", pqrs_ex[:p.get_nocc(), p.get_nocc():, :p.get_nocc(), p.get_nocc():])
-    #np.save("fitted", i0.cget([0,0,0]).reshape(ishape))
-
-    
-
-
-    # Test that a single AO in refcell is properly fitted
-    print("Fit   :", i0.cget([0,0,0]).reshape(ishape)[0,0,0,0])
-    print("Exact :", pqrs_ex[2,2,2,2])
-    print(np.abs(pqrs_ex[2,2,2,2]-i0.cget([0,0,0]).reshape(ishape)[0,0,0,0])) #, "err"
-    
-    # Test that all a linear combination of all AOs in refcell is properly fitted
-    print("Fit   :", i0.cget([0,0,0]).reshape(ishape)[0,0,0,3])
-    print("Exact :", np.sum(pqrs_ex[2,2,2,:]))
-    print(np.abs( i0.cget([0,0,0]).reshape(ishape)[0,0,0,3] - np.sum(pqrs_ex[2,2,2,:])))
-
-    pqrs_ex = PRI.compute_pqrs(p, np.array([[-1,0,0]]))#[:p.get_nocc(), p.get_nocc():, :p.get_nocc(), p.get_nocc():]
-
-    #print(np.max(np.abs(pqrs_ex - i0.cget([0,0,0]).reshape(ishape))))
-    # Test that AOs outside the refcell are properly fitted
-    # NOTE: the convention we use is |Lp> := sum_{Mm} C^-M_{mp} |Mm>
-    #       this must be taken into account in the indexing
-    print("Fit   :", i0.cget([0,0,0]).reshape(ishape)[1,1,2,2])
-    print("Exact :", pqrs_ex[6,6,2,3])
-    print(np.abs(pqrs_ex[6,6,2,3]-i0.cget([0,0,0]).reshape(ishape)[1,1,2,2])) #, "err"
-
-    # Test that translated product AOs are properly fitted
-    print("Fit   :", i0.cget([1,0,0]).reshape(ishape)[0,0,0,0])
-    print("Exact :", pqrs_ex[2,2,2,2])
-    print(np.abs(pqrs_ex[2,2,2,2]-i0.cget([1,0,0]).reshape(ishape)[0,0,0,0])) #, "err"
-
-    
-    # test that translated AOs outside the refcell are properly fitted
-    pqrs_ex = PRI.compute_pqrs(p, np.array([[-2,0,0]]))#[:p.get_nocc(), p.get_nocc():, :p.get_nocc(), p.get_nocc():]
-    print("Fit   :", i0.cget([-2,0,0]).reshape(ishape)[1,1,2,2])
-    print("Fit-> :", i0.cget([-1,0,0]).reshape(ishape)[1,1,2,2]) # <-
-    print("Fit   :", i0.cget([0,0,0]).reshape(ishape)[1,1,2,2])
-    print("Fit   :", i0.cget([1,0,0]).reshape(ishape)[1,1,2,2])
-    print("Fit   :", i0.cget([2,0,0]).reshape(ishape)[1,1,2,2])
-    print("Exact :", pqrs_ex[6,6,2,3])
-    print(np.abs(pqrs_ex[6,6,2,3]- i0.cget([-1,0,0]).reshape(ishape)[1,1,2,2]))
-"""
-    
