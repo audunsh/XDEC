@@ -1,5 +1,8 @@
-# XDEC-PRI : eXtended DEC using the Resolution of Identity approximation 
+# XDEC-PRI : eXtended DEC-MP2 using the Resolution of Identity approximation 
 ## General installation instructions
+
+*Note (april 2020)*: A static binary for the libint interface is provided for osx  
+
 1. Compile + install libint: <a href="https://github.com/evaleev/libint">https://github.com/evaleev/libint</a>
 2. Compile the libint wrapper for python
 3. Set environment variables according to instructions in section.
