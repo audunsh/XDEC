@@ -144,6 +144,44 @@ def test_libint():
     assert(np.linalg.norm(s.cget(s.coords)-s_)<1e-6)
 
 
+def test_pri():
+    """
+    test fitting framework, use AO basis 
+    """
+    os.environ["LIBINT_DATA_PATH"] = os.getcwd() 
+    #p = pr.prism("inputs/LiH_2D.d12")
+    p = pr.prism("inputs/LiH_1D.d12")
+
+    I = tp.get_identity_tmat(p.get_n_ao())
+
+    auxbasis = PRI.basis_trimmer(p, "inputs/cc-pvtz-ri.g94", alphacut = .0)
+    f = open("ri-fitbasis.g94", "w")
+    f.write(auxbasis)
+    f.close()
+
+    ib = PRI.integral_builder_static(I,I,p,attenuation = 0.06, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=True, robust = False, xi0=1e-10, xi1 = 1e-10,  N_c = 27)
+
+    dL = np.array([0,0,0])
+    I, Ishape = ib.getorientation(dL, dL)
+    I0 = I.cget([0,0,0]).reshape((11,11,11,11))
+
+   
+
+    pqrs_ex = PRI.compute_pqrs(p, np.array([[0,0,0]]))
+    Im = np.argmax(np.abs(pqrs_ex.ravel()))
+
+    m = np.abs(pqrs_ex.ravel()[Im]-I0.ravel()[Im])/pqrs_ex.ravel()[Im] #relative error in 
+    assert(m<1e-4), m
+
+
+
+
+
+
+
+
+
+
 
 
 
