@@ -76,6 +76,23 @@ def test_toeplitz():
     B2 = B.circulantdot(B)
     assert(np.linalg.norm(B2.cget(B2.coords)-B2c)<=1e-14)
 
+def test_toeplitz_products():
+    """
+    Test that Toeplitz- and Circulant products are consistently defined
+    """
+
+    B = tp.get_random_tmat([1,1,1], [2,2])
+
+    B2t = B.cdot(B)
+
+    B2c = B.circulantdot(B, n_layers = np.array([2,2,2]))
+
+    m = np.linalg.norm(B2t.cget(B2t.coords) - B2c.cget(B2t.coords))
+    assert(m<1e-14)
+
+
+
+
 # test libint / PRI
 
 def test_libint():
@@ -173,7 +190,7 @@ def test_pri():
     Im = np.argmax(np.abs(pqrs_ex.ravel()))
 
     m = np.abs(pqrs_ex.ravel()[Im]-I0.ravel()[Im])/pqrs_ex.ravel()[Im] #relative error in 
-    assert(m<1e-4), m
+    assert(m<1e-4)
 
 
 
