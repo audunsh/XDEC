@@ -899,6 +899,7 @@ class amplitude_solver():
                 print("Converged in %i iterations with abs.max.diff in residual %.2e." % (ti, dt_abs))
                 print ()
                 break
+        return dt_abs, ti
 
 
     def solve_MP2PAO_(self, norm_thresh = 1e-10, s_virt = None, n_diis=8):
@@ -1334,6 +1335,7 @@ class fragment_amplitudes(amplitude_solver):
 
         self.float_precision = float_precision
 
+
         
 
         #self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[:p.get_nocc()])
@@ -1343,7 +1345,6 @@ class fragment_amplitudes(amplitude_solver):
             self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[p.get_nocc():])
         else:
             self.d_ia = d_ia
-
 
 
 
@@ -1439,12 +1440,11 @@ class fragment_amplitudes(amplitude_solver):
         n_computed_ex = 0
 
         # Sort blocks by dL:
-        print("len(sequence):", len(sequence))
         a = np.argsort(sequence[:,0])
         sequence = sequence[a]
-        #print(sequence.shape)
+        
         sequence = np.append(sequence, [ [-1000,0,0,0, 0, 0, 0,0] ], axis = 0) #-100 Just to make sure :-)
-        #print(sequence.shape)
+        
         j = 0
         for i in np.arange(len(sequence)):
 
@@ -1593,6 +1593,8 @@ class fragment_amplitudes(amplitude_solver):
 
                     # Using multiple levels of masking, probably some other syntax could make more sense
 
+                    #print(dM_i.shape, dL_i.shape, self.fragment)
+
                     g_direct = self.g_d[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
                     #g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
                     #g_direct = self.g_d[:,ddL,:,mM, :, ddM, :][self.fragment][:, :][:, :, self.fragment][:,:,:,:]
@@ -1645,7 +1647,7 @@ class fragment_amplitudes(amplitude_solver):
         Include n_orbs more virtual orbitals in the virtual extent
         """
         new_cut = np.sort(self.d_ia.blocks[:-1, self.fragment[0]][self.d_ia.blocks[:-1, self.fragment[0]]>self.virtual_cutoff])[n_orbs -1]
-        #print("Increasing virtual cutoff:", self.virtual_cutoff, "->", new_cut)
+        print("Increasing virtual cutoff:", self.virtual_cutoff, "->", new_cut)
         self.set_extent(new_cut, self.occupied_cutoff)
 
     def autoexpand_occupied_space(self, n_orbs = 10):
@@ -2022,6 +2024,8 @@ class pair_fragment_amplitudes(amplitude_solver):
         n_virt = self.p.get_nvirt()   # Number of virtual orbitals per cell
         N_virt = self.n_virtual_cells # Number of virtual cells
 
+        
+
 
         self.t2  = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
@@ -2243,6 +2247,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                     dM_i = self.d_ia.cget(dM)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
 
                     # Using multiple levels of masking, probably some other syntax could make more sense
+                    
 
                     g_direct = self.g_d[:,ddL,:,0, :, ddM, :][self.fragment][:, dL_i][:, :, self.fragment][:,:,:,dM_i]
                     #g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][self.fragment][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
@@ -2625,8 +2630,9 @@ if __name__ == "__main__":
 
     # Print run-info to screen
     #print("Git rev : ", git_hh)
-    print("Authors : Audun Skau Hansen (a.s.hansen@kjemi.uio.no) ")
-    print("          Einar Aurbakken")
+    print("Contributors : Audun Skau Hansen (a.s.hansen@kjemi.uio.no) ")
+    print("               Einar Aurbakken")
+    print("               Thomas Bondo Pedersen")
     print(" ")
     print("   \u001b[38;5;117m0\u001b[38;5;27mø \033[0mHylleraas Centre for Quantum Molecular Sciences")
     print("                        UiO 2020")
@@ -2685,7 +2691,7 @@ if __name__ == "__main__":
     # Load wannier centers
 
     wcenters, spreads = of.centers_spreads(c, p, s.coords)
-    wcenters = wcenters[p.n_core:] #remove core orbitals
+    #wcenters = wcenters[p.n_core:] #remove core orbitals
 
 
 
@@ -2694,29 +2700,37 @@ if __name__ == "__main__":
     if args.virtual_space is not None:
         if args.virtual_space == "pao":
             s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
-            p.n_core = args.n_core
+            
             p.set_nvirt(c_virt.blocks.shape[2])
 
             args.solver = "mp2_nonorth"
+            
 
             # Append virtual centers to the list of centers
-            wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
+            wcenters = np.append(wcenters[:p.get_nocc()], wcenters_virt, axis = 0) #TODO: check *0 here, why?
+            p.n_core = args.n_core
 
         elif args.virtual_space == "paodot":
             s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
-            p.n_core = args.n_core
+            
             p.set_nvirt(c_virt.blocks.shape[2])
 
             args.solver = "paodot"
 
             # Append virtual centers to the list of centers
-            wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
+            
+            wcenters = np.append(wcenters[:p.get_nocc()], wcenters_virt, axis = 0)
+            p.n_core = args.n_core
 
 
         else:
             c_virt = tp.tmat()
             c_virt.load(args.virtual_space)
             p.set_nvirt(c_virt.blocks.shape[2])
+    else:
+        wcenters = wcenters[p.n_core:]
+
+    c_occ, c_virt_lvo = PRI.occ_virt_split(c,p)
 
     s_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
 
@@ -2741,8 +2755,6 @@ if __name__ == "__main__":
     f_ii = np.diag(f_mo_ii.cget([0,0,0]))
 
     e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
-
-
 
 
 
