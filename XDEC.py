@@ -313,8 +313,8 @@ class amplitude_solver():
                 rnorm = np.linalg.norm(dt2_new)
                 #print("%.10e %.10e" % (self.compute_fragment_energy(),update_max ))
                 #print("%.10e %.10e" % (self.compute_fragment_energy(),np.abs(dt2_new).max() ))
-                if np.abs(dt2_new).max()<1e-7:
-                    break
+                #if np.abs(dt2_new).max()<1e-7:
+                #    break
                 #print("Max update:", np.abs(dt2_new).max())
                 #if np.abs(dt2_new).max() <
 
@@ -2617,6 +2617,7 @@ if __name__ == "__main__":
     parser.add_argument("-adaptive_domains", default = False, action = "store_true", help = "Activate adaptive Coulomb matrix calculation.")
     parser.add_argument("-recycle_integrals", type = bool, default = True, help = "Recycle fragment integrals when computing pairs." )
     parser.add_argument("-fragmentation", type = str, default = "dec", help="Fragmentation scheme (dec/cim)")
+    parser.add_argument("-afrag", type = float, default = 2.0, help="Atomic fragmentation threshold.")
 
 
     args = parser.parse_args()
@@ -2663,6 +2664,7 @@ if __name__ == "__main__":
     print("General settings:")
     print("Virtual space          :", args.virtual_space)
     print("Coulomb extent (layers):", args.N_c)
+    print("Atomic fragmentation   :", args.afrag)
     #print("Dot-product            :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
     #print("RI fitting             :", ["Non-robust", "Robust"][int(args.robust)])
     print("_________________________________________________________")
@@ -2785,7 +2787,7 @@ if __name__ == "__main__":
 
 
 
-    center_fragments = dd.atomic_fragmentation(p, d, 2.0) #[::-1]
+    center_fragments = dd.atomic_fragmentation(p, d, args.afrag) #[::-1]
 
     print(" ")
     print("_________________________________________________________")
@@ -2821,11 +2823,11 @@ if __name__ == "__main__":
 
             if args.pao_sorting:
                 d_ia = build_weight_matrix(p, c, domain_max)
-                a_frag = fragment_amplitudes(p, wcenters,domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0, float_precision = args.float_precision, d_ia = d_ia)
+                a_frag = fragment_amplitudes(p, wcenters,domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 6.0, occupied_cutoff = 2.0, float_precision = args.float_precision, d_ia = d_ia)
 
 
             else:
-                a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 2.0, float_precision = args.float_precision)
+                a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 6.0, occupied_cutoff = 2.0, float_precision = args.float_precision)
 
             #print("Frag init:", time.time()-t0)
 
@@ -2882,7 +2884,7 @@ if __name__ == "__main__":
                         t_3 = time.time()
                         dE = np.abs(E_prev - E_new)
                         #print("D_ii = ", a_frag.compute_mp2_density(orb_n = 0).shape)
-                        print("Full energy:", a_frag.compute_energy())
+                        #print("Full energy:", a_frag.compute_energy())
 
                         print("_________________________________________________________")
                         print("E(fragment): %.8f      DE(fragment): %.8e" % (E_new, dE))
@@ -2944,7 +2946,7 @@ if __name__ == "__main__":
                         #a_frag.print_configuration_space_data()
                         dE = np.abs(E_prev - E_new)
 
-                        print("Full energy:", a_frag.compute_energy())
+                        #print("Full energy:", a_frag.compute_energy())
 
                         print("_________________________________________________________")
                         print("E(fragment): %.6f        DE(fragment): %.6e" % (E_new, dE))
@@ -2968,12 +2970,69 @@ if __name__ == "__main__":
                 print(" ")
                 refcell_fragments.append(a_frag)
                 fragment_energy_total += E_new
+        for fa in np.arange(len(refcell_fragments)):
+            print(fa, refcell_fragments[fa].compute_fragment_energy())
+
         print("Total fragment energy:", fragment_energy_total)
+        """
+        c = np.array([0,0,0])
+        pair_total = 0
+        for fa in np.arange(len(refcell_fragments)):
+            for fb in np.arange(fa+1, len(refcell_fragments)):
+                frag_a = refcell_fragments[fa]
+                frag_b = refcell_fragments[fb]
+
+                pos_a = wcenters[refcell_fragments[fa].fragment[0]]
+                pos_b = wcenters[refcell_fragments[fb].fragment[0]]
+
+                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals)
+                #print(pair.compute_pair_fragment_energy())
+                rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
+                print("Convergence:", rn, it)
+                
+                p_energy = pair.compute_pair_fragment_energy()
+                pair_total += p_energy
+                #pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
+                #pair_energies.append(p_energy)
+                
+
+                print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
+        print(pair_total)
+        pair_total = 0
+        
+
+        for c in np.array([[1,0,0]]):
+
+            for fa in np.arange(len(refcell_fragments)):
+                for fb in np.arange(len(refcell_fragments)):
+                    frag_a = refcell_fragments[fa]
+                    frag_b = refcell_fragments[fb]
+
+                    pos_a = wcenters[refcell_fragments[fa].fragment[0]]
+                    pos_b = wcenters[refcell_fragments[fb].fragment[0]]
+
+                    pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals)
+                    #print(pair.compute_pair_fragment_energy())
+                    rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
+                    print("Convergence:", rn, it)
+                    
+                    p_energy = pair.compute_pair_fragment_energy()
+                    pair_total += p_energy
+                    #pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
+                    #pair_energies.append(p_energy)
+                    print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
+      
+            print("PAir total:", pair_total)
+        """
+
+
+
+
 
         
 
         if args.pairs:
-            alternative_loop = False
+            alternative_loop = True
 
             import copy
 
@@ -2981,6 +3040,9 @@ if __name__ == "__main__":
 
 
             if alternative_loop == False:
+
+                pair_energies = []
+                pair_distances = []
                 pair_coords = tp.lattice_coords([10,10,10])
                 pair_coords = pair_coords[np.argsort(np.sum(p.coor2vec(pair_coords)**2, axis = 1))[0:]] #Sort in increasing distance
                 pair_total = 0
@@ -3006,10 +3068,15 @@ if __name__ == "__main__":
                             
                             p_energy = pair.compute_pair_fragment_energy()
                             pair_total += p_energy
+                            pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
+                            pair_energies.append(p_energy)
                             
 
                             print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
                             print("_________________________________________________________")
+                            print(pair_distances)
+                            print(pair_energies)
+                            print(" ----- ")
 
 
                             
@@ -3056,9 +3123,10 @@ if __name__ == "__main__":
 
                             
                             #print(pair.compute_pair_fragment_energy())
-                            pair.solve()
+                            #pair.solve()
+                            pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
                             p_energy = pair.compute_pair_fragment_energy()
-                            pair_total += 2*p_energy
+                            pair_total += p_energy
                             print ()
                             print("Pair fragment energy for ",c," is ", 2*p_energy, " (total: ", pair_total + 0*E_new, " )")
                             print("R = ", np.sum(p.coor2vec(c)**2)**.5, fa, fb)
