@@ -2618,6 +2618,7 @@ if __name__ == "__main__":
     parser.add_argument("-recycle_integrals", type = bool, default = True, help = "Recycle fragment integrals when computing pairs." )
     parser.add_argument("-fragmentation", type = str, default = "dec", help="Fragmentation scheme (dec/cim)")
     parser.add_argument("-afrag", type = float, default = 2.0, help="Atomic fragmentation threshold.")
+    parser.add_argument("-virtual_cutoff", type = float, default = 6.0, help="Initial virtual cutoff for DEC optimization.")
 
 
     args = parser.parse_args()
@@ -2668,6 +2669,8 @@ if __name__ == "__main__":
     #print("Dot-product            :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
     #print("RI fitting             :", ["Non-robust", "Robust"][int(args.robust)])
     print("_________________________________________________________")
+
+    
 
 
     # Load system
@@ -2806,8 +2809,8 @@ if __name__ == "__main__":
     
 
     if args.fragmentation == "dec":
-        virt_cut = 3.0
-        occ_cut = 6.0
+        virt_cut = args.virtual_cutoff
+        occ_cut = args.afrag
 
         refcell_fragments = []
         fragment_energy_total = 0
@@ -2823,11 +2826,11 @@ if __name__ == "__main__":
 
             if args.pao_sorting:
                 d_ia = build_weight_matrix(p, c, domain_max)
-                a_frag = fragment_amplitudes(p, wcenters,domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 6.0, occupied_cutoff = 2.0, float_precision = args.float_precision, d_ia = d_ia)
+                a_frag = fragment_amplitudes(p, wcenters,domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = virt_cut, occupied_cutoff = occ_cut, float_precision = args.float_precision, d_ia = d_ia)
 
 
             else:
-                a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 6.0, occupied_cutoff = 2.0, float_precision = args.float_precision)
+                a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = virt_cut, occupied_cutoff = occ_cut, float_precision = args.float_precision)
 
             #print("Frag init:", time.time()-t0)
 
@@ -2878,7 +2881,7 @@ if __name__ == "__main__":
 
 
                         t_1 = time.time()
-                        a_frag.solve(eqtype = args.solver, s_virt = s_virt)
+                        dt, it = a_frag.solve(eqtype = args.solver, s_virt = s_virt)
                         t_2 = time.time()
                         E_new = a_frag.compute_fragment_energy()
                         t_3 = time.time()
@@ -2891,6 +2894,7 @@ if __name__ == "__main__":
                         print("_________________________________________________________")
                         print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
                         print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
+                        print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
                         print(" ")
                         e_virt.append(E_new)
                         E_prev = E_new
@@ -2917,7 +2921,7 @@ if __name__ == "__main__":
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
-                    a_frag.solve(eqtype = args.solver, s_virt = s_virt)
+                    dt, it =  a_frag.solve(eqtype = args.solver, s_virt = s_virt)
                     E_new = a_frag.compute_fragment_energy()
 
                     #a_frag.print_configuration_space_data()
@@ -2940,7 +2944,7 @@ if __name__ == "__main__":
                         print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                         print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
-                        a_frag.solve(eqtype = args.solver, s_virt = s_virt)
+                        dt, it = a_frag.solve(eqtype = args.solver, s_virt = s_virt)
                         E_new = a_frag.compute_fragment_energy()
 
                         #a_frag.print_configuration_space_data()
@@ -3032,7 +3036,7 @@ if __name__ == "__main__":
         
 
         if args.pairs:
-            alternative_loop = True
+            alternative_loop = False
 
             import copy
 
