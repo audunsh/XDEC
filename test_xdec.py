@@ -88,7 +88,7 @@ def test_toeplitz_products():
     B2c = B.circulantdot(B, n_layers = np.array([2,2,2]))
 
     m = np.linalg.norm(B2t.cget(B2t.coords) - B2c.cget(B2t.coords))
-    assert(m<1e-14)
+    assert(m<1e-13)
 
 
 

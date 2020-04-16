@@ -2342,7 +2342,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                     t = self.t2[:,ddL,:,self.mM_, :, ddM, :][self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i]
 
                     e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-
+        print("Computed/reused:", computed, reuse)
         return e_mp2
     
     def omega(self, t2):
