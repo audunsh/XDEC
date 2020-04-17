@@ -2342,7 +2342,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                     t = self.t2[:,ddL,:,self.mM_, :, ddM, :][self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i]
 
                     e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
-        print("Computed/reused:", computed, reuse)
+        #print("Computed/reused:", computed, reuse)
         return e_mp2
     
     def omega(self, t2):
@@ -2705,15 +2705,13 @@ if __name__ == "__main__":
     if args.virtual_space is not None:
         if args.virtual_space == "pao":
             s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
-            
+            p.n_core = args.n_core
             p.set_nvirt(c_virt.blocks.shape[2])
 
             args.solver = "mp2_nonorth"
-            
 
             # Append virtual centers to the list of centers
-            wcenters = np.append(wcenters[:p.get_nocc()], wcenters_virt, axis = 0) #TODO: check *0 here, why?
-            p.n_core = args.n_core
+            wcenters = np.append(wcenters[:p.get_nocc()-p.n_core], wcenters_virt, axis = 0)
 
         elif args.virtual_space == "paodot":
             s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
@@ -2726,12 +2724,26 @@ if __name__ == "__main__":
             
             wcenters = np.append(wcenters[:p.get_nocc()], wcenters_virt, axis = 0)
             p.n_core = args.n_core
-
-
         else:
             c_virt = tp.tmat()
             c_virt.load(args.virtual_space)
             p.set_nvirt(c_virt.blocks.shape[2])
+        """
+        if args.virtual_space == "pao":
+            s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
+            #p.n_core = args.n_core
+            
+            p.set_nvirt(c_virt.blocks.shape[2])
+            print("p.get_nvirt:", p.get_nvirt())
+
+            args.solver = "mp2_nonorth"
+            
+
+            # Append virtual centers to the list of centers
+            wcenters = np.append(wcenters[:p.get_nocc()], wcenters_virt, axis = 0)
+            p.n_core = args.n_core
+        """
+        
     else:
         wcenters = wcenters[p.n_core:]
 
@@ -2790,7 +2802,7 @@ if __name__ == "__main__":
 
 
 
-    center_fragments = dd.atomic_fragmentation(p, d, args.afrag) #[::-1]
+    center_fragments = dd.atomic_fragmentation(p, d, args.afrag)[::-1]
 
     print(" ")
     print("_________________________________________________________")

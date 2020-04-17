@@ -425,6 +425,7 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
     ncore = p.n_core 
     p.n_core = 0 #temporarily include core orbital
     c_occ, c_virt = PRI.occ_virt_split( c, p)
+    print("C_occ_blockshape (PAO)", c_occ.blocks.shape)
 
     p.n_core = ncore
 
