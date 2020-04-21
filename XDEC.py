@@ -1531,7 +1531,7 @@ class fragment_amplitudes(amplitude_solver):
                     #Mv = self.d_ii.coords[mM]
                     M_i = self.d_ii.cget(M)[self.fragment[0],:]<self.occupied_cutoff # M index mask
 
-                    print(ddL,mM, ddM, self.g_d.shape)
+                    #print(ddL,mM, ddM, self.g_d.shape)
 
 
                     g_direct = self.g_d[:,ddL,:,mM, :, ddM, :][self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i]
