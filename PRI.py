@@ -67,7 +67,7 @@ def occ_virt_split(c,p):
     c_virt.load_nparray(c.cget(c.coords)[:,:,p.get_nocc()+p.n_core:], c.coords, screening = False)
 
     c_occ = tp.tmat()
-    c_occ.load_nparray(c.cget(c.coords)[:,:,:p.get_nocc()+p.n_core], c.coords, screening = False)
+    c_occ.load_nparray(c.cget(c.coords)[:,:,p.n_core:p.get_nocc()+p.n_core], c.coords, screening = False)
 
 
 
