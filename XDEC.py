@@ -880,7 +880,7 @@ class amplitude_solver():
 
             #t2 = time.time()
 
-            self.t2 -= .5*t2_new
+            self.t2 -= .2*t2_new
             self.t2 = DIIS.advance(self.t2,t2_new)
 
             #t3 = time.time()
@@ -2871,7 +2871,7 @@ if __name__ == "__main__":
 
 
     center_fragments = dd.atomic_fragmentation(p, d, args.afrag) #[::-1]
-    #center_fragments = [[2]]
+    
 
     print(" ")
     print("_________________________________________________________")
