@@ -313,8 +313,8 @@ class amplitude_solver():
                 rnorm = np.linalg.norm(dt2_new)
                 #print("%.10e %.10e" % (self.compute_fragment_energy(),update_max ))
                 #print("%.10e %.10e" % (self.compute_fragment_energy(),np.abs(dt2_new).max() ))
-                #if np.abs(dt2_new).max()<1e-7:
-                #    break
+                if np.abs(dt2_new).max()<1e-7:
+                    break
                 #print("Max update:", np.abs(dt2_new).max())
                 #if np.abs(dt2_new).max() <
 
@@ -885,7 +885,7 @@ class amplitude_solver():
 
             #t2 = time.time()
 
-            self.t2 -= .5*t2_new
+            self.t2 -= .1*t2_new
             self.t2 = DIIS.advance(self.t2,t2_new)
 
             #t3 = time.time()
@@ -1982,9 +1982,9 @@ class pair_fragment_amplitudes(amplitude_solver):
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
 
-            #elmn = self.f1.d_ia.cget(coord)[self.f1.fragment[0], :] < self.f1.virtual_cutoff
-            #self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
-            #self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
+            elmn = self.f1.d_ia.cget(coord)[self.f1.fragment[0], :] < self.f1.virtual_cutoff
+            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
+            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
             
 
         self.d_ia.blocks[-1] = 1000
@@ -2287,7 +2287,7 @@ class pair_fragment_amplitudes(amplitude_solver):
         #print("E TOt", e_mp2_direct, e_mp2_exchange)
         return e_mp2
 
-    def compute_pair_fragment_energy_(self):
+    def compute_pair_fragment_energy(self):
         """
         Compute fragment energy
         """
@@ -2431,7 +2431,7 @@ class pair_fragment_amplitudes(amplitude_solver):
         #return e_mp2_ab
         return np.array([e_mp2_aa, e_mp2_bb, e_mp2_ab, e_mp2_ba])
 
-    def compute_pair_fragment_energy(self):
+    def compute_pair_fragment_energy_(self):
         """
         Compute fragment energy
         """
@@ -2440,51 +2440,71 @@ class pair_fragment_amplitudes(amplitude_solver):
         N_occ = self.n_occupied_cells # Number of occupied cells
         n_virt = self.p.get_nvirt()   # Number of virtual orbitals per cell
         N_virt = self.n_virtual_cells # Number of virtual cells
-        #print(N_virt, N_occ)
-        #print(self.d_ia.coords[:N_virt])
-        #print(self.d_ii.coords[:N_occ])
-
-
+        
 
 
         e_mp2 = 0
 
         N_virt = self.n_virtual_cells
 
-        #print(self.mM)
-        #print(self.g_d.shape)
-        print("Compute PAIR FRAGMENT")
 
+        reuse = 0     #count instances where exchange integrals can be recycled
+        computed = 0  #count instances where exchange integrals are computed
         for ddL in np.arange(N_virt):
             dL = self.d_ia.coords[ddL]
-            dL_i = np.array(self.d_ia.cget(dL)[self.f1.fragment[0],:], dtype = bool)<self.virtual_cutoff # dL index mask
-            #dL_i = np.array(self.d_ia.cget([0,0,0])[self.f1.fragment[0],:], dtype = bool) # dL index mask
-
+            dL_i = self.d_ia.cget(dL)[self.f1.fragment[0],:]<self.virtual_cutoff
+            
 
             for ddM in np.arange(N_virt):
-                dM =  self.d_ia.coords[ddM]
-                dM_i = np.array(self.d_ia.cget(dM) [self.f1.fragment[0],:], dtype = bool)<self.virtual_cutoff # dM index mask
-                #dM_i = np.array(self.d_ia.cget([0,0,0])[self.f1.fragment[0],:], dtype = bool) # dM index mask
+                dM =  self.d_ia.coords[ddM] # - self.M
+                dM_i = self.d_ia.cget(dM)[self.f1.fragment[0],:]<self.virtual_cutoff
+                if np.sum(dM_i)>0 and np.sum(dL_i)>0:
+                    g_direct = self.g_d[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
+                    
+                    
+                    try:
+                        # Get exchange index / np.argwhere
+                        ddM_M, ddL_M = get_index_where(self.d_ia.coords, dM+self.M), get_index_where(self.d_ia.coords, dL-self.M)
+                        g_exchange = self.g_d[:,ddM_M,:,self.mM, :, ddL_M, :][self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+
+                        reuse += 1
+                    except:
+                    
+                        #print("Exchange not precomputed")
+                        I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
+                        g_exchange = I.cget(self.M).reshape(Ishape)[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+                        computed += 1
+
+                    t = self.t2[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
+
+                    e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
 
 
-                g_direct = self.g_d[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
-                #g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
 
-                #g_exchange = self.cfit.()
-                print(" Energy:", dL, dM, dM+self.M, dL-self.M)
-                I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
-                g_exchange = I.cget(self.M).reshape(Ishape)[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+                    # The opposite case
+
+                    g_direct = self.g_d[:,ddL,:,self.mM_, :, ddM, :][self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i]
+                    
 
 
+                    try:
+                        # Get exchange index / np.argwhere
+                        ddM_M, ddL_M = get_index_where(self.d_ia.coords, dM-self.M), get_index_where(self.d_ia.coords, dL+self.M)
+                        g_exchange = self.g_d[:,ddM_M,:,self.mM_, :, ddL_M, :][self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
+                        reuse += 1
+                    except:
+                        I, Ishape = self.ib.getorientation(dM-self.M, dL+self.M)
+                        g_exchange = I.cget(-self.M).reshape(Ishape)[self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
+                        computed += 1
 
-                t = self.t2[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
+                    t = self.t2[:,ddL,:,self.mM_, :, ddM, :][self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i]
 
-                e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+                    e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
 
-        #print(e_mp2, 2*e_mp2)
-        return np.array([e_mp2,e_mp2,e_mp2,e_mp2])
+        return np.array([e_mp2, e_mp2, e_mp2, e_mp2])
 
-    
+
+
     def omega(self, t2):
 
         t2_new = np.zeros_like(t2)
@@ -2741,7 +2761,7 @@ if __name__ == "__main__":
     parser.add_argument("-ibuild", type = str, default = None, help = "Filename of integral fitting module (will be computed if missing).")
     parser.add_argument("-n_core", type = int, default = 0, help = "Number of core orbitals (the first n_core orbitals will not be correlated).")
     parser.add_argument("-skip_fragment_optimization", default = False, action = "store_true", help = "Skip fragment optimization (for debugging, will run faster but no error estimate.)")
-    parser.add_argument("-basis_truncation", type = float, default = 0.0, help = "Truncate fitting basis function below this exponent threshold." )
+    parser.add_argument("-basis_truncation", type = float, default = 0.1, help = "Truncate fitting basis function below this exponent threshold." )
     parser.add_argument("-ao_screening", type = float, default = 1e-12, help = "Screening of the (J|mn) (three index) integrals.")
     parser.add_argument("-xi0", type = float, default = 1e-10, help = "Screening of the (J|mn) (three index) integrals.")
     parser.add_argument("-xi1", type = float, default = 1e-10, help = "Screening of the (J|pn) (three index) integral transform.")
@@ -2957,7 +2977,7 @@ if __name__ == "__main__":
 
 
 
-    center_fragments = dd.atomic_fragmentation(p, d, args.afrag)[::-1]
+    center_fragments = dd.atomic_fragmentation(p, d, args.afrag) #[::-1]
 
 
     print(" ")
@@ -3289,7 +3309,7 @@ if __name__ == "__main__":
 
 
 
-        if False:
+        if True:
 
             # LiH_specific run
             pair_energies = []
@@ -3372,7 +3392,7 @@ if __name__ == "__main__":
 
         
 
-        if args.pairs:
+        if False: #args.pairs:
             alternative_loop = False
 
             import copy
