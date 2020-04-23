@@ -521,7 +521,7 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
     norms = np.diag(c_pao.tT().circulantdot(s.circulantdot(c_pao)).cget([0,0,0]))
 
 
-    c_pao_screened_blocks = c_pao.cget(c_pao.coords)[:, :, norms>1e-6]
+    c_pao_screened_blocks = c_pao.cget(c_pao.coords)[:, :, norms>1e-2]
     c_pao_screened_coords = c_pao.coords
 
     c_pao = tp.tmat()

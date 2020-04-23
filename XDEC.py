@@ -1982,9 +1982,9 @@ class pair_fragment_amplitudes(amplitude_solver):
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
 
-            elmn = self.f1.d_ia.cget(coord)[self.f1.fragment[0], :] < self.f1.virtual_cutoff
-            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
-            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
+            #elmn = self.f1.d_ia.cget(coord)[self.f1.fragment[0], :] < self.f1.virtual_cutoff
+            #self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
+            #self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
             
 
         self.d_ia.blocks[-1] = 1000
@@ -2287,7 +2287,7 @@ class pair_fragment_amplitudes(amplitude_solver):
         #print("E TOt", e_mp2_direct, e_mp2_exchange)
         return e_mp2
 
-    def compute_pair_fragment_energy(self):
+    def compute_pair_fragment_energy_(self):
         """
         Compute fragment energy
         """
@@ -2301,14 +2301,16 @@ class pair_fragment_amplitudes(amplitude_solver):
 
         e_mp2_ab = 0 #_ab = 0
         e_mp2_ba = 0
+        e_mp2_aa = 0 #_ab = 0
+        e_mp2_bb = 0
 
         N_virt = self.n_virtual_cells
 
 
         reuse = 0     #count instances where exchange integrals can be recycled
         computed = 0  #count instances where exchange integrals are computed
-        print(self.f1.fragment)
-        print(self.f2.fragment)
+        #print(self.f1.fragment)
+        #print(self.f2.fragment)
 
 
 
@@ -2355,6 +2357,21 @@ class pair_fragment_amplitudes(amplitude_solver):
                                                         g_exchange[self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i], 
                                                         optimize = True)
 
+                    e_mp2_aa += 2*np.einsum("iajb,iajb",t[self.f1.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
+                                                        g_direct[self.f1.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i], 
+                                                        optimize = True) \
+                                - np.einsum("iajb,ibja",t[self.f1.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
+                                                        g_exchange[self.f1.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i], 
+                                                        optimize = True)
+                    
+                    e_mp2_bb += 2*np.einsum("iajb,iajb",t[self.f2.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
+                                                        g_direct[self.f2.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i], 
+                                                        optimize = True) \
+                                - np.einsum("iajb,ibja",t[self.f2.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
+                                                        g_exchange[self.f2.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i], 
+                                                        optimize = True)
+
+
 
 
 
@@ -2395,9 +2412,78 @@ class pair_fragment_amplitudes(amplitude_solver):
                                 - np.einsum("iajb,ibja",t[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
                                                         g_exchange[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i], 
                                                         optimize = True)
+
+                    e_mp2_aa += 2*np.einsum("iajb,iajb",t[self.f1.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
+                                                        g_direct[self.f1.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i], 
+                                                        optimize = True)  \
+                                - np.einsum("iajb,ibja",t[self.f1.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
+                                                        g_exchange[self.f1.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i], 
+                                                        optimize = True)
+
+                    e_mp2_bb += 2*np.einsum("iajb,iajb",t[self.f2.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
+                                                        g_direct[self.f2.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i], 
+                                                        optimize = True)  \
+                                - np.einsum("iajb,ibja",t[self.f2.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
+                                                        g_exchange[self.f2.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i], 
+                                                        optimize = True)
         #print("Computed/reused:", computed, reuse)
-        print("Pair energies:", e_mp2_ab, e_mp2_ba)
-        return e_mp2_ab
+        #print("Pair energies:", e_mp2_aa, e_mp2_ab, e_mp2_ba, e_mp2_bb)
+        #return e_mp2_ab
+        return np.array([e_mp2_aa, e_mp2_bb, e_mp2_ab, e_mp2_ba])
+
+    def compute_pair_fragment_energy(self):
+        """
+        Compute fragment energy
+        """
+
+        n_occ = self.p.get_nocc()     # Number of occupied orbitals per cell
+        N_occ = self.n_occupied_cells # Number of occupied cells
+        n_virt = self.p.get_nvirt()   # Number of virtual orbitals per cell
+        N_virt = self.n_virtual_cells # Number of virtual cells
+        #print(N_virt, N_occ)
+        #print(self.d_ia.coords[:N_virt])
+        #print(self.d_ii.coords[:N_occ])
+
+
+
+
+        e_mp2 = 0
+
+        N_virt = self.n_virtual_cells
+
+        #print(self.mM)
+        #print(self.g_d.shape)
+        print("Compute PAIR FRAGMENT")
+
+        for ddL in np.arange(N_virt):
+            dL = self.d_ia.coords[ddL]
+            dL_i = np.array(self.d_ia.cget(dL)[self.f1.fragment[0],:], dtype = bool)<self.virtual_cutoff # dL index mask
+            #dL_i = np.array(self.d_ia.cget([0,0,0])[self.f1.fragment[0],:], dtype = bool) # dL index mask
+
+
+            for ddM in np.arange(N_virt):
+                dM =  self.d_ia.coords[ddM]
+                dM_i = np.array(self.d_ia.cget(dM) [self.f1.fragment[0],:], dtype = bool)<self.virtual_cutoff # dM index mask
+                #dM_i = np.array(self.d_ia.cget([0,0,0])[self.f1.fragment[0],:], dtype = bool) # dM index mask
+
+
+                g_direct = self.g_d[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
+                #g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+
+                #g_exchange = self.cfit.()
+                print(" Energy:", dL, dM, dM+self.M, dL-self.M)
+                I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
+                g_exchange = I.cget(self.M).reshape(Ishape)[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+
+
+
+                t = self.t2[:,ddL,:,self.mM, :, ddM, :][self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
+
+                e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)  - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
+
+        #print(e_mp2, 2*e_mp2)
+        return np.array([e_mp2,e_mp2,e_mp2,e_mp2])
+
     
     def omega(self, t2):
 
@@ -2735,6 +2821,7 @@ if __name__ == "__main__":
 
     # Compute overlap matrix
     s = of.overlap_matrix(p)
+    print(s.coords)
 
 
     # Fitting basis
@@ -2829,9 +2916,9 @@ if __name__ == "__main__":
     f_mo_ii = c_occ.tT().cdot(f_ao*c_occ, coords = c_occ.coords)
     f_mo_ia = c_occ.tT().cdot(f_ao*c_virt, coords = c_occ.coords)
 
-    f_mo_aa = c_virt.tT().circulantdot(f_ao.circulantdot(c_virt))
-    f_mo_ii = c_occ.tT().circulantdot(f_ao.circulantdot(c_occ))
-    f_mo_ia = c_occ.tT().circulantdot(f_ao.circulantdot(c_virt))
+    #f_mo_aa = c_virt.tT().circulantdot(f_ao.circulantdot(c_virt))
+    #f_mo_ii = c_occ.tT().circulantdot(f_ao.circulantdot(c_occ))
+    #f_mo_ia = c_occ.tT().circulantdot(f_ao.circulantdot(c_virt))
 
     #f_mo_ia = c_occ.tT().circulantdot(f_ao.circulantdot(c_virt)) #, coords = c_occ.coords)
 
@@ -2870,7 +2957,7 @@ if __name__ == "__main__":
 
 
 
-    center_fragments = dd.atomic_fragmentation(p, d, args.afrag) #[::-1]
+    center_fragments = dd.atomic_fragmentation(p, d, args.afrag)[::-1]
 
 
     print(" ")
@@ -2903,12 +2990,15 @@ if __name__ == "__main__":
 
     if args.fragmentation == "dec":
         virt_cut = args.virtual_cutoff
+
+
         if args.occupied_cutoff < args.afrag:
             occ_cut = args.afrag
         else:
             occ_cut = args.occupied_cutoff
 
         refcell_fragments = []
+        fragment_errors = []
         fragment_energy_total = 0
 
         # Run DEC-fragment optimization
@@ -3137,11 +3227,15 @@ if __name__ == "__main__":
                 print(" ")
                 print(" ")
                 refcell_fragments.append(a_frag)
+                fragment_errors.append(dE)
                 fragment_energy_total += E_new
         for fa in np.arange(len(refcell_fragments)):
             print(fa, refcell_fragments[fa].compute_fragment_energy())
 
-        print("Total fragment energy:", fragment_energy_total)
+
+        fragment_errors = np.array(fragment_errors)
+
+        print("Total fragment energy:", fragment_energy_total, "+/-", np.sqrt(np.sum(fragment_errors**2)))
         """
         c = np.array([0,0,0])
         pair_total = 0
@@ -3195,6 +3289,85 @@ if __name__ == "__main__":
 
 
 
+        if False:
+
+            # LiH_specific run
+            pair_energies = []
+            pair_distances = []
+            pair_coords = tp.lattice_coords([10,10,10])
+            pair_coords = pair_coords[np.argsort(np.sum(p.coor2vec(pair_coords)**2, axis = 1))[0:]] #Sort in increasing distance
+            pair_total = 0
+
+            #pair_coords = np.array([[1,0,0], [-1,0,0]])
+
+            #domain = tp.lattice_coords([10,0,0])
+
+            #print(domain)
+            frag_a = refcell_fragments[0]
+            frag_b = refcell_fragments[1]
+            pos_a = wcenters[refcell_fragments[0].fragment[0]]
+            pos_b = wcenters[refcell_fragments[1].fragment[0]]
+
+
+            for c in pair_coords:
+                
+                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals)
+                rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
+                print("Convergence:", rn, it)
+                p_energy = pair.compute_pair_fragment_energy()
+
+                pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_a)**2)**.5)
+                pair_energies.append(p_energy[0])
+
+                pair_distances.append(0.529177*np.sum((pos_b - p.coor2vec(c) - pos_b)**2)**.5)
+                pair_energies.append(p_energy[1])
+
+                pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
+                pair_energies.append(p_energy[2])
+
+                pair_distances.append(0.529177*np.sum((pos_b - p.coor2vec(c) - pos_a)**2)**.5)
+                pair_energies.append(p_energy[3])
+
+                print("_________________________________________________________")
+                print("dist_xdec = np.array(", pair_distances, ")")
+                print("e_mp2_xdec = np.array(", pair_energies, ")")
+                print(" ----- ")
+
+                
+
+
+
+
+
+
+
+
+                """
+                for fa in np.arange(len(refcell_fragments)):
+                    for fb in np.arange(len(refcell_fragments)):
+                        frag_a = refcell_fragments[fa]
+                        frag_b = refcell_fragments[fb]
+
+                        pos_a = wcenters[refcell_fragments[fa].fragment[0]]
+                        pos_b = wcenters[refcell_fragments[fb].fragment[0]]
+
+                        pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals)
+                        #print(pair.compute_pair_fragment_energy())
+                        rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
+                        print("Convergence:", rn, it)
+                        
+                        p_energy = pair.compute_pair_fragment_energy()
+                        pair_total += p_energy
+                        pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
+                        pair_energies.append(p_energy)
+                        
+
+                        print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
+                        print("_________________________________________________________")
+                        print(pair_distances)
+                        print(pair_energies)
+                        print(" ----- ")
+                """
 
 
         
@@ -3205,6 +3378,9 @@ if __name__ == "__main__":
             import copy
 
             # Outline of pair fragment calcs
+
+
+            
 
 
             if alternative_loop == False:
@@ -3234,7 +3410,7 @@ if __name__ == "__main__":
                             rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
                             print("Convergence:", rn, it)
                             
-                            p_energy = pair.compute_pair_fragment_energy()
+                            p_energy = pair.compute_pair_fragment_energy()[2]
                             pair_total += p_energy
                             pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
                             pair_energies.append(p_energy)
@@ -3242,9 +3418,12 @@ if __name__ == "__main__":
 
                             print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
                             print("_________________________________________________________")
-                            print(pair_distances)
-                            print(pair_energies)
+                            #print(pair_distances)
+                            #print(pair_energies)
+                            print("dist_xdec = np.array(", pair_distances, ")")
+                            print("e_mp2_xdec = np.array(", pair_energies, ")")
                             print(" ----- ")
+            
 
 
                             
