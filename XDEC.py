@@ -2843,15 +2843,7 @@ if __name__ == "__main__":
     e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
 
 
-    print("Frozen core test")
-    print("p.get_nocc   :", p.get_nocc())
-    print("p.n_core     :", p.n_core)
-    print("p.get_nvirt():", p.get_nvirt())
-    print("p.get_n_ao() :", p.get_n_ao())
-    print("MAtrix dims")
-    print("C_occ :", c_occ.blocks.shape)
-    print("C_virt:", c_virt.blocks.shape)
-    print(" ")
+    
 
 
     # Initialize integrals
