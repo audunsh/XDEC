@@ -3309,7 +3309,7 @@ if __name__ == "__main__":
 
 
 
-        if True:
+        if False:
 
             # LiH_specific run
             pair_energies = []
@@ -3392,7 +3392,7 @@ if __name__ == "__main__":
 
         
 
-        if False: #args.pairs:
+        if args.pairs:
             alternative_loop = False
 
             import copy
