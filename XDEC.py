@@ -788,6 +788,11 @@ class amplitude_solver():
 
         M0_i = self.d_ii.cget([0,0,0])[self.fragment[0],:]<self.occupied_cutoff ### 
 
+        #print( self.d_ia.cget([0,0,0])[self.fragment[0],:]<self.virtual_cutoff)
+        #print( self.d_ia.cget([0,0,0])[self.fragment[0],:])
+        #print( self.virtual_cutoff)
+        #print(M0_i)
+
         for ti in np.arange(100):
 
             t2_new = np.zeros_like(self.t2)
@@ -880,7 +885,7 @@ class amplitude_solver():
 
             #t2 = time.time()
 
-            self.t2 -= .2*t2_new
+            self.t2 -= .5*t2_new
             self.t2 = DIIS.advance(self.t2,t2_new)
 
             #t3 = time.time()
@@ -946,6 +951,9 @@ class amplitude_solver():
 
         ener = [0,0]
 
+        M0_i = self.d_ii.cget([0,0,0])[self.fragment[0],:]<self.occupied_cutoff ### 
+
+
         for ti in np.arange(1000):
             #print ('Iteration no.: ', ti)
             t2_new = np.zeros_like(self.t2)
@@ -988,7 +996,7 @@ class amplitude_solver():
                         tnew = -self.g_d[:, dL, :, M, :, dM, :]
 
                         # generate index mapping of non-zero amplitudes in cell
-                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+                        cell_map = np.arange(tnew.size).reshape(tnew.shape)[M0_i][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
 
                         # Perform contractions
                         Fac = self.f_mo_aa.cget(virtual_extent - virtual_extent[dL])
@@ -2871,7 +2879,7 @@ if __name__ == "__main__":
 
 
     center_fragments = dd.atomic_fragmentation(p, d, args.afrag) #[::-1]
-    
+
 
     print(" ")
     print("_________________________________________________________")

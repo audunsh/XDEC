@@ -69,7 +69,7 @@ def build_distance_matrix(p, coords, wcenters_a, wcenters_b):
     dblocks = np.zeros((coords.shape[0], wcenters_a.shape[0], wcenters_b.shape[0]), dtype = float)
     for c in np.arange(coords.shape[0]):
         dblocks[c] = np.sqrt(np.sum( (wcenters_a[:, None] - wcenters_b[None, :] - p.coor2vec(coords[c]))**2, axis = 2))
-    
+        
     #sort blocks and coords in order of increasing distance
 
     d_order = np.argsort(np.min(dblocks,axis=(1,2)))
