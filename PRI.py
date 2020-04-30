@@ -1739,7 +1739,9 @@ def tcoords_metric(c1,c2, coords):
     """
     nsep = 200
 
-    print(c1.coords.shape, coords.shape)
+    #print(coords)
+
+    #print(c1.coords.shape, coords.shape)
 
     nc = (-c1.coords[None,:] + coords[:,None]).reshape(c1.coords.shape[0]*coords.shape[0], 3)
     c1coords = nc[np.unique(np.dot(nc-nc.min(), np.array([nsep**0,nsep**1,nsep**2])), return_index = True)[1]]
