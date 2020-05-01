@@ -1530,6 +1530,8 @@ class fragment_amplitudes(amplitude_solver):
         N_virt = self.n_virtual_cells
         N_occ = self.n_occupied_cells
 
+        M_0 = self.d_ii.cget([0,0,0])[self.fragment[0],:]<self.occupied_cutoff # M index mask
+
         for ddL in np.arange(N_virt):
             dL = self.d_ia.coords[ddL]
             dL_i = self.d_ia.cget(dL)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
@@ -1560,7 +1562,7 @@ class fragment_amplitudes(amplitude_solver):
                             # Get exchange index / np.argwhere
                             #assert(False)
                             ddM_M, ddL_M = get_index_where(self.d_ia.coords, dM+M), get_index_where(self.d_ia.coords, dL-M)
-                            g_exchange = self.g_d[:,ddM_M,:,mM, :, ddL_M, :][M_i][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
+                            g_exchange = self.g_d[:,ddM_M,:,mM, :, ddL_M, :][self.fragment][:, dM_i][:, :, M_i][:,:,:,dL_i]
                             #print("Reuse integrals for exchange")
                             #assert(False), "no"
                             #reuse += 1
@@ -1568,7 +1570,7 @@ class fragment_amplitudes(amplitude_solver):
 
                             #print("Exchange not precomputed")
                             I, Ishape = self.ib.getorientation(dM+M, dL-M)
-                            g_exchange = I.cget(M).reshape(Ishape)[M_i][:, dM_i][:, :, self.fragment][:,:,:,dL_i]
+                            g_exchange = I.cget(M).reshape(Ishape)[self.fragment][:, dM_i][:, :, M_i][:,:,:,dL_i]
                             #computed += 1
 
                         e_mp2 += - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
@@ -2878,8 +2880,8 @@ if __name__ == "__main__":
     parser.add_argument("project_file", type = str, help ="input file for project (.d12 file)")
     parser.add_argument("coefficients", type= str,help = "Coefficient matrix from Crystal")
     parser.add_argument("fock_matrix", type= str,help = "AO-Fock matrix from Crystal")
-    parser.add_argument("-fitted_coeffs", type= str,help="Array of coefficient matrices from RI-fitting")
     parser.add_argument("auxbasis", type = str, help="Auxiliary fitting basis.")
+    parser.add_argument("-fitted_coeffs", type= str,help="Array of coefficient matrices from RI-fitting")
     #parser.add_argument("wcenters", type = str, help="Wannier centers")
     parser.add_argument("-attenuation", type = float, default = 1.2, help = "Attenuation paramter for RI")
     parser.add_argument("-fot", type = float, default = 0.001, help = "fragment optimization treshold")
@@ -4454,7 +4456,8 @@ if __name__ == "__main__":
         fragment_energy_total = 0
 
         #complete fragmentation of the occupied space
-        center_fragments = [[i] for i in np.arange(p.get_nocc()+args.n_core)[args.n_core:]]
+        #center_fragments = [[i] for i in np.arange(p.get_nocc()+args.n_core)[args.n_core:]]
+        center_fragments = [[i] for i in np.arange(p.get_nocc())]
         print(center_fragments)
 
         for fragment in center_fragments:
@@ -4474,13 +4477,14 @@ if __name__ == "__main__":
 
             #print("Frag init:", time.time()-t0)
 
-            a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.1)
+            dt, it = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = 1e-10)
 
 
-
+            print(dt, it)
             print("shape:", a_frag.g_d.shape)
             # Converge to fot
             E_prev_outer = a_frag.compute_energy(exchange = True)
+            print("fragment_energy:", a_frag.compute_fragment_energy())
             E_prev = E_prev_outer*1.0
             dE_outer = 10
 
