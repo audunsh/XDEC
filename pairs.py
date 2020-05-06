@@ -23,7 +23,7 @@ def setup_pairs(    p,
                     cutoff_algorithm=2):
 
     min_dist = 0.0
-    max_dist = 10.0
+    max_dist = 30.0
     cutoff_algorithm = 0
 
     print ()
@@ -106,6 +106,7 @@ class Pairs:
         ind = np.equal(self.a['group_id'],group_id)
         ind *= np.invert(self.a['calced'])
         self.a['estimE'][ind] = estimE
+        print (self.a)
 
     def get_calced(self,names,group_id):
         ind = np.equal(self.a['group_id'],group_id)
@@ -452,8 +453,9 @@ class PairDealer:
         indx_cell[:,0] = X
         indx_cell[:,1] = Y
         indx_cell_ref = indx_cell[np.invert(np.equal(X,Y))]
-        indx_cell_ref = np.sort(indx_cell_ref,axis=1)
-        indx_cell_ref = np.unique(indx_cell_ref,axis=0)
+        if n_fragms > 1:
+            indx_cell_ref = np.sort(indx_cell_ref,axis=1)
+            indx_cell_ref = np.unique(indx_cell_ref,axis=0)
 
         ind_len = len(coords)
         indx = np.zeros([ind_len,2],dtype=int)
