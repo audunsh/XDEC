@@ -418,7 +418,7 @@ def overlap_matrix(p, coords = None, thresh = 1e-10):
 
 
     
-def conventional_paos(c,p, s = None, orthonormalize = False):
+def conventional_paos(c,p, s = None, orthonormalize = False, thresh = 1e-2):
     """
     Concstruct the PAOs according to 
     """
@@ -433,6 +433,9 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
     
 
     coords = c.coords
+    if s is not None:
+        coords = s.coords
+
     #coords = tp.lattice_coords([8,8,8])
 
     ts = (p.get_n_ao(), coords.shape[0], p.get_n_ao() ) #shape
@@ -445,12 +448,12 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
 
     xyzname = "temp_geom.xyz"
     xyzfile = open(xyzname, "w")
-    xyzfile.write(PRI.get_xyz(p, conversion_factor = 0.5291772109200000))
+    xyzfile.write(PRI.get_xyz(p))
     xyzfile.close()
 
     xyzname_ = "temp_geom_0.xyz"
     xyzfile_ = open(xyzname_, "w")
-    xyzfile_.write(PRI.get_xyz(p, coords, conversion_factor = 0.5291772109200000))
+    xyzfile_.write(PRI.get_xyz(p, coords))
     xyzfile_.close()
 
 
@@ -502,16 +505,20 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
 
 
 
-    d = c_occ.circulantdot(c_occ.tT())*2
-
-
-    
+    d = c_occ.circulantdot(c_occ.tT())
     c_pao = d.circulantdot(s)
+    c_pao.blocks*=-1 #.5
 
-    c_pao.blocks*=-.5 #.5
+
+    #d = c_occ*c_occ.tT()*2
+    #c_pao = d*s
+    #c_pao = c_pao * (-.5) #.5
+
+
+
     
     
-    c_pao.blocks[ c_pao.mapping[ c_pao._c2i([0,0,0]) ] ] += np.eye(c_pao.blockshape[0])
+    c_pao.blocks[ c_pao.mapping[ c_pao._c2i([0,0,0]) ] ] += np.eye(c_pao.blockshape[0], dtype = float)
     
     
     smo_ov = c_occ.tT().circulantdot(s.circulantdot(c_pao))
@@ -521,7 +528,7 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
     norms = np.diag(c_pao.tT().circulantdot(s.circulantdot(c_pao)).cget([0,0,0]))
 
 
-    c_pao_screened_blocks = c_pao.cget(c_pao.coords)[:, :, norms>1e-2]
+    c_pao_screened_blocks = c_pao.cget(c_pao.coords)[:, :, norms>thresh]
     c_pao_screened_coords = c_pao.coords
 
     c_pao = tp.tmat()
@@ -530,9 +537,10 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
     norms = np.diag(c_pao.tT().circulantdot(s.circulantdot(c_pao)).cget([0,0,0]))
 
     #normalize
+    
     for i in np.arange(len(norms)):
         c_pao.blocks[:,:,i] = c_pao.blocks[:,:,i]/np.sqrt(norms[i])
-
+    
 
 
     # Compute centers
@@ -569,4 +577,57 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
     return s, c_pao, wcenters
 
 
+def orthogonal_paos(c,p):
+    # Generate linearly dependent and non-orthogonal PAOs
+    s, c_pao, wcenters = conventional_paos(c,p)
 
+    c_occ, c_virt = PRI.occ_virt_split(c,p)
+
+
+    #s = compute_smat(p)
+
+    # Compute "metric-matrix" / overlap
+    delta = c_pao.tT().circulantdot(s.circulantdot(c_pao))
+
+    # Determine s^-1/2
+    d_ = delta.kspace_svd_lowdin()
+
+    # Eigenvectors and eigenvalues
+    mu, u = d_.kspace_eig()
+
+    mu_sum = np.sqrt(np.diag(np.sum(mu.blocks**2, axis = 0)))
+
+    thresh = 0.01
+
+
+    mu_ = tp.tmat()
+    mu_.load_nparray(mu.blocks[:-1, mu_sum>thresh,:], mu.coords)
+
+    u_ = tp.tmat()
+    u_.load_nparray(u.blocks[:-1, :, mu_sum>thresh], mu.coords)
+
+    c_pao_orthonormal = c_pao.circulantdot(u_.circulantdot(mu_))
+
+    c_pao_ortho = tp.tmat()
+    c_pao_ortho.load_nparray(c_pao_orthonormal.blocks[:-1, :, mu_sum>thresh], c_pao_orthonormal.coords)
+
+    # normalize
+    norms = np.diag(c_pao_ortho.tT().circulantdot(s.circulantdot(c_pao_ortho)).cget([0,0,0]))
+
+    #normalize
+    
+    for i in np.arange(len(norms)):
+        c_pao_ortho.blocks[:,:,i] = c_pao_ortho.blocks[:,:,i]/np.sqrt(norms[i])
+
+    
+    # span conserved?
+
+    s_virt_pao = c_virt.tT().circulantdot(s.circulantdot(c_pao_ortho))
+    print("Virtual span (ortho):", np.sum(s_virt_pao.blocks**2, axis = (0,1)))
+    print("Virtual span (ortho):", np.sum(s_virt_pao.blocks**2, axis = (0,2)))
+
+
+
+    wcenters, spreads = centers_spreads(c_pao_ortho, p,s.coords, m= 1)
+
+    return s, c_pao_ortho, wcenters

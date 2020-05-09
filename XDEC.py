@@ -815,6 +815,8 @@ class amplitude_solver():
                         Sac = self.s_pao.cget( self.virtual_extent - self.virtual_extent[dL])
                         Sdb = self.s_pao.cget(-self.virtual_extent + self.virtual_extent[dM])
 
+                        
+
 
 
                         t2_bar[:, dL, :, M, :, dM, :] = np.einsum("Cac,iCcjDd,Ddb->iajb", Sac, self.t2[:, :, :, M, :, :, :], Sdb, optimize = True)
@@ -881,6 +883,7 @@ class amplitude_solver():
 
                         t2_mapped = np.zeros_like(tnew).ravel()
                         t2_mapped[cell_map] = (tnew*f_iajb**-1).ravel()[cell_map]
+                        #t2_mapped[cell_map] = tnew.ravel()[cell_map]
                         #print(dLv, dMv, np.abs(np.max(tnew)))
 
                         t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
@@ -889,6 +892,8 @@ class amplitude_solver():
 
             self.t2 -= .1*t2_new
             self.t2 = DIIS.advance(self.t2,t2_new)
+
+            #self.t2 -= t2_new
 
             #t3 = time.time()
 
@@ -2910,6 +2915,7 @@ if __name__ == "__main__":
     parser.add_argument("-afrag", type = float, default = 2.0, help="Atomic fragmentation threshold.")
     parser.add_argument("-virtual_cutoff", type = float, default = 3.0, help="Initial virtual cutoff for DEC optimization.")
     parser.add_argument("-occupied_cutoff", type = float, default = 1.0, help="Initial virtual cutoff for DEC optimization.")
+    parser.add_argument("-pao_thresh", type = float, default = 0.1, help="PAO norm truncation cutoff.")
     parser.add_argument("-fragment_center", action = "store_true",  default = False, help="Computes the mean position of every fragment")
     parser.add_argument("-atomic_association", action = "store_true",  default = False, help="Associate virtual (LVO) space with atomic centers.")
     #parser.add_argument("-", action = "store_true",  default = False, help="Associate virtual (LVO) space with atomic centers.")
@@ -3009,7 +3015,8 @@ if __name__ == "__main__":
 
     if args.virtual_space is not None:
         if args.virtual_space == "pao":
-            s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
+            s_, c_virt, wcenters_virt = of.conventional_paos(c,p, thresh = args.pao_thresh)
+            #s_, c_virt, wcenters_virt = of.orthogonal_paos(c,p)
             #p.n_core = args.n_core
             p.set_nvirt(c_virt.blocks.shape[2])
 
@@ -3017,6 +3024,7 @@ if __name__ == "__main__":
 
             #p.n_core = args.n_core
             # Append virtual centers to the list of centers
+            #args.virtual_space = None
             wcenters = np.append(wcenters[p.n_core:p.get_nocc()+p.n_core], wcenters_virt, axis = 0)
 
 
@@ -3061,6 +3069,7 @@ if __name__ == "__main__":
     #c_occ, c_virt_lvo = PRI.occ_virt_split(c,p)
 
     s_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
+    print(np.diag(s_virt.cget([0,0,0])))
     #s_virt = c_virt.tT().cdot(s*c_virt, coords = c_virt.coords)
 
 
@@ -3785,17 +3794,26 @@ if __name__ == "__main__":
                 occu_cut_.append(a_frag.occupied_cutoff)
                 amp_norm.append(np.linalg.norm(a_frag.t2))
                 """
-                #fitting_function = lambda x,a,b,c : a*np.exp(b*x**c)
+                fitting_function = lambda x,a,b,c : a*np.exp(b*x**-c) #fitting function for error estimate
+
+                
 
 
                 while dE>args.fot:
 
                     #E_new = a_frag.compute_fragment_energy()
+                    estimated_pts = 0
 
 
                     dE_v = 1000
 
                     E_prev_v = E_prev
+
+                    virtu_cut_ee = []
+                    e_mp2_ee = []
+
+                    e_mp2_ee.append(E_prev)
+                    virtu_cut_ee.append(a_frag.virtual_cutoff)
 
                     while dE_v>args.fot:
                         # Expand virtual space
@@ -3826,12 +3844,21 @@ if __name__ == "__main__":
                         n_iters.append(it)
                         de_res.append(dt)
 
+                        e_mp2_ee.append(E_new_v)
+                        virtu_cut_ee.append(a_frag.virtual_cutoff)
+
                         #conv_stats.append([dt, it, E_new, dE_v,a_frag.virtual_cutoff, a_frag.n_virtual_tot,a_frag.occupied_cutoff, a_frag.n_occupied_tot])
                         try:
-                            p_, cov = optimize.curve_fit(fitting_function, np.array(virtu_cut_)**-1, np.array(e_mp2))
-                            print("Estimated error in energy: %.12f" % np.abs(E_new - p_[0]))
+                            p_, cov = optimize.curve_fit(fitting_function, np.array(virtu_cut_ee), np.array(e_mp2_ee))
+                            if estimated_pts>=2:
+                                dE_estimate = np.abs(E_new_v - p_[0])
+
+                            print("Estimated error in energy            : %.6e" % np.abs(E_new_v - p_[0]))
+                            estimated_pts += 1
+
                         except:
                             print("Unable to estimate error.")
+                            print(" ")
 
 
 
@@ -3932,8 +3959,10 @@ if __name__ == "__main__":
 
                 np.save("fragment_optim_data_%i.npy" % fragment[0], np.array([e_mp2, de_mp2, n_virtuals_, virtu_cut_, n_occupieds_, occu_cut_, amp_norm, n_iters, de_res]))
 
-
-                plot_convergence_fig(e_mp2, de_mp2, n_virtuals_, virtu_cut_, n_occupieds_, occu_cut_, FOT = args.fot,t2_norm = amp_norm, i = fragment[0], n_iters = n_iters, de_res = de_res)
+                try:
+                    plot_convergence_fig(e_mp2, de_mp2, n_virtuals_, virtu_cut_, n_occupieds_, occu_cut_, p_, FOT = args.fot,t2_norm = amp_norm, i = fragment[0], n_iters = n_iters, de_res = de_res)
+                except:
+                    plot_convergence_fig(e_mp2, de_mp2, n_virtuals_, virtu_cut_, n_occupieds_, occu_cut_, FOT = args.fot,t2_norm = amp_norm, i = fragment[0], n_iters = n_iters, de_res = de_res)
 
 
 
@@ -4127,30 +4156,31 @@ if __name__ == "__main__":
                 for c in pair_coords:
                     for fa in np.arange(len(refcell_fragments)):
                         for fb in np.arange(len(refcell_fragments)):
-                            frag_a = refcell_fragments[fa]
-                            frag_b = refcell_fragments[fb]
+                            if fa==1:
+                                frag_a = refcell_fragments[fa]
+                                frag_b = refcell_fragments[fb]
 
-                            pos_a = wcenters[refcell_fragments[fa].fragment[0]]
-                            pos_b = wcenters[refcell_fragments[fb].fragment[0]]
+                                pos_a = wcenters[refcell_fragments[fa].fragment[0]]
+                                pos_b = wcenters[refcell_fragments[fb].fragment[0]]
 
-                            pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains)
-                            #print(pair.compute_pair_fragment_energy())
-                            rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
-                            print("Convergence:", rn, it)
+                                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains)
+                                #print(pair.compute_pair_fragment_energy())
+                                rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
+                                print("Convergence:", rn, it)
 
-                            p_energy = pair.compute_pair_fragment_energy()[2]
-                            pair_total += p_energy
-                            pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
-                            pair_energies.append(p_energy)
+                                p_energy = pair.compute_pair_fragment_energy()[2]
+                                pair_total += p_energy
+                                pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
+                                pair_energies.append(p_energy)
 
 
-                            print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
-                            print("_________________________________________________________")
-                            #print(pair_distances)
-                            #print(pair_energies)
-                            print("dist_xdec = np.array(", pair_distances, ")")
-                            print("e_mp2_xdec = np.array(", pair_energies, ")")
-                            print(" ----- ")
+                                print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
+                                print("_________________________________________________________")
+                                #print(pair_distances)
+                                #print(pair_energies)
+                                print("dist_xdec = np.array(", pair_distances, ")")
+                                print("e_mp2_xdec = np.array(", pair_energies, ")")
+                                print(" ----- ")
 
 
 
@@ -4457,8 +4487,8 @@ if __name__ == "__main__":
 
         #complete fragmentation of the occupied space
         #center_fragments = [[i] for i in np.arange(p.get_nocc()+args.n_core)[args.n_core:]]
-        center_fragments = [[i] for i in np.arange(p.get_nocc())]
-        print(center_fragments)
+        #center_fragments = [[i] for i in np.arange(p.get_nocc())]
+        #print(center_fragments)
 
         for fragment in center_fragments:
 
@@ -4498,7 +4528,9 @@ if __name__ == "__main__":
             print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
             print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
             print("E(CIM): %.8f      DE(fragment): %.8e" % (E_prev, dE_outer))
+            print("dt , it:", dt, it)
             print("_________________________________________________________")
+            
 
 
 
