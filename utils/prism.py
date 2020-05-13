@@ -149,6 +149,7 @@ class prism():
             self._sort_basis()
 
             self.n_core = 0 #set number of core orbitals manually
+            self.set_nocc()
             
             
             
@@ -158,6 +159,8 @@ class prism():
             #Read LSDalton INPUT
             self._setup_blattice() #lattice + geometry
             self._sort_basis()
+            self.n_core = 0 #set number of core orbitals manually
+            self.set_nocc()
             
             
         if filename.split(".")[-1] == "g94":
@@ -167,6 +170,14 @@ class prism():
 
         # set number of virtuals
         self.set_nvirt()
+    
+    def ndim_layer(self, N):
+        if self.cperiodicity=="POLYMER":
+            return np.array([N,0,0])
+        if self.cperiodicity=="SLAB":
+            return np.array([N,N,0])
+        if self.cperiodicity=="CRYSTAL":
+            return np.array([N, N, N])
         
             
 
@@ -797,10 +808,17 @@ class prism():
     def get_charges(self):
         #return number of charges
         return(self.charges)
+
+    def set_nocc(self, n_occ = None):
+        if n_occ is None:
+            self.n_occ = int(np.sum(self.charges)/2) - self.n_core
+        else:
+            self.n_occ = n_occ
+
     
     def get_nocc(self):
         #returns n occupied, rhf
-        return int(np.sum(self.charges)/2) - self.n_core
+        return self.n_occ 
 
     def set_nvirt(self, n_virt = None):
         if n_virt is None:
@@ -875,6 +893,7 @@ class prism():
                         self.basis_set[-1][-1].append(prim)
     def get_bf_per_atom(self, charge):
         return self.bf_per_atom[charge]
+    
 
         
 def parse_crystal_basis(basis_s):

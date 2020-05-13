@@ -842,12 +842,12 @@ class coefficient_fitter_static():
 
     """
 
-    def __init__(self, c_occ,c_virt, p, attenuation, auxname, JK, JKInv, screening_thresh = 1e-12, robust = False, circulant = True, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = False, N_c = 7):
+    def __init__(self, c_occ,c_virt, p, attenuation, auxname, JK, JKInv, robust = False, circulant = True, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = False, N_c = 7):
         self.robust = robust
         self.coords = []
         self.Jmn = []
         self.attenuation = attenuation
-        self.screening_thresh = screening_thresh
+        #self.screening_thresh = screening_thresh
         self.p = p
         #self.c = c
         self.N_c = N_c
@@ -1335,7 +1335,7 @@ class integral_builder_static():
     RI-integral builder with stored AO-integrals
     For high performance (but high memory demand)
     """
-    def __init__(self, c_occ, c_virt,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, extent_thresh = 1e-14, robust  = False, ao_screening = 1e-12, inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = True, N_c = 10):
+    def __init__(self, c_occ, c_virt,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, robust  = False,  inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = True, N_c = 10):
         self.c_occ = c_occ
         self.c_virt = c_virt
         self.p = p
@@ -1345,6 +1345,9 @@ class integral_builder_static():
         self.robust = robust
         self.float_precision = float_precision
         self.N_c = N_c # (2*N_c + 1)  = k-space resolution
+
+        self.n_occ = c_occ.blocks.shape[2]
+        self.n_virt = c_virt.blocks.shape[2]
 
         # Oneshot calculations:
         # build attenuated JK matrix and inverse
@@ -1454,7 +1457,7 @@ class integral_builder_static():
 
         #print("Coeff fitter static tresh set to 1e-8")
         t0 = time.time()
-        self.cfit = coefficient_fitter_static(self.c_occ, self.c_virt, p, attenuation, auxname, self.JKa, self.JKinv, screening_thresh = ao_screening, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision, printing = printing, N_c = self.N_c)
+        self.cfit = coefficient_fitter_static(self.c_occ, self.c_virt, p, attenuation, auxname, self.JKa, self.JKinv, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision, printing = printing, N_c = self.N_c)
         t1 = time.time()
         if printing:
             print("Spent %.1f s preparing fitting (three index) integrals." % (t1-t0))
@@ -1531,7 +1534,7 @@ class integral_builder_static():
                 Xreg = self.cfit.get(np.array([d]))
                 self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
         self.JK, v_pqrs = tdot(self.XregT[dL[0], dL[1], dL[2]],self.JK,self.XregT[dM[0], dM[1], dM[2]].tT(), auxname = self.auxname, coords = M)
-        return v_pqrs, (self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+        return v_pqrs, (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
 
 
@@ -1583,14 +1586,14 @@ class integral_builder_static():
                 return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().circulantdot(self.XregT[dM[0], dM[1], dM[2]].tT()) + \
                     self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.JpqXreg[dM[0], dM[1], dM[2]]) - \
                     self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])), \
-                    (self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt()) #.cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                    (self.n_occ, self.n_virt, self.n_occ, self.n_virt) #.cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
 
             else:
                 #return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
                 return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().cdot(self.XregT[dM[0], dM[1], dM[2]].tT(), coords = [M]) + \
                     self.XregT[dL[0], dL[1], dL[2]].cdot(self.JpqXreg[dM[0], dM[1], dM[2]], coords = [M]) - \
                     self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M])), \
-                    (self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt()) #.cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                    (self.n_occ, self.n_virt, self.n_occ, self.n_virt) #.cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
 
         
         
@@ -1598,10 +1601,10 @@ class integral_builder_static():
             #print("Return:")
             if self.circulant:
                 return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]), \
-                    (self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                    (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
             else:
                 return self.XregT[dL[0], dL[1], dL[2]].dot(self.VXreg[dM[0], dM[1], dM[2]]), \
-                    (self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                    (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
 
 
@@ -1630,13 +1633,13 @@ class integral_builder_static():
             if circulant:
                 return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().circulantdot(self.XregT[dM[0], dM[1], dM[2]].tT()) + \
                     self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.JpqXreg[dM[0], dM[1], dM[2]]) - \
-                    self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                    self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])).cget(M).reshape(self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
             else:
                 #return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
                 return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().cdot(self.XregT[dM[0], dM[1], dM[2]].tT(), coords = [M]) + \
                     self.XregT[dL[0], dL[1], dL[2]].cdot(self.JpqXreg[dM[0], dM[1], dM[2]], coords = [M]) - \
-                    self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                    self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])).cget(M).reshape(self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
 
         else:
@@ -1661,10 +1664,10 @@ class integral_builder_static():
                     #self.Xreg[d[0], d[1], d[2]] =  self.XregT[d[0], d[1], d[2]].tT() #transpose matrix
 
             if circulant:
-                return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]).cget(M).reshape(self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
             else:
-                return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
     def nbytes(self):
         # Return memory usage of all arrays in instance
