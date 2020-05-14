@@ -97,8 +97,10 @@ END""" % (newk, cyctol, cyctol, cyctol)
     f = open(folder + "/wann_input_valence.d3" , "w")
     f.write(properties_input)
     f.close()
+
     
-    C = tp.get_zero_tmat([newk, newk, newk],blockshape =(P.get_n_ao(), P.get_n_ao()))
+    C = tp.get_zero_tmat(P.ndim_layer(newk),blockshape =(P.get_n_ao(), P.get_n_ao()))
+    print(C.coords)
     
     
     if run:
@@ -230,6 +232,7 @@ END""" % (newk, virt[0]+1, virt[-1] , cyctol, cyctol, cyctol)
         
         #remove zero blocks
         C = tp.screen_tmat(C, tolerance = 1e-16)
+        print(C.coords)
 
         return S, F, D, C
     else:

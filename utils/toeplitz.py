@@ -1747,6 +1747,7 @@ class tmat():
         memory-easy circulant product
         """
         npt = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0) 
+        print(npt)
         mk = screen_tmat(transform(self, np.fft.fftn, n_points = npt))
         nk = screen_tmat(transform(other, np.fft.fftn, n_points = npt))
         #mk = transform(self, np.fft.fftn, n_points = npt)
@@ -2534,3 +2535,29 @@ def decay_check(m, p, printing = False, distance = 30, threshold = 1e-8):
                 print(l)
 
     
+def unfolded_product(m1, m2, coords = None, mx = None):
+    """
+    Computes the matrix product m1 * m2
+    by temporarily unfolding the translational symmetry
+    """
+    if coords is None:
+        mx = np.max( np.array([np.max(np.abs(m1.coords), axis = 0), 
+                               np.max(np.abs(m2.coords), axis = 0)]), axis = 0)
+
+        coords = lattice_coords(mx)
+    else:
+        if mx is not None:
+            coords = lattice_coords(mx)
+    #print(coords, coords[int(len(coords)/2)])
+    M1 = m1.tofull(m1,coords,coords)
+    M2 = m2.tofull(m2,coords,coords)
+    
+    RET = np.dot(M1, M2)
+    rnx = m1.blocks.shape[1]
+    rny = m2.blocks.shape[2]
+    rc =  int(len(coords)/2)
+    retblocks = RET[rnx*rc:rnx*(rc+1),:].reshape(rnx, coords.shape[0], rny).swapaxes(0,1)
+    
+    ret = tmat()
+    ret.load_nparray(retblocks, coords)
+    return ret

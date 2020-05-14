@@ -376,7 +376,8 @@ def overlap_matrix(p, coords = None, thresh = 1e-10):
     # Compute overlap matrix to some given thresh
 
     if coords is None:
-        coords = tp.lattice_coords([10,10,10]) # Compute first, screen afterwards
+        #coords = tp.lattice_coords([10,10,10]) # Compute first, screen afterwards
+        coords = tp.lattice_coords(p.ndim_layer(10))
 
     xyzname = "temp_geom.xyz"
     xyzfile = open(xyzname, "w")
@@ -418,7 +419,7 @@ def overlap_matrix(p, coords = None, thresh = 1e-10):
 
 
     
-def conventional_paos(c,p, s = None, orthonormalize = False):
+def conventional_paos(c,p, s = None, orthonormalize = False, thresh = 1e-2):
     """
     Concstruct the PAOs according to 
     """
@@ -433,6 +434,9 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
     
 
     coords = c.coords
+    if s is not None:
+        coords = s.coords
+
     #coords = tp.lattice_coords([8,8,8])
 
     ts = (p.get_n_ao(), coords.shape[0], p.get_n_ao() ) #shape
@@ -445,12 +449,12 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
 
     xyzname = "temp_geom.xyz"
     xyzfile = open(xyzname, "w")
-    xyzfile.write(PRI.get_xyz(p, conversion_factor = 0.5291772109200000))
+    xyzfile.write(PRI.get_xyz(p))
     xyzfile.close()
 
     xyzname_ = "temp_geom_0.xyz"
     xyzfile_ = open(xyzname_, "w")
-    xyzfile_.write(PRI.get_xyz(p, coords, conversion_factor = 0.5291772109200000))
+    xyzfile_.write(PRI.get_xyz(p, coords))
     xyzfile_.close()
 
 
@@ -502,16 +506,24 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
 
 
 
-    d = c_occ.circulantdot(c_occ.tT())*2
-
-
-    
+    d = c_occ.circulantdot(c_occ.tT())
     c_pao = d.circulantdot(s)
+    c_pao.blocks*=-1 #.5
 
-    c_pao.blocks*=-.5 #.5
+
+    #d = c_occ*c_occ.tT()*2
+    #c_pao = d*s
+    #c_pao = c_pao * (-.5) #.5
+
+
+
     
     
-    c_pao.blocks[ c_pao.mapping[ c_pao._c2i([0,0,0]) ] ] += np.eye(c_pao.blockshape[0])
+    c_pao.blocks[ c_pao.mapping[ c_pao._c2i([0,0,0]) ] ] += np.eye(c_pao.blockshape[0], dtype = float)
+
+    
+    
+    #c_pao = unfolded_pao(c,p)
     
     
     smo_ov = c_occ.tT().circulantdot(s.circulantdot(c_pao))
@@ -521,7 +533,7 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
     norms = np.diag(c_pao.tT().circulantdot(s.circulantdot(c_pao)).cget([0,0,0]))
 
 
-    c_pao_screened_blocks = c_pao.cget(c_pao.coords)[:, :, norms>1e-2]
+    c_pao_screened_blocks = c_pao.cget(c_pao.coords)[:, :, norms>thresh]
     c_pao_screened_coords = c_pao.coords
 
     c_pao = tp.tmat()
@@ -530,9 +542,10 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
     norms = np.diag(c_pao.tT().circulantdot(s.circulantdot(c_pao)).cget([0,0,0]))
 
     #normalize
+    
     for i in np.arange(len(norms)):
         c_pao.blocks[:,:,i] = c_pao.blocks[:,:,i]/np.sqrt(norms[i])
-
+    
 
 
     # Compute centers
@@ -569,4 +582,317 @@ def conventional_paos(c,p, s = None, orthonormalize = False):
     return s, c_pao, wcenters
 
 
+def orthogonalize_tmat_svd(c,p, thresh = 0.01, coords = None):
+    """
+    pseudo-inverse based orthogonalization
+    """
 
+    if coords is not None:
+        c_ = tp.tmat()
+        c_.load_nparray(c.cget(coords), coords)
+        c = c_*1
+
+    
+    s = overlap_matrix(p)
+
+    smo = c.tT().circulantdot(s.cdot(c))
+
+    #delta_ = smo.inv().kspace_cholesky()
+
+    u,s,vh = smo.kspace_svd()
+
+    s_diag = np.diag(s.cget([0,0,0]))
+    
+    # screen elements
+
+    sc = s_diag>thresh
+    #print(sc)
+
+    #print(s.coords, s.cget(s.coords))
+
+    S = tp.tmat()
+    S.load_nparray(s.cget(s.coords)[:, sc][:, :, sc], s.coords, safemode = False)
+
+    VH = tp.tmat()
+    VH.load_nparray(vh.cget(vh.coords)[:, sc, :], vh.coords)
+
+    U = tp.tmat()
+    U.load_nparray(u.cget(u.coords)[:, :, sc], u.coords)
+
+
+
+    cd = VH.tT().circulantdot(S.circulantdot( U.tT() ) )
+
+    #cd = c.circulantdot(delta_)
+
+    return cd
+
+
+
+def orthogonalize_tmat_cholesky(c,p, thresh = 0.01, coords = None):
+
+    if coords is not None:
+        c_ = tp.tmat()
+        c_.load_nparray(c.cget(coords), coords)
+
+        c = c_*1
+
+    
+    s = overlap_matrix(p)
+
+    smo = c.tT().circulantdot(s.circulantdot(c))
+
+    delta_ = smo.inv().kspace_cholesky()
+
+    cd = c.circulantdot(delta_)
+
+    return cd
+
+    #smo = cd.tT().circulantdot(s.circulantdot(cd))
+
+
+    """
+    # Compute "metric-matrix" / overlap
+    delta = c.tT().circulantdot(s.circulantdot(c))
+
+    u,s,vh = delta.kspace_svd()
+    print(np.diag(s.cget([0,0,0])))
+
+    #s0_diag = np.diag(s.blocks[ s.mapping[ s._c2i([0,0,0])] ])
+    #s.blocks[ s.mapping[ s._c2i([0,0,0])], np.arange(s.blocks.shape[1]), np.arange(s.blocks.shape[1]) ] = s0_diag**-.5
+    s.blocks[:-1, np.arange(s.blocks.shape[1]), np.arange(s.blocks.shape[1])] = s.blocks[:-1, np.arange(s.blocks.shape[1]), np.arange(s.blocks.shape[1])]**-.5
+
+    print(np.diag(s.cget([0,0,0])))
+    #s_blocks = s.cget(s.coords)[:,np.abs(np.diag(s.cget([0,0,0])))>thresh, np.abs(np.diag(s.cget([0,0,0])))>thresh ]
+
+    #s_ = tp.tmat()
+    #s_.load_nparray(s_blocks, s.coords)
+
+    u_ = vh.tT().circulantdot( s.circulantdot( u.tT() ) )
+
+    print(u_.blocks.shape)
+
+    return c.circulantdot(u_)
+    """
+
+
+    """
+    # Determine s^-1/2
+    d_ = delta.kspace_svd_lowdin()
+
+    # Eigenvectors and eigenvalues
+    mu, u = d_.kspace_eig()
+
+    mu_sum = np.sqrt(np.diag(np.sum(mu.blocks**2, axis = 0)))
+
+
+    mu_ = tp.tmat()
+    mu_.load_nparray(mu.blocks[:-1, mu_sum>thresh,:], mu.coords)
+
+    u_ = tp.tmat()
+    u_.load_nparray(u.blocks[:-1, :, mu_sum>thresh], mu.coords)
+
+
+    c_orthonormal = c.circulantdot(u_.circulantdot(mu_))
+
+    c_ortho = tp.tmat()
+    c_ortho.load_nparray(c_orthonormal.blocks[:-1, :, mu_sum>thresh], c_orthonormal.coords)
+
+    return c_ortho
+    """
+
+def orthogonalize_tmat_unfold(c,p, coords = None, mx  = None, thresh = 1e-5):
+
+    s = overlap_matrix(p)
+
+    if coords is None:
+        mx = np.max( np.array([np.max(np.abs(c.coords), axis = 0), 
+                               np.max(np.abs(s.coords), axis = 0)]), axis = 0)
+
+        coords = tp.lattice_coords(mx)
+    else:
+        if mx is not None:
+            coords = tp.lattice_coords(mx)
+    #print(coords, coords[int(len(coords)/2)])
+    C = c.tofull(c,coords,coords)
+    S = s.tofull(s,coords,coords)
+
+    print(C.shape)
+
+    SMO = np.dot(C.T, np.dot(S,C))
+
+    u_,s_,vh_ = np.linalg.svd(SMO)
+
+    U_ = np.dot(vh_.T.conj(), np.dot(np.diag(s_**-.5), u_.T.conj()))
+
+    C_ = np.dot(C, U_)
+
+    rnx = c.blocks.shape[1]
+    rny = c.blocks.shape[2]
+    rc =  int(len(coords)/2)
+    retblocks = C_[rnx*rc:rnx*(rc+1),:].reshape(rnx, coords.shape[0], rny).swapaxes(0,1)
+    
+    ret = tp.tmat()
+    ret.load_nparray(retblocks, coords)
+
+    return ret
+
+
+    
+def orthogonal_paos_gs(c,p, N_paos, thresh = 1e-4):
+    # Construct max N_paos number of PAOs from the occupied orbitals
+    # S = overlap matrix
+    # C_occ = coefficients of occupied orbitals ( C_{mu, i} )
+    # returns a matrix with occupied and virtual orbitals 
+    #co, cv = PRI.occ_virt_split(c,p)
+    
+    #native functions
+    def eyemin(D,S):
+        ret = D.circulantdot(S)*-1
+        ret.blocks[ ret.mapping[ ret._c2i([0,0,0])]] += np.eye(S.blocks.shape[1])
+        return ret
+
+    def extend(C, C_):
+        newshape = np.array(C.cget(C.coords).shape)
+        newshape[2] += C_.blocks.shape[2]
+        ret_blocks = np.zeros(newshape, dtype = float)
+        
+        ret_blocks[:, :, :C.blocks.shape[2]]= C.cget(C.coords)
+        ret_blocks[:, :,  C.blocks.shape[2]:]= C_.cget(C.coords)
+        
+        ret = tp.tmat()
+        ret.load_nparray(ret_blocks, C.coords)
+        return ret
+
+
+
+    S = overlap_matrix(p)
+
+    # temporarily include core orbitals
+    n_core = p.n_core*1
+    p.n_core = 0
+    co, cv = PRI.occ_virt_split(c,p)
+    p.n_core = n_core
+    
+    C_full = co*1 #initial set to return
+    
+    for i in np.arange(N_paos):
+        D = C_full.circulantdot(C_full.tT()) #a "mock" density matrix
+
+        #C_pao = np.eye(S.shape[0]) - np.dot(D, S) # construct PAOs 
+        
+        C_pao = eyemin(D,S)
+        
+        print("PAOs:", np.abs(C_pao.tT().circulantdot(S.circulantdot(co)).blocks).max())
+        
+        #norm = np.diag(np.dot(C_pao.tT(), np.dot(S, C_pao))).max()
+        norm = np.diag(C_pao.tT().circulantdot(S.circulantdot(C_pao)).cget([0,0,0]))
+        #print()
+        
+        if norm.max()<thresh:
+            break
+
+        C_pao_max_blocks = C_pao.cget(C_pao.coords)[:,:, norm.argmax()]/np.sqrt(norm.max()) # extract PAO with max norm + normalization
+        #print(C_pao_max_blocks.shape)
+        
+        C_new = tp.tmat()
+        C_new.load_nparray(C_pao_max_blocks.reshape(C_pao.coords.shape[0], C_pao_max_blocks.shape[1], 1), C_pao.coords)
+        C_full = extend(C_full, C_new)
+        
+        
+        
+        #print(i, norm, np.sum(np.diag(np.dot(C_pao.T, np.dot(S, C_pao)))))
+        
+        # print(np.diag(np.dot(C_pao.T, np.dot(S, C_pao))).max()) # uncomment to print norm of appended PAO
+        
+        #C_full_new = np.zeros((C_full.shape[0],C_full.shape[1]+1), dtype = float) #extend array with one more column
+        ##C_full_new[:, -1] = C_pao_max # append new PAO at final column
+        #C_full_new[:,:-1] = C_full # Insert the already accumulated space
+        #C_full = C_full_new*1 # Update matrix
+    print(" Extracted %i paos" % i)
+    
+    return C_full # when done, return complete set with both occupied and virtual space
+
+
+
+
+def orthogonal_paos(c,p):
+    # Generate linearly dependent and non-orthogonal PAOs
+    s, c_pao, wcenters = conventional_paos(c,p)
+
+    #c_pao = tp.get_zero_tmat(np.max(np.abs(c_pao_.coords), axis = 0), (c_pao_.blocks.shape[1], c_pao_.blocks.shape[2]))
+
+    #c_pao.blocks[ c_pao.mapping[ c_pao._c2i(c_pao_.coords)]] = c_pao_.cget(c_pao_.coords)
+
+    c_occ, c_virt = PRI.occ_virt_split(c,p)
+
+
+
+
+    #s = compute_smat(p)
+
+    # Compute "metric-matrix" / overlap
+    delta = c_pao.tT().circulantdot(s.circulantdot(c_pao))
+
+    # Determine s^-1/2
+    d_ = delta.kspace_svd_lowdin()
+
+    # Eigenvectors and eigenvalues
+    mu, u = d_.kspace_eig()
+
+    mu_sum = np.sqrt(np.diag(np.sum(mu.blocks**2, axis = 0)))
+
+    thresh = 0.01
+
+
+    mu_ = tp.tmat()
+    mu_.load_nparray(mu.blocks[:-1, mu_sum>thresh,:], mu.coords)
+
+    u_ = tp.tmat()
+    u_.load_nparray(u.blocks[:-1, :, mu_sum>thresh], mu.coords)
+
+    c_pao_orthonormal = c_pao.circulantdot(u_.circulantdot(mu_))
+
+    c_pao_ortho = tp.tmat()
+    c_pao_ortho.load_nparray(c_pao_orthonormal.blocks[:-1, :, mu_sum>thresh], c_pao_orthonormal.coords)
+
+    # normalize
+    norms = np.diag(c_pao_ortho.tT().circulantdot(s.circulantdot(c_pao_ortho)).cget([0,0,0]))
+
+    #normalize
+    
+    for i in np.arange(len(norms)):
+        c_pao_ortho.blocks[:,:,i] = c_pao_ortho.blocks[:,:,i]/np.sqrt(norms[i])
+
+    
+    # span conserved?
+
+    s_virt_pao = c_virt.tT().circulantdot(s.circulantdot(c_pao_ortho))
+    print("Virtual span (ortho):", np.sum(s_virt_pao.blocks**2, axis = (0,1)))
+    print("Virtual span (ortho):", np.sum(s_virt_pao.blocks**2, axis = (0,2)))
+
+
+
+    wcenters, spreads = centers_spreads(c_pao_ortho, p,s.coords, m= 1)
+
+    return s, c_pao_ortho, wcenters
+
+def unfolded_pao(c,p, mx = None):
+    """
+    Computes PAOs using unfolded matrix products
+    """
+    co,cv = PRI.occ_virt_split(c,p)
+    
+    d = tp.unfolded_product(co, co.tT(), mx = mx)
+    
+    s = overlap_matrix(p)
+    
+    cpao = tp.unfolded_product(d,s, mx = mx)*-1
+    
+    cpao.blocks[cpao.mapping[cpao._c2i([0,0,0])]]+= np.eye(p.get_n_ao(), dtype = float)
+    
+    # Test orthogonality 
+
+    print(np.max(np.abs(cpao.tT().circulantdot(s.circulantdot(co)).blocks)))
+    
+    return cpao
