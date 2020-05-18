@@ -271,7 +271,7 @@ class amplitude_solver():
 
 
 
-    def solve_MP2(self, norm_thresh = 1e-7):
+    def solve_MP2(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0):
         """
         Converge fragment (AOS) amplitudes within occupied and virtual extents
         """
@@ -288,7 +288,7 @@ class amplitude_solver():
         DIIS = diis(8)
 
 
-        for ti in np.arange(500):
+        for ti in np.arange(maxiter):
             # compute residual
             dt2_new = self.omega(self.t2)
 
@@ -307,8 +307,8 @@ class amplitude_solver():
                 self.t2 -= j*0.1*dt2_new
                 rnorm = n #np.linalg.norm(n)
             else:
-                self.t2 -= dt2_new #/np.abs(dt2_new).max()
-                self.t2 = DIIS.advance(self.t2,dt2_new)
+                #self.t2 -= dt2_new #/np.abs(dt2_new).max()
+                self.t2 = DIIS.advance(self.t2,damping*dt2_new)
 
 
 
@@ -330,6 +330,9 @@ class amplitude_solver():
                 #print("(Maximum absolute res. norm: %.4e)" % np.max(np.abs(dt2_new)))
                 #print("")
                 break
+        if ti >= maxiter-1:
+            print("\033[93m" + "WARNING"+ "\033[0m"+": Solver did not converge in %i iterations (abs.max.res: %.2e)." % (ti, np.abs(dt2_new).max()))
+
         self.max_abs_residual = np.max(np.abs(dt2_new))
         # print("Max.abs. deviation in residual post optimization is %.5e" % np.max(np.abs(dt2_new)))
 
@@ -753,7 +756,7 @@ class amplitude_solver():
                 break
 
 
-    def solve_MP2PAO(self, thresh = 1e-10, s_virt = None, n_diis=8, damping = 0.2):
+    def solve_MP2PAO(self, thresh = 1e-10, s_virt = None, n_diis=8, damping = 0.2, maxiter = 100):
         """
         Solving the MP2 equations for a non-orthogonal virtual space
         (see section 5.6 "The periodic MP2 equations for non-orthogonal virtual space (PAO)" in the notes)
@@ -805,7 +808,7 @@ class amplitude_solver():
 
         #Dt2_new = np.zeros_like(self.t2) #experiment
 
-        for ti in np.arange(100):
+        for ti in np.arange(maxiter):
 
             t2_new = np.zeros_like(self.t2)
             t2_bar = np.zeros_like(self.t2)
@@ -942,6 +945,8 @@ class amplitude_solver():
                 print("Converged in %i iterations with abs.max.diff in residual %.2e." % (ti, dt_abs))
                 print ()
                 break
+        if ti >= maxiter:
+            print("\033[93m" + "WARNING"+ "\033[0m"+": Solver did not converge in %i iterations (abs.max.res: %.2e)." % (ti, dt_abs))
         return dt_abs, ti
 
 
@@ -3187,11 +3192,38 @@ if __name__ == "__main__":
     if args.virtual_space == "gs":
         # Succesive outprojection of virtual space 
         # (see https://colab.research.google.com/drive/1Cvpid-oBrvsSza8YEqh6qhm_VhtR6QgK?usp=sharing)
+        c_occ, c_virt = PRI.occ_virt_split(c, p)
+
+        #c = of.orthogonal_paos_gs(c,p, p.get_n_ao(), thresh = args.pao_thresh)
+        c = of.orthogonal_paos_rep(c,p, p.get_nvirt(), thresh = args.pao_thresh, orthogonalize = args.orthogonalize)
+
+        c_occ, c_pao = PRI.occ_virt_split(c, p)
+
+        args.virtual_space = None #"pao"
+        p.set_nvirt(c.blocks.shape[2] - p.get_nocc())
+
+        #if args.orthogonalize:
+        #    c = of.orthogonalize_tmat_cholesky(c, p) 
+
+        smo = c.tT().circulantdot(s.circulantdot(c))
 
 
-        c = of.orthogonal_paos_gs(c,p, p.get_n_ao(), thresh = args.pao_thresh)
-        args.virtual_space = None
+
+        print("Gram-Schmidt like virtual space construted.")
+        print("Max dev. from orthogonality:", np.abs((smo - tp.get_identity_tmat(smo.blocks.shape[1])).blocks).max()   )
+
+        print("Conserved span of virtual space?")
+
+        smo = c_virt.tT().circulantdot(s.circulantdot(c_pao))
+        print(np.sum(smo.blocks**2, axis = (0,1)))
+        print(np.sum(smo.blocks**2, axis = (0,2)))
+
+
+
     #print("coeff shape:", c.blocks.shape)    
+
+    #if args.orthogonalize:
+    #    c = of.orthogonalize_tmat_cholesky(c, p)   
 
     #c = of.orthogonalize_tmat_unfold(c,p, thresh = 0.0001)
 
@@ -3210,9 +3242,12 @@ if __name__ == "__main__":
 
 
 
-    c_occ, c_virt = PRI.occ_virt_split(c,p)
-    print("orbspace:", c_occ.blocks.shape[2], c_virt.blocks.shape[2])
-    print("ncore   :", p.n_core, p.get_nocc(), p.get_nvirt())
+    c_occ, c_virt = PRI.occ_virt_split(c,p) #, n = p.get_nocc_all())
+    
+    #print("orbspace:", p.n_core, p.get_nocc())
+
+    #print("orbspace:", c_occ.blocks.shape[2], c_virt.blocks.shape[2])
+    #print("ncore   :", p.n_core, p.get_nocc(), p.get_nvirt())
 
     if args.virtual_space is not None:
         if args.virtual_space == "pao":
@@ -3268,6 +3303,8 @@ if __name__ == "__main__":
     else:
         #p.n_core = args.n_core
         wcenters = wcenters[p.n_core:]
+
+    #args.virtual_space = "pao"
 
 
     #c_occ, c_virt_lvo = PRI.occ_virt_split(c,p)
@@ -3334,7 +3371,7 @@ if __name__ == "__main__":
 
 
 
-    center_fragments = dd.atomic_fragmentation(p, d, args.afrag) #[::-1]
+    center_fragments = dd.atomic_fragmentation(p, d, args.afrag)[::-1]
 
 
     print(" ")
@@ -3361,6 +3398,321 @@ if __name__ == "__main__":
 
 
     # Converge atomic fragment energies
+
+    # Initial fragment extents
+    if args.fragmentation == "dec-sweep":
+        """
+        Map convergence of energy orbital spaces in the virtual direction
+
+        """
+        virt_cut = args.virtual_cutoff
+
+
+        if args.occupied_cutoff < args.afrag:
+            occ_cut = args.afrag
+        else:
+            occ_cut = args.occupied_cutoff
+
+        refcell_fragments = []
+        fragment_errors = []
+        fragment_energy_total = 0
+
+        # Run DEC-fragment optimization
+
+        for fragment in center_fragments:
+
+
+            #ib.fragment = fragment
+            t0 = time.time()
+            domain_max = tp.lattice_coords(PRI.n_points_p(p, 2*args.N_c))
+
+            if args.pao_sorting:
+                d_ia = build_weight_matrix(p, c, domain_max)
+                a_frag = fragment_amplitudes(p, wcenters,domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = virt_cut, occupied_cutoff = occ_cut, float_precision = args.float_precision, d_ia = d_ia)
+
+
+            else:
+                a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = virt_cut, occupied_cutoff = occ_cut, float_precision = args.float_precision)
+
+            #print("Frag init:", time.time()-t0)
+
+            a_frag.solve(eqtype = args.solver, s_virt = s_virt, damping = args.damping)
+
+            #print("t2 (max/min/absmin):", np.max(a_frag.t2), np.min(a_frag.t2), np.abs(a_frag.t2).min())
+            #print("g_d (max/min/absmin):", np.max(a_frag.g_d), np.min(a_frag.g_d), np.abs(a_frag.g_d).min())
+
+            # Converge to fot
+            E_prev_outer = a_frag.compute_fragment_energy()
+            E_prev = E_prev_outer*1.0
+            dE_outer = 10
+
+            print("Initial fragment energy: %.8f" % E_prev)
+
+            print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+            print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+
+            virtual_cutoff_prev = a_frag.virtual_cutoff
+            occupied_cutoff_prev = a_frag.occupied_cutoff
+
+            if not args.skip_fragment_optimization:
+                print("Running fragment optimization for:")
+                print(fragment)
+                #print("Initial cutoffs:")
+
+                n_virtuals_  = []
+                virtu_cut_   = []
+                n_occupieds_ = []
+                occu_cut_    = []
+                e_mp2        = []
+                de_mp2       = []
+                amp_norm     = []
+                n_iters      = [] # number of mp2 iterations
+                de_res       = [] # max deviation in residual
+
+
+
+
+                dE = 10
+
+                # Update state
+                """
+                e_mp2.append(E_prev)
+                de_mp2.append(dE)
+                n_virtuals_.append(a_frag.n_virtual_tot)
+                virtu_cut_.append(a_frag.virtual_cutoff)
+                n_occupieds_.append(a_frag.n_occupied_tot)
+                occu_cut_.append(a_frag.occupied_cutoff)
+                amp_norm.append(a_frag.compute_eos_norm())
+                n_iters.append(0)
+                de_res.append(0)
+                """
+
+
+                def expand_fragment_space(a_frag, args, s_virt, E_prev, occupied = False, virtual = False):
+                    # Expand virtual space
+
+                    virtual_cutoff_prev = a_frag.virtual_cutoff
+                    occupied_cutoff_prev = a_frag.occupied_cutoff
+
+                    t_0 = time.time()
+
+                    if virtual:
+                        a_frag.autoexpand_virtual_space(n_orbs=args.orb_increment)
+                    if occupied:
+                        a_frag.autoexpand_occupied_space(n_orbs=args.orb_increment)
+                    t_1 = time.time()
+                    dt, it = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.01, damping = args.damping)
+                    t_2 = time.time()
+                    E_new = a_frag.compute_fragment_energy()
+                    t_3 = time.time()
+                    dE = np.abs(E_prev - E_new)
+                    """
+                    print("_________________________________________________________")
+                    print("E(fragment): %.8f      DE(fragment): %.8e" % (E_new, dE))
+                    print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+                    print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+                    print("_________________________________________________________")
+                    print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                    print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
+                    print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
+                    print(" ")
+                    """
+                    return E_new, dt, it, virtual_cutoff_prev, occupied_cutoff_prev
+
+
+                """
+                dE = 1000
+
+                E_prev = a_frag.compute_fragment_energy()
+
+                #conv_stats = []
+
+                e_mp2.append(E_prev)
+                de_mp2.append(0)
+                n_virtuals_.append(a_frag.n_virtual_tot)
+                virtu_cut_.append(a_frag.virtual_cutoff)
+                n_occupieds_.append(a_frag.n_occupied_tot)
+                occu_cut_.append(a_frag.occupied_cutoff)
+                amp_norm.append(np.linalg.norm(a_frag.t2))
+                """
+
+                # Converge occupied space / buffer amplitudes
+                dE_o = 1000
+                E_prev_o = E_prev
+                while dE_o>args.fot:
+                    # Expand occupied AOS space
+
+                    E_new_o, dt, it, virtual_cutoff_prev, occupied_cutoff_prev = expand_fragment_space(a_frag, args, s_virt, E_prev, occupied = True)
+
+                    dE_o = np.abs(E_prev_o- E_new_o)
+
+                    E_prev_o = E_new_o
+
+                    print("_________________________________________________________")
+                    print("E(fragment): %.6f        DE(fragment): %.6e" % (E_new_o, dE_o))
+                    print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+                    print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+                    print("_________________________________________________________")
+                    print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                    print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
+                    print(" ")
+
+                # When converged, take one step back
+                a_frag.set_extent(virtual_cutoff_prev, occupied_cutoff_prev)
+
+
+
+
+                fitting_function = lambda x,a,b,c : a*np.exp(b*x**-c) #fitting function for error estimate
+
+                # Expand virtual space to FOT
+
+                dE_v = 1000
+
+                E_prev_v = E_prev_o
+
+                dE_estimate = 1000
+
+                #args.orb_increment = 2 # FIX HARDCODED increment
+
+                estimated_pts = 0
+
+                while a_frag.n_virtual_tot<100:
+
+                    # Expand virtual space
+
+                    E_new_v, dt, it, virtual_cutoff_prev, occupied_cutoff_prev = expand_fragment_space(a_frag, args, s_virt, E_prev, virtual = True)
+
+                    dE_v = np.abs(E_prev_v - E_new_v)
+
+
+                    E_prev_v = E_new_v
+
+
+
+
+
+
+
+
+
+                    #conv_stats.append([dt, it, E_new, dE_v,a_frag.virtual_cutoff, a_frag.n_virtual_tot,a_frag.occupied_cutoff, a_frag.n_occupied_tot])
+                    print("_________________________________________________________")
+                    print("E(fragment): %.8e        DE(fragment): %.8e" % (E_new_v, dE_v))
+                    print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+                    print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+
+                    try:
+                        p_, cov = optimize.curve_fit(fitting_function, np.array(virtu_cut_), np.array(e_mp2))
+                        if estimated_pts>=2:
+                            dE_estimate = np.abs(E_new_v - p_[0])
+
+                        print("Estimated error in energy            : %.6e" % np.abs(E_new_v - p_[0]))
+                        estimated_pts += 1
+
+                    except:
+                        print("Unable to estimate error.")
+                        print(" ")
+                    print("estimated_pts", estimated_pts)
+                    print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                    print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
+                    print(" ")
+                    print("_________________________________________________________")
+
+                    e_mp2.append(E_new_v)
+                    de_mp2.append(dE_estimate)
+                    n_virtuals_.append(a_frag.n_virtual_tot)
+                    virtu_cut_.append(a_frag.virtual_cutoff)
+                    n_occupieds_.append(a_frag.n_occupied_tot)
+                    occu_cut_.append(a_frag.occupied_cutoff)
+                    amp_norm.append(a_frag.compute_eos_norm())
+                    n_iters.append(it)
+                    de_res.append(dt)
+
+
+
+
+
+                # When converged, take one step back
+                a_frag.set_extent(virtual_cutoff_prev, occupied_cutoff_prev)
+
+                #E_prev_o = a_frag.compute_fragment_energy()
+
+                e_mp2.append(E_prev_v)
+                de_mp2.append(dE_estimate)
+                n_virtuals_.append(a_frag.n_virtual_tot)
+                virtu_cut_.append(a_frag.virtual_cutoff)
+                n_occupieds_.append(a_frag.n_occupied_tot)
+                occu_cut_.append(a_frag.occupied_cutoff)
+                amp_norm.append(a_frag.compute_eos_norm())
+                n_iters.append(0)
+                de_res.append(dt)
+
+                print("e_mp2 = np.array(",e_mp2, ")")
+                print("de_mp2 = np.array(",de_mp2, ")")
+                print("n_virt = np.array(",n_virtuals_, ")")
+                print("v_dist = np.array(",virtu_cut_, ")")
+                print("n_occ = np.array(",n_occupieds_, ")")
+                print("v_occ = np.array(",occu_cut_, ")")
+                print("t2_norm = np.array(",amp_norm, ")")
+
+                e_mp2 = np.array(e_mp2)
+                de_mp2 = np.array(de_mp2)
+                n_virtuals_ = np.array(n_virtuals_)
+                virtu_cut_ = np.array(virtu_cut_)
+                occu_cut_ = np.array(occu_cut_)
+                n_occupieds_ = np.array(n_occupieds_)
+                amp_norm = np.array(amp_norm)
+                n_iters = np.array(n_iters)
+                de_res = np.array(de_res)
+
+                np.save("fragment_optim_data_%i.npy" % fragment[0], np.array([e_mp2, de_mp2, n_virtuals_, virtu_cut_, n_occupieds_, occu_cut_, amp_norm, n_iters, de_res]))
+
+
+                plot_convergence_fig(e_mp2, de_mp2, n_virtuals_, virtu_cut_, n_occupieds_, occu_cut_, p_, FOT = args.fot,t2_norm = amp_norm, i = fragment[0], n_iters = n_iters, de_res = de_res)
+
+
+
+
+                # experimental error estimate
+                # p_, cov = optimize.curve_fit(fitting_function, virtu_cut_**-1, e_mp2)
+
+
+                print("=========================================================")
+                print("Final fragment containing occupied orbitals:", a_frag.fragment)
+                print("Converged fragment energy: %.12f" % E_prev_v)
+                print("Estimated error in energy: %.12f" % np.abs(E_prev_v - p_[0]))
+                print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+                print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+                print("=========================================================")
+                print(" ")
+                print(" ")
+                refcell_fragments.append(a_frag)
+                #fragment_errors.append(dE)
+                fragment_errors.append(np.abs(E_prev_v - p_[0]))
+                fragment_energy_total += E_prev_v
+
+
+
+
+        
+
+        print(" ")
+        print("Fragment energies")
+        for fa in np.arange(len(refcell_fragments)):
+            #print(fa, ,)
+            print(fa,"%.10e" % refcell_fragments[fa].compute_fragment_energy() ,"+/-",  "%.5e" % fragment_errors[fa],  " Ha / virt %.2f bohr ( n=%i ) / occ %.2f bohr ( n=%i )" %  (refcell_fragments[fa].virtual_cutoff, refcell_fragments[fa].n_virtual_tot,
+                                                                                  refcell_fragments[fa].occupied_cutoff, refcell_fragments[fa].n_occupied_tot))
+            
+            
+
+
+        fragment_errors = np.array(fragment_errors)
+
+        print("Total fragment energy:", fragment_energy_total, "+/-", np.sqrt(np.sum(fragment_errors**2)))
+        
+
+
 
     # Initial fragment extents
     if args.fragmentation == "dec-efe":

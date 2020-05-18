@@ -1058,8 +1058,8 @@ class tmat():
         return ret
         
     def __eq__(self, other):
-        # Returns the L2-norm per element for self-other
-        return np.sum((self.blocks[:-1] - other.cget(self.coords))**2)/np.prod(self.blocks.shape)
+        # Returns the max deviation
+        return np.abs(self.cget(self.coords) - other.cget(self.coords)).max()
     
     def __add__(self, other):
         # Add elements in matrix with other
@@ -1478,7 +1478,51 @@ class tmat():
         u = transform(u, np.fft.ifftn, n_points = n_points, complx = False)
         vh = transform(vh, np.fft.ifftn, n_points = n_points, complx = False)
         s = transform(s, np.fft.ifftn, n_points = n_points, complx = False)
+
+        #if thresh is not None:
+        #    # remove 
+
+
+
         return u,s,vh
+
+    def kspace_ldl(self):
+        import scipy
+        n_points = np.max(np.array([n_lattice(self)]), axis = 0)
+        self_k = transform(self, np.fft.fftn, n_points = n_points)
+
+        s = tmat()
+        s.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], self_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        s.blocks*=0.0
+
+        vh = tmat()
+        vh.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], self_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        vh.blocks*=0.0
+
+        #u = tmat()
+        #u.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], self_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        #u.blocks*=0.0
+
+        for i in np.arange(len(self_k.blocks)-1):
+            l,d,m = scipy.linalg.ldl(self_k.blocks[i])
+            
+
+
+            s.blocks[i] = d
+            vh.blocks[i] = l
+            #u.blocks[i] = l#
+
+
+        #u = transform(u, np.fft.ifftn, n_points = n_points, complx = False)
+        vh = transform(vh, np.fft.ifftn, n_points = n_points, complx = False)
+        s = transform(s, np.fft.ifftn, n_points = n_points, complx = False)
+
+        #if thresh is not None:
+        #    # remove 
+
+
+
+        return s,vh
 
     def kspace_project_out(self, other):
         """

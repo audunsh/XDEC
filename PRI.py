@@ -57,17 +57,27 @@ def basis_trimmer(p, auxbasis, alphacut = 0.1):
 
 
 
-def occ_virt_split(c,p):
+
+
+def occ_virt_split(c,p, n = None):
     """
     Split matrix c(tmat object) in occupied and virtual columns depending on information contained in p (prism object)
     Returns two tmat objects c_occ and c_virt (typically coefficients)
+    if n is not None, orb space is split at index n (first virtual)
     """
+    if n is None:
+        c_virt = tp.tmat()
+        c_virt.load_nparray(c.cget(c.coords)[:,:,p.get_nocc_all():], c.coords, screening = False)
 
-    c_virt = tp.tmat()
-    c_virt.load_nparray(c.cget(c.coords)[:,:,p.get_nocc()+p.n_core:], c.coords, screening = False)
+        c_occ = tp.tmat()
+        c_occ.load_nparray(c.cget(c.coords)[:,:,p.n_core:p.get_nocc_all()], c.coords, screening = False)
+    else:
+        c_virt = tp.tmat()
+        c_virt.load_nparray(c.cget(c.coords)[:,:,n:], c.coords, screening = False)
 
-    c_occ = tp.tmat()
-    c_occ.load_nparray(c.cget(c.coords)[:,:,p.n_core:p.get_nocc()+p.n_core], c.coords, screening = False)
+        c_occ = tp.tmat()
+        c_occ.load_nparray(c.cget(c.coords)[:,:,:n], c.coords, screening = False)
+
 
 
 
