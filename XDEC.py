@@ -142,8 +142,10 @@ class amplitude_solver():
     def omega(self, t2):
 
         t2_new = np.zeros_like(t2)
+        print("SHAPE:", t2_new.shape)
 
         M0_i = self.d_ii.cget([0,0,0])[self.fragment[0],:]<self.occupied_cutoff
+        print("M0_i;", M0_i.shape)
 
         for dL in np.arange(self.n_virtual_cells):
             dLv = self.d_ia.coords[dL]
@@ -1391,9 +1393,9 @@ class fragment_amplitudes(amplitude_solver):
 
         #self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[:p.get_nocc()])
         #self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers[fragment], wannier_centers[p.get_nocc():])
-        self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[:p.get_nocc()])
+        self.d_ii = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[:ib.n_occ])
         if d_ia is None:
-            self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[p.get_nocc():])
+            self.d_ia = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[ib.n_occ:])
         else:
             self.d_ia = d_ia
 
@@ -3104,6 +3106,7 @@ if __name__ == "__main__":
     parser.add_argument("-fragment_center", action = "store_true",  default = False, help="Computes the mean position of every fragment")
     parser.add_argument("-atomic_association", action = "store_true",  default = False, help="Associate virtual (LVO) space with atomic centers.")
     parser.add_argument("-orthogonalize", action = "store_true",  default = False, help="Orthogonalize orbitals prior to XDEC optim")
+    parser.add_argument("-spacedef", type = str, default = None, help = "Define occupied space and virtual space based on indexing (ex. spacedef 0,4,5,10 <-first occupied, final occupied, first virtual, final virtual")
     
     #parser.add_argument("-", action = "store_true",  default = False, help="Associate virtual (LVO) space with atomic centers.")
 
@@ -3111,8 +3114,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    
+
     args.float_precision = eval(args.float_precision)
     import sys
+    
+    
 
     #git_hh = sp.Popen(['git' , 'rev-parse', 'HEAD'], shell=False, stdout=sp.PIPE, cwd = sys.path[0])
 
@@ -3128,11 +3135,14 @@ if __name__ == "__main__":
     print("                        UiO 2020")
 
 
-    import sys
+    #print
     #print("Git rev:", sp.check_output(['git', 'rev-parse', 'HEAD'], cwd=sys.path[0]))
     print("_________________________________________________________")
     print("Input configuration")
     print("_________________________________________________________")
+    print("command line args:")
+    print(parser.parse_args())
+    print(" ")
     print("Input files:")
     print("Geometry + AO basis    :", args.project_file)
     print("Wannier basis          :", args.coefficients)
@@ -3243,6 +3253,8 @@ if __name__ == "__main__":
 
 
     c_occ, c_virt = PRI.occ_virt_split(c,p) #, n = p.get_nocc_all())
+
+
     
     #print("orbspace:", p.n_core, p.get_nocc())
 
@@ -3308,9 +3320,33 @@ if __name__ == "__main__":
 
 
     #c_occ, c_virt_lvo = PRI.occ_virt_split(c,p)
+    if args.spacedef is not None:
+        from ast import literal_eval
+        occI, occF, virtI, virtF = [literal_eval(i) for i in args.spacedef.split(",")]
+        print("Subspace definition (occupied0, occupiedF, virtual0, virtualF):", occI, occF, virtI, virtF)
+
+        c_occ = tp.tmat()
+        c_occ.load_nparray(c.cget(c.coords)[:, :, occI:occF], c.coords)
+        wcenters_occ = wcenters[occI:occF]
+
+        if virtF == -1:
+            c_virt = tp.tmat()
+            c_virt.load_nparray(c.cget(c.coords)[:, :, virtI:], c.coords)
+            wcenters_virt = wcenters[virtI:]
+        else:
+            c_virt = tp.tmat()
+            c_virt.load_nparray(c.cget(c.coords)[:, :, virtI:virtF], c.coords)
+            wcenters_virt = wcenters[virtI:virtF]
+        
+        wcenters = np.append(wcenters_occ, wcenters_virt, axis = 0)
+
+        
+
+
+
 
     s_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
-    print(np.diag(s_virt.cget([0,0,0])))
+    #print(np.diag(s_virt.cget([0,0,0])))
     #s_virt = c_virt.tT().cdot(s*c_virt, coords = c_virt.coords)
 
 
@@ -3363,15 +3399,20 @@ if __name__ == "__main__":
 
 
     # Initialize domain definitions
+
+    
     d = dd.build_distance_matrix(p, c.coords, wcenters, wcenters)
 
 
 
 
 
-
-
-    center_fragments = dd.atomic_fragmentation(p, d, args.afrag)[::-1]
+    
+    d_occ_ref = d.cget([0,0,0])[:ib.n_occ, :ib.n_occ]
+    #if args.spacedef is not None:
+    #    d_occ_ref = d.cget([0,0,0])[PRI.]
+    
+    center_fragments = dd.atomic_fragmentation(ib.n_occ, d_occ_ref, args.afrag)[::-1]
 
 
     print(" ")

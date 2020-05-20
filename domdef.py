@@ -100,13 +100,14 @@ def build_local_domain_index_matrix(fragment, d, distance_cutoff = 10.0):
 
 
 
-def atomic_fragmentation(p, d, distance_cutoff= 1.0):
+
+def atomic_fragmentation(nocc, d_occ_ref, distance_cutoff= 1.0):
     """
     Split configuration space into atomic/proximal fragments
     """
 
-    d_occ_ref = d.cget([0,0,0])[:p.get_nocc(), :p.get_nocc()] #inter-occupied distances in the refcell
-    occ_indices = np.arange(p.get_nocc()) 
+     #inter-occupied distances in the refcell
+    occ_indices = np.arange(nocc) 
     occ_processed = []
     center_fragments = []
     for i in occ_indices:
