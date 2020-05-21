@@ -1543,7 +1543,7 @@ class integral_builder_static():
             if self.XregT[d[0], d[1], d[2]] is 0:
                 Xreg = self.cfit.get(np.array([d]))
                 self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
-        self.JK, v_pqrs = tdot(self.XregT[dL[0], dL[1], dL[2]],self.JK,self.XregT[dM[0], dM[1], dM[2]].tT(), auxname = self.auxname, coords = M)
+        self.JK, v_pqrs = tdot(self.p, self.XregT[dL[0], dL[1], dL[2]],self.JK,self.XregT[dM[0], dM[1], dM[2]].tT(), auxname = self.auxname, coords = M)
         return v_pqrs, (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
 
@@ -1694,7 +1694,7 @@ class integral_builder_static():
 
 
 
-def tdot(c1,v,c2, auxname, coords = np.array([[0,0,0]])):
+def tdot(p, c1,v,c2, auxname, coords = np.array([[0,0,0]])):
     """
     'Minimal-route' calculation of triple product c1*v*c2
 
