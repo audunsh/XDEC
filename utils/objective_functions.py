@@ -427,6 +427,12 @@ def conventional_paos(c,p, s = None, orthonormalize = False, thresh = 1e-2):
     p.n_core = 0 #temporarily include core orbital
     c_occ, c_virt = PRI.occ_virt_split( c, p)
 
+    c_virt = tp.tmat()
+    c_virt.load_nparray(c.cget(c.coords)[:,:,p.get_nocc()+p.n_core:], c.coords, screening = False)
+
+    c_occ = tp.tmat()
+    c_occ.load_nparray(c.cget(c.coords)[:,:,p.n_core:p.get_nocc()+p.n_core], c.coords, screening = False)
+
 
     
     p.n_core = ncore
@@ -642,7 +648,7 @@ def orthogonalize_tmat_cholesky(c,p, thresh = 0.01, coords = None):
 
     smo = c.tT().circulantdot(s.circulantdot(c))
 
-    delta_ = smo.inv().kspace_cholesky()
+    delta_ = smo.inv().kspace_cholesky() # S^-1 = delta_.T * delta_ 
 
     cd = c.circulantdot(delta_)
 
@@ -739,7 +745,7 @@ def orthogonalize_tmat_unfold(c,p, coords = None, mx  = None, thresh = 1e-5):
 
 
     
-def orthogonal_paos_gs(c,p, N_paos, thresh = 1e-4):
+def orthogonal_paos_gs(c,p, N_paos, thresh = 1e-1):
     # Construct max N_paos number of PAOs from the occupied orbitals
     # S = overlap matrix
     # C_occ = coefficients of occupied orbitals ( C_{mu, i} )
@@ -777,27 +783,118 @@ def orthogonal_paos_gs(c,p, N_paos, thresh = 1e-4):
     C_full = co*1 #initial set to return
     
     for i in np.arange(N_paos):
-        D = C_full.circulantdot(C_full.tT()) #a "mock" density matrix
+        smo = C_full.tT().circulantdot(S.circulantdot(C_full))
+        #print("Max dev.:", np.max(   np.abs((smo - tp.get_identity_tmat(smo.blocks.shape[1])).blocks)    ) )
+        D = C_full.cdot(C_full.tT()) #a "mock" density matrix
 
         #C_pao = np.eye(S.shape[0]) - np.dot(D, S) # construct PAOs 
         
         C_pao = eyemin(D,S)
         
-        print("PAOs:", np.abs(C_pao.tT().circulantdot(S.circulantdot(co)).blocks).max())
+        #print("PAO-occupied overlap:", np.abs(C_pao.tT().circulantdot(S.circulantdot(co)).blocks).max())
+        #print("PAO-fullspace overlap:", np.abs(C_pao.tT().circulantdot(S.circulantdot(C_full)).blocks).max())
+        #print(np.sqrt(np.sum(C_pao.tT().circulantdot(S.circulantdot(C_full)).blocks**2, axis = (0,2))))
         
-        #norm = np.diag(np.dot(C_pao.tT(), np.dot(S, C_pao))).max()
+        #Normalize the pao-set
         norm = np.diag(C_pao.tT().circulantdot(S.circulantdot(C_pao)).cget([0,0,0]))
-        #print()
+        for j in np.arange(norm.shape[0]):
+            C_pao.blocks[:, :, j] = C_pao.blocks[:, :, j]/np.sqrt(norm[j])
+
+        # re-compute the norms
+        norm = np.diag(C_pao.tT().circulantdot(S.circulantdot(C_pao)).cget([0,0,0]))
+        #print(norm)
+
         
-        if norm.max()<thresh:
+        #if norm.max()<thresh:
+        #    break
+
+        
+        # Compute overlap to existing space
+
+        residuals = np.max(np.abs(C_pao.tT().circulantdot(S.circulantdot(C_full)).blocks), axis = (0,2))
+        
+        smo = C_pao.tT().circulantdot(S.circulantdot(C_pao))
+
+        res2 = np.max(   np.abs((smo - tp.get_identity_tmat(smo.blocks.shape[1])).blocks), axis = (0,1)    )
+        #np.max(np.abs(smo).blocks), axis = (0,2))
+        #print("res2:", res2)
+
+        residuals = np.max(np.array([residuals, res2]), axis = 0)
+
+
+
+
+
+        #print(residuals, len(residuals), C_full.blocks.shape)
+
+        residuals = np.max(np.abs(C_full.tT().circulantdot(S.circulantdot(C_pao)).blocks), axis = (0,1))
+        #print(residuals)
+        
+
+        #print(norm.argmax(), norm.max())
+        #print(norm[residuals.argmin()])
+
+        #print("PAO-occupied overlap:",  np.abs(C_pao.tT().circulantdot(S.circulantdot(co)).blocks).max())
+        #print("PAO-fullspace overlap:", np.abs(C_pao.tT().circulantdot(S.circulantdot(C_full)).blocks).max())
+        #print(np.sqrt(np.sum(C_pao.tT().circulantdot(S.circulantdot(C_full)).blocks**2, axis = (0,2))))
+
+        
+
+        
+
+        #pick the pao with least overlap to existing space
+        pao_i = residuals.argmin()
+        if residuals[pao_i]>thresh:
+            print(" Final ", residuals[pao_i])
             break
 
-        C_pao_max_blocks = C_pao.cget(C_pao.coords)[:,:, norm.argmax()]/np.sqrt(norm.max()) # extract PAO with max norm + normalization
+        print("Span of excisting space?")
+        smo = C_full.tT().circulantdot(S.circulantdot(C_pao))
+        #print(np.sum(smo.blocks**2, axis = (0,1)))
+        print(np.sum(smo.blocks[:,:,pao_i]**2, axis = (0)))
+
+
+        norm_i = norm[pao_i]
+        overlap_occ = np.max(np.abs(C_pao.tT().circulantdot(S.circulantdot(co)).blocks[:, pao_i, :]))
+        overlap_full = np.max(np.abs(C_pao.tT().circulantdot(S.circulantdot(C_full)).blocks[:, pao_i, :]))
+
+
+        print("picked PAO %i, norm %.2e , overlap %.2e" % (pao_i, norm_i, overlap_full))
+        #print(norm_i**.5)
+        new_blocks = np.zeros(C_full.blocks.shape + np.array([0,0,1]), dtype = float)
+        new_blocks[:-1, :, :-1] = C_full.cget(C_full.coords)
+        new_blocks[:-1, :, -1]  = C_pao.cget(C_full.coords)[:, :, pao_i]
+
+        coords = C_full.coords
+
+        C_full = tp.tmat()
+        C_full.load_nparray(new_blocks, coords)
+
+        #print(C_full.blocks.shape)
+        smo = C_full.tT().circulantdot(S.circulantdot(C_full))
+        print("Max dev.:", np.max(   np.abs((smo - tp.get_identity_tmat(smo.blocks.shape[1])).blocks)    ) )
+
+        #print(np.abs((smo - tp.get_identity_tmat(smo.blocks.shape[1])).blocks[:, -1, -1]) )
+
+        print("Conserved span of virtual space?")
+
+        smo = cv.tT().circulantdot(S.circulantdot(C_full))
+        #print(np.sum(smo.blocks**2, axis = (0,1)))
+        print(np.sum(smo.blocks**2, axis = (0,2)))
+
+        
+
+
+        
+
+        
+
+        #C_pao_max_blocks = C_pao.cget(C_pao.coords)[:,:, pao_i]# /np.sqrt(norm[pao_i]) # extract PAO with max norm + normalization
         #print(C_pao_max_blocks.shape)
         
-        C_new = tp.tmat()
-        C_new.load_nparray(C_pao_max_blocks.reshape(C_pao.coords.shape[0], C_pao_max_blocks.shape[1], 1), C_pao.coords)
-        C_full = extend(C_full, C_new)
+        #C_new = tp.tmat()
+        #C_new.load_nparray(C_pao_max_blocks.reshape(C_pao.coords.shape[0], C_pao_max_blocks.shape[1], 1), C_pao.coords)
+        #C_full = extend(C_full, C_new)
         
         
         
@@ -814,7 +911,163 @@ def orthogonal_paos_gs(c,p, N_paos, thresh = 1e-4):
     return C_full # when done, return complete set with both occupied and virtual space
 
 
+def orthogonal_paos_rep(c,p, N_paos, thresh = 1e-1, orthogonalize = True):
+    # Construct max N_paos number of PAOs from the occupied orbitals
+    # S = overlap matrix
+    # C_occ = coefficients of occupied orbitals ( C_{mu, i} )
+    # returns a matrix with occupied and virtual orbitals 
+    #co, cv = PRI.occ_virt_split(c,p)
+    
+    #native functions
+    def eyemin(D,S):
+        ret = D.circulantdot(S)*-1
+        ret.blocks[ ret.mapping[ ret._c2i([0,0,0])]] += np.eye(S.blocks.shape[1])
+        return ret
 
+    def extend(C, C_, i):
+        # add orbital i from C_ into C
+        new_blocks = np.zeros(C.blocks.shape + np.array([0,0,1]), dtype = float)
+        new_blocks[:-1, :, :-1] = C.cget(C.coords)
+        new_blocks[:-1, :, -1]  = C_.cget(C.coords)[:, :, i]
+
+        coords = C.coords
+
+        ret = tp.tmat()
+        ret.load_nparray(new_blocks, coords)
+        
+        return ret
+
+
+
+    S = overlap_matrix(p)
+
+    # temporarily include core orbitals
+    n_core = p.n_core*1
+    p.n_core = 0
+    co, cv = PRI.occ_virt_split(c,p)
+    p.n_core = n_core
+    
+    C_full = co*1 #initial set to return
+    
+    #D = C_full.cdot(C_full.tT()) #a "mock" density matrix
+    
+    print(co.blocks.shape)
+
+    #C_pao = eyemin(D,S) #initial PAOs
+    
+    I = tp.get_identity_tmat(co.blocks.shape[1])
+    
+    for i in np.arange(N_paos):
+        # 0. a) construct PAOs
+        
+        D = C_full.circulantdot(C_full.tT()) #a "mock" density matrix        
+        C_pao = eyemin(D,S)
+        #C_pao = of.orthogonalize_tmat_svd(C_pao, p)
+        # 0. b ) Normalize the pao-set
+        
+        norm = np.diag(C_pao.tT().circulantdot(S.circulantdot(C_pao)).cget([0,0,0]))
+        
+        for j in np.arange(norm.shape[0]):
+            C_pao.blocks[:, :, j] = C_pao.blocks[:, :, j]/np.sqrt(norm[j])
+            
+            
+        if i==0:
+            # Special pick, least overlap to occupied space?
+            
+            smo = C_pao.tT().circulantdot(S.circulantdot(C_pao))
+            
+            smo_full = np.sum((smo - I).blocks**2, axis = (0,2))
+            
+            occ_span  = np.sum(
+                C_pao.tT().circulantdot(S.circulantdot(co)).blocks**2, 
+                axis = (0,1))
+            
+            virt_span  = np.sum(
+                cv.tT().circulantdot(S.circulantdot(C_pao)).blocks**2, 
+                axis = 0)
+            
+            virt_span = np.max(virt_span, axis = 1)
+            
+            
+            C_full = extend(C_full, C_pao, np.argmin(occ_span))
+            
+            virtblocks = C_full.cget(C_full.coords)[:, :, np.argmin(occ_span)].reshape(C_full.blocks.shape[0]-1, 
+                                                                                       C_full.blocks.shape[1],
+                                                                                       1)
+            C_virt = tp.tmat()
+            C_virt.load_nparray(virtblocks, C_full.coords)
+            
+            
+            
+        else:
+        
+            # 1. Measure properties of every PAO
+
+            # 1.a ) Overlap to occupied space
+
+            occ_span = np.sum(np.abs(co.tT().circulantdot(S.circulantdot(C_pao)).blocks**2), axis = 0)
+            occ_span = np.max(occ_span, axis = 0)
+                              
+            
+            virt_span  = np.sum(
+                C_virt.tT().circulantdot(S.circulantdot(C_pao)).blocks**2, 
+                axis = 0)
+            
+            virt_span = np.max(virt_span, axis = 0)
+            
+            
+            # norm should be 1
+            #norm = np.diag(C_pao.tT().circulantdot(S.circulantdot(C_pao)).cget([0,0,0]))
+            
+            #np.arange(len(norm))
+            
+            #print("Norm")
+            #print(norm)
+            #print("Occ span")
+            #print(occ_span)
+            #print("Virt span")
+            #print(virt_span)
+            
+            
+            pao_i = np.argmin(virt_span)
+            #print(" ")
+            print("Selected orbital", pao_i, )
+            print("Representation of orbital in occupied space:", virt_span[pao_i])
+            print("Representation of orbital in virtual space :", occ_span[pao_i])
+            # "representation" = largest expansion coefficient in wannier space
+            
+            #print(" ")
+            if virt_span[pao_i]>thresh or occ_span[pao_i]>thresh:
+                break
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            #virt_span 
+            C_full = extend(C_full, C_pao, pao_i)
+            C_virt = extend(C_virt, C_pao, pao_i)
+            
+
+        
+        #print("Span comparison of virtual spaces")
+
+        smo = cv.tT().circulantdot(S.circulantdot(C_full))
+        #print(np.sum(smo.blocks**2, axis = (0,1)))
+        #print(np.sum(smo.blocks**2, axis = (0,2)))
+        #print(" ")
+
+        
+    print(" Extracted %i paos" % i)
+    
+    if orthogonalize:
+        C_full = orthogonalize_tmat_cholesky(C_full, p)
+    
+    return C_full # when done, return complete set with both occupied and virtual space
 
 def orthogonal_paos(c,p):
     # Generate linearly dependent and non-orthogonal PAOs

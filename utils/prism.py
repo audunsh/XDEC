@@ -815,6 +815,10 @@ class prism():
         else:
             self.n_occ = n_occ
 
+    def get_nocc_all(self):
+        # include core orbitals
+        return int(np.sum(self.charges)/2)
+
     
     def get_nocc(self):
         #returns n occupied, rhf
