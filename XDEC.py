@@ -142,10 +142,10 @@ class amplitude_solver():
     def omega(self, t2):
 
         t2_new = np.zeros_like(t2)
-        print("SHAPE:", t2_new.shape)
+        #print("SHAPE:", t2_new.shape)
 
         M0_i = self.d_ii.cget([0,0,0])[self.fragment[0],:]<self.occupied_cutoff
-        print("M0_i;", M0_i.shape)
+        #print("M0_i;", M0_i.shape)
 
         for dL in np.arange(self.n_virtual_cells):
             dLv = self.d_ia.coords[dL]
@@ -786,7 +786,7 @@ class amplitude_solver():
         fs_ba  = np.einsum("b,a,i,j->iajb",f_aa,s_aa,np.ones(nocc),np.ones(nocc))
         f_iajb = sfs - fs_ab - fs_ba
 
-        print(f_iajb.max(), f_iajb.min(), np.abs(f_iajb).min())
+        #print(f_iajb.max(), f_iajb.min(), np.abs(f_iajb).min())
         #print(fs_ab.max(), fs_ab.min(), np.abs(fs_ab).min())
         #print(fs_ba.max(), fs_ba.min(), np.abs(fs_ba).min())
         #print(sfs.max(), sfs.min(), np.abs(sfs).min())
