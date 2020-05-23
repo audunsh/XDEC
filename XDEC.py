@@ -794,7 +794,7 @@ class amplitude_solver():
         DIIS = diis(n_diis)
 
         #DDIIS = diis(n_diis)
-        
+
         opt = True
 
         ener = [0,0]
@@ -830,7 +830,7 @@ class amplitude_solver():
                         Sac = self.s_pao.cget( self.virtual_extent - self.virtual_extent[dL])
                         Sdb = self.s_pao.cget(-self.virtual_extent + self.virtual_extent[dM])
 
-                        
+
 
 
 
@@ -893,10 +893,10 @@ class amplitude_solver():
 
 
                         # Final diagram
-                        
+
                         Fkj = np.array(self.f_mo_ii.cget(-1*self.pair_extent + self.pair_extent[M]))
                         tnew += np.einsum("iaKkb,Kkj->iajb",t2_bar[:, dL, :, :, :, dM, :], Fkj)
-                        
+
 
                         # Final diagram
                         #Fkj = np.array(self.f_mo_ii.cget(1*self.pair_extent + self.pair_extent[M]))
@@ -915,15 +915,15 @@ class amplitude_solver():
             #t2 = time.time()
 
             #self.t2 = t2_new
-            
-            
+
+
             #Dt2_new = DDIIS.advance(Dt2_new, 0.1*(t2_new-Dt2_new))
             #self.t2 += damping*Dt2_new
-            
 
-            
+
+
             #self.t2 -= damping*t2_new
-            
+
             self.t2 = DIIS.advance(self.t2, damping*t2_new)
 
 
@@ -2699,7 +2699,7 @@ class pair_fragment_amplitudes(amplitude_solver):
 class converge():
     def __init__(self, t2):
         self.t = [t2]
-        
+
     def advance(self, dt2):
         self.t.append(self.t[-1] + dt2)
 
@@ -2762,7 +2762,7 @@ class diis():
                 b[i,j] = np.dot(self.err[i],self.err[j])
                 b[j,i] = b[i,j]
 
-        
+
 
         #eigvals = np.linalg.eigvals(b)
         #print ('MAX eigval: ',np.max(eigvals))
@@ -2781,7 +2781,7 @@ class diis():
                 b_mat[i, j] *= pre_condition[i] * pre_condition[j]
         """
 
-        
+
 
 
         self.b = b
@@ -2880,7 +2880,7 @@ class diis_():
         self.err[-1] = ret.ravel() - self.t[-2]
         self.t[-1] = ret.ravel()
 
-        
+
 
 
 
@@ -3107,19 +3107,19 @@ if __name__ == "__main__":
     parser.add_argument("-atomic_association", action = "store_true",  default = False, help="Associate virtual (LVO) space with atomic centers.")
     parser.add_argument("-orthogonalize", action = "store_true",  default = False, help="Orthogonalize orbitals prior to XDEC optim")
     parser.add_argument("-spacedef", type = str, default = None, help = "Define occupied space and virtual space based on indexing (ex. spacedef 0,4,5,10 <-first occupied, final occupied, first virtual, final virtual")
-    
+
     #parser.add_argument("-", action = "store_true",  default = False, help="Associate virtual (LVO) space with atomic centers.")
 
 
 
     args = parser.parse_args()
 
-    
+
 
     args.float_precision = eval(args.float_precision)
     import sys
-    
-    
+
+
 
     #git_hh = sp.Popen(['git' , 'rev-parse', 'HEAD'], shell=False, stdout=sp.PIPE, cwd = sys.path[0])
 
@@ -3197,10 +3197,10 @@ if __name__ == "__main__":
 
     #c = of.orthogonalize_tmat(c, p, coords = tp.lattice_coords([30,0,0]))
     if args.orthogonalize:
-        c = of.orthogonalize_tmat_cholesky(c, p)     
+        c = of.orthogonalize_tmat_cholesky(c, p)
 
     if args.virtual_space == "gs":
-        # Succesive outprojection of virtual space 
+        # Succesive outprojection of virtual space
         # (see https://colab.research.google.com/drive/1Cvpid-oBrvsSza8YEqh6qhm_VhtR6QgK?usp=sharing)
         c_occ, c_virt = PRI.occ_virt_split(c, p)
 
@@ -3213,7 +3213,7 @@ if __name__ == "__main__":
         p.set_nvirt(c.blocks.shape[2] - p.get_nocc())
 
         #if args.orthogonalize:
-        #    c = of.orthogonalize_tmat_cholesky(c, p) 
+        #    c = of.orthogonalize_tmat_cholesky(c, p)
 
         smo = c.tT().circulantdot(s.circulantdot(c))
 
@@ -3230,10 +3230,10 @@ if __name__ == "__main__":
 
 
 
-    #print("coeff shape:", c.blocks.shape)    
+    #print("coeff shape:", c.blocks.shape)
 
     #if args.orthogonalize:
-    #    c = of.orthogonalize_tmat_cholesky(c, p)   
+    #    c = of.orthogonalize_tmat_cholesky(c, p)
 
     #c = of.orthogonalize_tmat_unfold(c,p, thresh = 0.0001)
 
@@ -3255,7 +3255,7 @@ if __name__ == "__main__":
     c_occ, c_virt = PRI.occ_virt_split(c,p) #, n = p.get_nocc_all())
 
 
-    
+
     #print("orbspace:", p.n_core, p.get_nocc())
 
     #print("orbspace:", c_occ.blocks.shape[2], c_virt.blocks.shape[2])
@@ -3337,10 +3337,10 @@ if __name__ == "__main__":
             c_virt = tp.tmat()
             c_virt.load_nparray(c.cget(c.coords)[:, :, virtI:virtF], c.coords)
             wcenters_virt = wcenters[virtI:virtF]
-        
+
         wcenters = np.append(wcenters_occ, wcenters_virt, axis = 0)
 
-        
+
 
 
 
@@ -3400,18 +3400,18 @@ if __name__ == "__main__":
 
     # Initialize domain definitions
 
-    
+
     d = dd.build_distance_matrix(p, c.coords, wcenters, wcenters)
 
 
 
 
 
-    
+
     d_occ_ref = d.cget([0,0,0])[:ib.n_occ, :ib.n_occ]
     #if args.spacedef is not None:
     #    d_occ_ref = d.cget([0,0,0])[PRI.]
-    
+
     center_fragments = dd.atomic_fragmentation(ib.n_occ, d_occ_ref, args.afrag)[::-1]
 
 
@@ -3736,7 +3736,7 @@ if __name__ == "__main__":
 
 
 
-        
+
 
         print(" ")
         print("Fragment energies")
@@ -3744,14 +3744,14 @@ if __name__ == "__main__":
             #print(fa, ,)
             print(fa,"%.10e" % refcell_fragments[fa].compute_fragment_energy() ,"+/-",  "%.5e" % fragment_errors[fa],  " Ha / virt %.2f bohr ( n=%i ) / occ %.2f bohr ( n=%i )" %  (refcell_fragments[fa].virtual_cutoff, refcell_fragments[fa].n_virtual_tot,
                                                                                   refcell_fragments[fa].occupied_cutoff, refcell_fragments[fa].n_occupied_tot))
-            
-            
+
+
 
 
         fragment_errors = np.array(fragment_errors)
 
         print("Total fragment energy:", fragment_energy_total, "+/-", np.sqrt(np.sum(fragment_errors**2)))
-        
+
 
 
 
@@ -4395,7 +4395,7 @@ if __name__ == "__main__":
                 """
                 fitting_function = lambda x,a,b,c : a*np.exp(b*x**-c) #fitting function for error estimate
 
-                
+
 
 
                 while dE>args.fot:
@@ -4594,8 +4594,8 @@ if __name__ == "__main__":
             #print(fa, ,)
             print(fa,"%.10e" % refcell_fragments[fa].compute_fragment_energy() ,"+/-",  "%.5e" % fragment_errors[fa],  " Ha / virt %.2f bohr ( n=%i ) / occ %.2f bohr ( n=%i )" %  (refcell_fragments[fa].virtual_cutoff, refcell_fragments[fa].n_virtual_tot,
                                                                                   refcell_fragments[fa].occupied_cutoff, refcell_fragments[fa].n_occupied_tot))
-            
-            
+
+
 
 
         fragment_errors = np.array(fragment_errors)
@@ -4880,16 +4880,18 @@ if __name__ == "__main__":
                         rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
                         print("Convergence:", rn, it)
 
-                        p_energy = pair.compute_pair_fragment_energy()[2]
+                        p_energies = pair.compute_pair_fragment_energy()
+                        p_energy = p_energies[2]
                         pair_total += p_energy
                         pair_distances.append(dist)
                         pair_energies.append(p_energy)
 
-                        PD.add([fa,fb,c_ind,p_energy])
+                        PD.add([fa,fb,c_ind,p_energy],p_energies)
                         PD.estim_remainE()
 
                         #print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
                         print("_________________________________________________________")
+                        print ('pair_energies: ',p_energies)
                         print("Pair distance: ",dist)
                         print("Pair energy:   ",p_energy,'          (total: ',pair_total,')')
                         #print(pair_distances))
@@ -4901,6 +4903,10 @@ if __name__ == "__main__":
 
                         n_pairs += 1
 
+                    print ()
+                    print ('Distance, pair energy: ')
+                    PD.P.print_de()
+                    print ()
                     print ('Number of calculated pairs: ',n_pairs)
                     print ('Estimated non-calculated pair energy: ',PD.remainE)
                     print ('Total pair energy: ',pair_total)
@@ -5134,7 +5140,7 @@ if __name__ == "__main__":
             print("E(CIM): %.8f      DE(fragment): %.8e" % (E_prev, dE_outer))
             print("dt , it:", dt, it)
             print("_________________________________________________________")
-            
+
 
 
 
