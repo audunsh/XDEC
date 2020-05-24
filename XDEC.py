@@ -1981,7 +1981,7 @@ class pair_fragment_amplitudes(amplitude_solver):
 
 
     """
-    def __init__(self, fragment_1, fragment_2, M, recycle_integrals = True, adaptive = False):
+    def __init__(self, fragment_1, fragment_2, M, recycle_integrals = True, adaptive = False, retain_integrals = False):
         import copy
 
         self.f1 = fragment_1
@@ -1990,6 +1990,7 @@ class pair_fragment_amplitudes(amplitude_solver):
         self.adaptive = adaptive
 
         self.recycle_integrals = recycle_integrals
+        self.retain_integrals = retain_integrals # retain (adaptive) fitted integrals when new are computed
 
         self.p = self.f1.p #prism object
         self.d = self.f1.d*1 #  dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers) # distance matrix
@@ -2246,7 +2247,7 @@ class pair_fragment_amplitudes(amplitude_solver):
 
                         if self.adaptive:
                             di_indices = np.unique(np.array(sq_i[k:l])[:, 1])
-                            I, Ishape = self.ib.get_adaptive(dL, dM,self.d_ii.coords[ di_indices ])
+                            I, Ishape = self.ib.get_adaptive(dL, dM,self.d_ii.coords[ di_indices ], keep = self.retain_integrals)
                         else:
 
                             I, Ishape = self.ib.getorientation(dL, dM)
@@ -2417,7 +2418,7 @@ class pair_fragment_amplitudes(amplitude_solver):
 
                         #print("Exchange not precomputed")
                         if self.adaptive:
-                            I, Ishape = self.ib.get_adaptive(dM+self.M, dL-self.M, np.array([self.M]))
+                            I, Ishape = self.ib.get_adaptive(dM+self.M, dL-self.M, np.array([self.M]), keep = self.retain_integrals)
                         else:
                             I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
                         g_exchange = I.cget(self.M).reshape(Ishape) #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
@@ -2473,7 +2474,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                         reuse += 1
                     except:
                         if self.adaptive:
-                            I, Ishape = self.ib.get_adaptive( dM-self.M, dL+self.M, np.array([-self.M]))
+                            I, Ishape = self.ib.get_adaptive( dM-self.M, dL+self.M, np.array([-self.M]), keep = self.retain_integrals)
                         else:
                             I, Ishape = self.ib.getorientation(dM-self.M, dL+self.M)
                         g_exchange = I.cget(-self.M).reshape(Ishape) # [self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
@@ -2559,7 +2560,7 @@ class pair_fragment_amplitudes(amplitude_solver):
 
                         #print("Exchange not precomputed")
                         if self.adaptive:
-                            I, Ishape = self.ib.get_adaptive( dM+self.M, dL-self.M, np.array([self.M]))
+                            I, Ishape = self.ib.get_adaptive( dM+self.M, dL-self.M, np.array([self.M]), keep = self.retain_integrals)
                         else:
                             I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
                         g_exchange = I.cget(self.M).reshape(Ishape)[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
@@ -2585,7 +2586,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                         reuse += 1
                     except:
                         if self.adaptive:
-                            I, Ishape = self.ib.get_adaptive(dM-self.M, dL+self.M, np.array([-self.M]))
+                            I, Ishape = self.ib.get_adaptive(dM-self.M, dL+self.M, np.array([-self.M]), keep = self.retain_integrals)
                         else:
                             I, Ishape = self.ib.getorientation(dM-self.M, dL+self.M)
                         g_exchange = I.cget(-self.M).reshape(Ishape)[self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
@@ -3097,6 +3098,7 @@ if __name__ == "__main__":
     parser.add_argument("-pao_sorting", type = bool, default = False, help = "Sort LVOs in order of decreasing PAO-coefficient" )
     parser.add_argument("-adaptive_domains", default = False, action = "store_true", help = "Activate adaptive Coulomb matrix calculation. (currently affects only pair calculations).")
     parser.add_argument("-recycle_integrals", type = bool, default = True, help = "Recycle fragment integrals when computing pairs." )
+    parser.add_argument("-retain_integrals", type = bool, default = False, help = "Keep new fiitting-coefficients when computing pairs. (More memory intensive)" )
     parser.add_argument("-fragmentation", type = str, default = "dec", help="Fragmentation scheme (dec/cim)")
     parser.add_argument("-afrag", type = float, default = 2.0, help="Atomic fragmentation threshold.")
     parser.add_argument("-virtual_cutoff", type = float, default = 3.0, help="Initial virtual cutoff for DEC optimization.")
@@ -4834,8 +4836,9 @@ if __name__ == "__main__":
                                 pos_a = wcenters[refcell_fragments[fa].fragment[0]]
                                 pos_b = wcenters[refcell_fragments[fb].fragment[0]]
 
-                                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains)
+                                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains, retain_integrals = args.retain_integrals)
                                 #print(pair.compute_pair_fragment_energy())
+                                #print()
                                 rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
                                 print("Convergence:", rn, it)
 
@@ -4875,7 +4878,7 @@ if __name__ == "__main__":
 
                         print ('Calculating pair: ',fa,fb,c)
 
-                        pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains)
+                        pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains, retain_integrals = args.retain_integrals)
                         #print(pair.compute_pair_fragment_energy())
                         rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
                         print("Convergence:", rn, it)
@@ -4896,6 +4899,7 @@ if __name__ == "__main__":
                         #print(pair_energies)
                         #print("dist_xdec = np.array(", pair_distances, ")")
                         #print("e_mp2_xdec = np.array(", pair_energies, ")")
+                        print("Integrator memory usage:", ib.nbytes(), "(Mb)")
                         print(" ----- ")
                         print()
 

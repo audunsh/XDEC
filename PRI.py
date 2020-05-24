@@ -1533,17 +1533,23 @@ class integral_builder_static():
                     else:
                         self.VXreg[coord_q[i][0], coord_q[i][1],coord_q[i][2]]= self.JK.cdot(Xreg[i])
 
-    def get_adaptive(self, dL, dM, M):
+    def get_adaptive(self, dL, dM, M, keep = True):
         """
         Fit integrals, compute required blocks in the Coulomb matrix on the fly
         Returns a toeplitz matrix where the blocks in M are calculated and shape of (pq|rs)
         """
+        dels = []
         for d in [dL, dM]:
             # Make sure Jpq are available in fitter, if not calculate them
             if self.XregT[d[0], d[1], d[2]] is 0:
                 Xreg = self.cfit.get(np.array([d]))
                 self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
+                dels.append(d)
         self.JK, v_pqrs = tdot(self.p, self.XregT[dL[0], dL[1], dL[2]],self.JK,self.XregT[dM[0], dM[1], dM[2]].tT(), auxname = self.auxname, coords = M)
+        
+        if not keep:
+            for d in dels:
+                self.XregT[d[0], d[1], d[2]] = 0
         return v_pqrs, (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
 
