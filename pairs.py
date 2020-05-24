@@ -23,8 +23,8 @@ def setup_pairs(    p,
                     cutoff_algorithm=2):
 
     min_dist = 0.0
-    max_dist = 30.0
-    cutoff_algorithm = 0
+    max_dist = 100.0
+    cutoff_algorithm = 4
 
     print ()
     print ('Setting up pairs ...')
@@ -106,7 +106,6 @@ class Pairs:
         ind = np.equal(self.a['group_id'],group_id)
         ind *= np.invert(self.a['calced'])
         self.a['estimE'][ind] = estimE
-        print (self.a)
 
     def get_calced(self,names,group_id):
         ind = np.equal(self.a['group_id'],group_id)
@@ -125,6 +124,13 @@ class Pairs:
 
     def get_notcalced_by_dist(self,names=['ind_a','ind_b','cell_b','dist']):
         ind = np.invert(self.a['calced'])
+        where = np.argmin(self.a['dist'][ind])
+
+        return self.a[names][ind][where]
+
+    def get_notcalced_by_dist4(self,names=['ind_a','ind_b','cell_b','dist']):
+        ind = np.invert(self.a['calced'])
+        ind *= self.a['ind_a'] != self.a['ind_b']
         where = np.argmin(self.a['dist'][ind])
         return self.a[names][ind][where]
 
@@ -177,10 +183,31 @@ class Pairs:
         self.n_notcalced -= 1
         return self.a['group_id'][ind]
 
+    def add_E4(self,pair):
+        ind = np.where((self.a['ind_a']==pair[0]) & (self.a['ind_b']==pair[1]) & (self.a['cell_b']==pair[2]))[0]
+        if len(ind) == 0:
+            return self.a['group_id'][ind]
+        else:
+            if self.a['calced'][ind]:
+                if pair[3] < self.a['E'][ind]:
+                    self.a['E'][ind] = pair[3]
+            else:
+                self.a['E'][ind] = pair[3]
+                self.a['calced'][ind] = True
+                self.n_notcalced -= 1
+        return self.a['group_id'][ind]
+
     def save_de(self,outfile='de.txt'):
         ind = self.a['calced']
         de = self.struct_to_unstruct(self.a[ind][['dist','E']],['dist','E'])
         np.savetxt(outfile,de)
+
+    def print_de(self):
+        ind = self.a['calced']
+        de = self.struct_to_unstruct(self.a[ind][['dist','E']],['dist','E'])
+        print ('Distance,   Energy')
+        for i in np.arange(len(de)):
+            print (de[i,0],de[i,1])
 
 
 
@@ -515,7 +542,7 @@ class PairDealer:
 
     def set_algorithm(self,alg_num=0):
         m = "pair_alg must be a non-negative integer smaller than 3"
-        assert ( type(alg_num) is int ) and ( alg_num < 3 ), m
+        assert ( type(alg_num) is int ) and ( alg_num < 5 ), m
 
         self.pair_alg = alg_num
 
@@ -545,6 +572,13 @@ class PairDealer:
             """
             same as algorithm 2, but at a unit cell level
             """
+        elif alg_num == 4:
+            """
+            same as algorithm 4, but only different orbital indices
+            """
+            self.get_pair = self.get_pair4
+            self.add = self.add4
+            self.estim_remainE = self.estim_remainE0
 
     def get_early_cells(self,coords_ext,cell_indx,dist,med_dist=20):
         early_cells = []
@@ -690,15 +724,25 @@ class PairDealer:
             ind = np.argmax(cE[np.invert(cC)])
             return notcalced_ind[ind]
 
+    def get_pair4(self):
+        p = self.P.get_notcalced_by_dist4()
+        return p[0],p[1],p[2],p[3]
 
 
 
-    def add0(self,pair):
+    def add0(self,pair,pair_list):
         self.temp_group = self.P.add_E(pair)
 
-    def add3(self,cellE):
+    def add3(self,cellE,pair_list):
         self.SP.add_cellE(cellE,self.temp_cell)
 
+    def add4(self,pair,pair_list):
+        j = [[0,0],[1,1],[1,0],[0,1]]
+        if pair[2] == 0:
+            self.temp_group = self.P.add_E4(pair)
+        else:
+            for i in np.arange(0,4):
+                self.temp_group = self.P.add_E4([pair[j[i][0]],pair[j[i][1]],pair[2],pair_list[i]])
 
     def set_conv(self,conv_eps=0.00001,fot_factor=1.0):
         conv_eps *= fot_factor
