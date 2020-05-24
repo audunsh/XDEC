@@ -3168,7 +3168,7 @@ if __name__ == "__main__":
     print("Atomic fragmentation   :", args.afrag)
     #print("Dot-product            :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
     #print("RI fitting             :", ["Non-robust", "Robust"][int(args.robust)])
-    print("_________________________________________________________")
+    print("_________________________________________________________",flush=True)
 
 
 
@@ -3228,7 +3228,7 @@ if __name__ == "__main__":
 
         smo = c_virt.tT().circulantdot(s.circulantdot(c_pao))
         print(np.sum(smo.blocks**2, axis = (0,1)))
-        print(np.sum(smo.blocks**2, axis = (0,2)))
+        print(np.sum(smo.blocks**2, axis = (0,2)),flush=True)
 
 
 
@@ -3366,7 +3366,7 @@ if __name__ == "__main__":
     f_mo_ii = c_occ.tT().cdot(f_ao*c_occ, coords = c_occ.coords)
     f_mo_ia = c_occ.tT().cdot(f_ao*c_virt, coords = c_occ.coords)
 
-    print("Maximum f_ia:", np.abs(f_mo_ia.blocks).max())
+    print("Maximum f_ia:", np.abs(f_mo_ia.blocks).max(),flush=True)
 
     #f_mo_aa = c_virt.tT().circulantdot(f_ao.circulantdot(c_virt))
     #f_mo_ii = c_occ.tT().circulantdot(f_ao.circulantdot(c_occ))
@@ -3423,7 +3423,7 @@ if __name__ == "__main__":
     for i in np.arange(len(center_fragments)):
         print("  Fragment %i:" %i, center_fragments[i])
     print("_________________________________________________________")
-    print(" ")
+    print(" ",flush=True)
 
     if args.fragment_center:
         # use a reduced charge expression to estimate the center of a fragment
@@ -3492,7 +3492,7 @@ if __name__ == "__main__":
             print("Initial fragment energy: %.8f" % E_prev)
 
             print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
-            print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+            print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot),flush=True)
 
             virtual_cutoff_prev = a_frag.virtual_cutoff
             occupied_cutoff_prev = a_frag.occupied_cutoff
@@ -3558,7 +3558,7 @@ if __name__ == "__main__":
                     print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
                     print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
                     print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
-                    print(" ")
+                    print(" ",flush=True)
                     """
                     return E_new, dt, it, virtual_cutoff_prev, occupied_cutoff_prev
 
@@ -3598,7 +3598,7 @@ if __name__ == "__main__":
                     print("_________________________________________________________")
                     print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
                     print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
-                    print(" ")
+                    print(" ",flush=True)
 
                 # When converged, take one step back
                 a_frag.set_extent(virtual_cutoff_prev, occupied_cutoff_prev)
@@ -3660,7 +3660,7 @@ if __name__ == "__main__":
                     print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
                     print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
                     print(" ")
-                    print("_________________________________________________________")
+                    print("_________________________________________________________",flush=True)
 
                     e_mp2.append(E_new_v)
                     de_mp2.append(dE_estimate)
@@ -3697,7 +3697,7 @@ if __name__ == "__main__":
                 print("v_dist = np.array(",virtu_cut_, ")")
                 print("n_occ = np.array(",n_occupieds_, ")")
                 print("v_occ = np.array(",occu_cut_, ")")
-                print("t2_norm = np.array(",amp_norm, ")")
+                print("t2_norm = np.array(",amp_norm, ")",flush=True)
 
                 e_mp2 = np.array(e_mp2)
                 de_mp2 = np.array(de_mp2)
@@ -3729,7 +3729,7 @@ if __name__ == "__main__":
                 print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                 print("=========================================================")
                 print(" ")
-                print(" ")
+                print(" ",flush=True)
                 refcell_fragments.append(a_frag)
                 #fragment_errors.append(dE)
                 fragment_errors.append(np.abs(E_prev_v - p_[0]))
@@ -3752,7 +3752,7 @@ if __name__ == "__main__":
 
         fragment_errors = np.array(fragment_errors)
 
-        print("Total fragment energy:", fragment_energy_total, "+/-", np.sqrt(np.sum(fragment_errors**2)))
+        print("Total fragment energy:", fragment_energy_total, "+/-", np.sqrt(np.sum(fragment_errors**2)),flush=True)
 
 
 
@@ -3803,7 +3803,7 @@ if __name__ == "__main__":
             print("Initial fragment energy: %.8f" % E_prev)
 
             print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
-            print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+            print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot),flush=True)
 
             virtual_cutoff_prev = a_frag.virtual_cutoff
             occupied_cutoff_prev = a_frag.occupied_cutoff
@@ -3869,7 +3869,7 @@ if __name__ == "__main__":
                     print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
                     print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
                     print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
-                    print(" ")
+                    print(" ",flush=True)
                     """
                     return E_new, dt, it, virtual_cutoff_prev, occupied_cutoff_prev
 
@@ -3909,7 +3909,7 @@ if __name__ == "__main__":
                     print("_________________________________________________________")
                     print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
                     print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
-                    print(" ")
+                    print(" ",flush=True)
 
                 # When converged, take one step back
                 a_frag.set_extent(virtual_cutoff_prev, occupied_cutoff_prev)
@@ -4310,7 +4310,7 @@ if __name__ == "__main__":
             print("Initial fragment energy: %.8f" % E_prev)
 
             print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
-            print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+            print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot),flush=True)
 
             virtual_cutoff_prev = a_frag.virtual_cutoff
             occupied_cutoff_prev = a_frag.occupied_cutoff
@@ -4376,7 +4376,7 @@ if __name__ == "__main__":
                     print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
                     print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
                     print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
-                    print(" ")
+                    print(" ",flush=True)
                     return E_new, dt, it, virtual_cutoff_prev, occupied_cutoff_prev
 
 
@@ -4433,7 +4433,7 @@ if __name__ == "__main__":
                         print("_________________________________________________________")
                         print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
                         print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
-                        print(" ")
+                        print(" ",flush=True)
 
                         e_mp2.append(E_new_v)
                         de_mp2.append(dE_v)
@@ -4502,7 +4502,7 @@ if __name__ == "__main__":
                         print("_________________________________________________________")
                         print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
                         print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
-                        print(" ")
+                        print(" ",flush=True)
 
                         e_mp2.append(E_new_o)
                         de_mp2.append(dE_o)
@@ -4546,7 +4546,7 @@ if __name__ == "__main__":
                 print("v_dist = np.array(",virtu_cut_, ")")
                 print("n_occ = np.array(",n_occupieds_, ")")
                 print("v_occ = np.array(",occu_cut_, ")")
-                print("t2_norm = np.array(",amp_norm, ")")
+                print("t2_norm = np.array(",amp_norm, ")",flush=True)
 
                 e_mp2 = np.array(e_mp2)
                 de_mp2 = np.array(de_mp2)
@@ -4580,7 +4580,7 @@ if __name__ == "__main__":
                 print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                 print("=========================================================")
                 print(" ")
-                print(" ")
+                print(" ",flush=True)
                 refcell_fragments.append(a_frag)
                 fragment_errors.append(dE)
                 #fragment_errors.append(np.abs(E_new - p_[0]))
@@ -4744,7 +4744,7 @@ if __name__ == "__main__":
             import copy
 
             # Outline of pair fragment calcs
-            print()
+            print(flush=True)
 
             if args.pair_setup == 'standard':
 
@@ -4786,7 +4786,7 @@ if __name__ == "__main__":
                                 #print(pair_energies)
                                 print("dist_xdec = np.array(", pair_distances, ")")
                                 print("e_mp2_xdec = np.array(", pair_energies, ")")
-                                print(" ----- ")
+                                print(" ----- ",flush=True)
 
 
 
@@ -4857,7 +4857,7 @@ if __name__ == "__main__":
                                 #print("dist_xdec = np.array(", pair_distances, ")")
                                 #print("e_mp2_xdec = np.array(", pair_energies, ")")
                                 print(" ----- ")
-                                print()
+                                print(flush=True)
 
 
 
@@ -4902,8 +4902,12 @@ if __name__ == "__main__":
                         #print("dist_xdec = np.array(", pair_distances, ")")
                         #print("e_mp2_xdec = np.array(", pair_energies, ")")
                         print("Integrator memory usage:", ib.nbytes(), "(Mb)")
+                        print ()
+                        print ('Distance, pair energy: ')
+                        PD.P.print_de()
+                        print ()
                         print(" ----- ")
-                        print()
+                        print(flush=True)
 
                         n_pairs += 1
 
@@ -4913,7 +4917,7 @@ if __name__ == "__main__":
                     print ()
                     print ('Number of calculated pairs: ',n_pairs)
                     print ('Estimated non-calculated pair energy: ',PD.remainE)
-                    print ('Total pair energy: ',pair_total)
+                    print ('Total pair energy: ',pair_total,flush=True)
                     #PD.P.save_de() #saving distance_energy to file
 
                 else:
