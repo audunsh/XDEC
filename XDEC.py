@@ -4903,7 +4903,6 @@ if __name__ == "__main__":
                         #print("e_mp2_xdec = np.array(", pair_energies, ")")
                         print("Integrator memory usage:", ib.nbytes(), "(Mb)")
                         print ()
-                        print ('Distance, pair energy: ')
                         PD.P.print_de()
                         print ()
                         print(" ----- ")
@@ -4917,7 +4916,10 @@ if __name__ == "__main__":
                     print ()
                     print ('Number of calculated pairs: ',n_pairs)
                     print ('Estimated non-calculated pair energy: ',PD.remainE)
-                    print ('Total pair energy: ',pair_total,flush=True)
+                    print ()
+                    print ('Total pair energy:          ',pair_total)
+                    print ('Total fragment energy:      ',fragment_energy_total)
+                    print ('Total correlation energy:   ',pair_total+fragment_energy_total,flush=True)
                     #PD.P.save_de() #saving distance_energy to file
 
                 else:
