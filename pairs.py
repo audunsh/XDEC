@@ -23,7 +23,7 @@ def setup_pairs(    p,
                     cutoff_algorithm=2):
 
     min_dist = 0.0
-    max_dist = 100.0
+    max_dist = 20.0
     cutoff_algorithm = 4
 
     print ()
@@ -204,10 +204,10 @@ class Pairs:
 
     def print_de(self):
         ind = self.a['calced']
-        de = self.struct_to_unstruct(self.a[ind][['dist','E']],['dist','E'])
-        print ('Distance,   Energy')
+        de = self.struct_to_unstruct(self.a[ind][['dist','E','ind_a','ind_b','cell_b']],['dist','E','ind_a','ind_b','cell_b'])
+        print ('    Distance          Energy                     index_A  index_B   cell_B')
         for i in np.arange(len(de)):
-            print (de[i,0],de[i,1])
+            print ('{0:16.10f}     {1:20.16f} {2:8d} {3:8d}  {4:8d}'.format(de[i,0],de[i,1],int(de[i,2]),int(de[i,3]),int(de[i,4])))
 
 
 
