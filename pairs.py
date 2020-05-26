@@ -34,6 +34,10 @@ def setup_pairs(    p,
     print ('Cutoff algorithm: ',cutoff_algorithm)
     print ()
 
+    if (cutoff_algorithm == 4) and (len(fragms) == 1):
+        cutoff_algorithm = 0
+        print ('Only one fragment in the refenerence cell, the cutoff algorithm is therefore changed from 4 to 0')
+
     SP = SortPairs()
     SP.set_crit(    fragms,
                     spreads,
