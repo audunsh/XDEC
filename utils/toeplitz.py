@@ -230,6 +230,8 @@ def screen_(coords, blocks, norm, tolerance = 1e-14):
     return coords[screening[:-1]],blocks[screening]
 
 
+
+
 def screen__(coords, blocks, norm, tolerance = 1e-14):
     #screening = np.zeros(coords.shape[0], dtype = np.bool)
     screening = np.max(np.abs(blocks[:-1]), axis = (1,2))>tolerance
@@ -1806,6 +1808,29 @@ class tmat():
         del(nk)
         return screen_tmat(transform(tmat(c, rb), np.fft.ifftn, n_points = npt, complx = False))
 
+    def kspace_transform(self, n_layers = None):
+        if n_layers is None:
+            n_layers = np.max(np.abs(self.coords), axis = 0)
+
+        nx,ny,nz = 2*n_layers + 1
+        
+        m1x,m1y = self.blocks.shape[1], self.blocks.shape[2]
+
+        coords = np.roll(lattice_coords(n_layers).reshape(nx,ny,nz, 3), -n_layers, axis = (0,1,2)).reshape(nx*ny*nz, 3)
+
+        m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
+
+        return tmat(coords, np.fft.fftn(m1r, axes = (0,1,2)))
+
+
+
+
+
+
+        
+
+
+
     def circulantdot(self, other, n_layers = None, complx = False):
         """
         IBT (Infinite Block-Circulant) matrix-matrix product
@@ -1992,6 +2017,11 @@ class tmat():
             m = np.amax([m, np.amax(np.absolute(self.get(c)))])
             
         return m
+    
+    def absmax_decay(self, p):
+        R = np.sqrt(np.sum(p.coor2vec(self.coords)**2, axis = 1))
+        mx = np.max(np.abs(self.cget(self.coords)), axis = (1,2))
+        return R, mx
     
     def print_meminfo(self, name, one_shape=True):
         '''

@@ -1394,7 +1394,9 @@ class integral_builder_static():
         #self.JKa = compute_JK(self.p,self.c, attenuation = attenuation, auxname = auxname)
         self.JKa = compute_JK(self.p,big_tmat, attenuation = attenuation, auxname = auxname)
         self.JKa.set_precision(self.float_precision)
-        self.JKa.check_condition()
+        if inverse_test:
+            print(" Testing conditions")
+            self.JKa.check_condition()
         #print(self.JKa.blocks.shape)@
         if printing:
             print("")

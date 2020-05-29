@@ -87,7 +87,7 @@ class amplitude_solver():
         print("%i virtual orbitals included in fragment." % self.n_virtual_tot)
         print("%i occupied orbitals included in fragment." % self.n_occupied_tot)
 
-    def solve(self, norm_thresh = 1e-10, eqtype = "mp2", s_virt = None, damping = 0.2):
+    def solve(self, norm_thresh = 1e-10, eqtype = "mp2", s_virt = None, damping = 0.2, ndiis = 8):
         if eqtype == "mp2_nonorth":
             return self.solve_MP2PAO(norm_thresh, s_virt = s_virt, damping = damping)
         elif eqtype == "paodot":
@@ -95,7 +95,7 @@ class amplitude_solver():
         elif eqtype == "ls":
             return self.solve_MP2PAO_ls(norm_thresh, s_virt = s_virt)
         else:
-            return self.solve_MP2(norm_thresh)
+            return self.solve_MP2(norm_thresh, ndiis = ndiis)
 
     def bfgs_solve(self, f, x0, N_alpha = 20, thresh = 1e-10):
         """
@@ -273,9 +273,10 @@ class amplitude_solver():
 
 
 
-    def solve_MP2(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0):
+    def solve_MP2(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, ndiis = 8):
         """
         Converge fragment (AOS) amplitudes within occupied and virtual extents
+        Note: DIIS removed from this solver
         """
         #from autograd import grad, elementwise_grad,jacobian
 
@@ -287,7 +288,7 @@ class amplitude_solver():
         self.vp_indx = mapgen(self.virtual_extent, self.pair_extent)
         self.pp_indx = mapgen(self.pair_extent, self.pair_extent)
 
-        DIIS = diis(8)
+        #DIIS = diis(ndiis)
 
 
         for ti in np.arange(maxiter):
@@ -309,8 +310,8 @@ class amplitude_solver():
                 self.t2 -= j*0.1*dt2_new
                 rnorm = n #np.linalg.norm(n)
             else:
-                #self.t2 -= dt2_new #/np.abs(dt2_new).max()
-                self.t2 = DIIS.advance(self.t2,damping*dt2_new)
+                self.t2 -= damping*dt2_new #/np.abs(dt2_new).max()
+                #self.t2 = DIIS.advance(self.t2,damping*dt2_new)
 
 
 
@@ -2124,6 +2125,8 @@ class pair_fragment_amplitudes(amplitude_solver):
 
         self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
+        print("t2 shape:", self.t2.shape)
+
         reuse = 0    # count instances where coulomb integrals are recycled
         compute = 0  # count instances where coulomb integrals are computed
 
@@ -3109,14 +3112,15 @@ if __name__ == "__main__":
     parser.add_argument("-atomic_association", action = "store_true",  default = False, help="Associate virtual (LVO) space with atomic centers.")
     parser.add_argument("-orthogonalize", action = "store_true",  default = False, help="Orthogonalize orbitals prior to XDEC optim")
     parser.add_argument("-spacedef", type = str, default = None, help = "Define occupied space and virtual space based on indexing (ex. spacedef 0,4,5,10 <-first occupied, final occupied, first virtual, final virtual")
-
-    #parser.add_argument("-", action = "store_true",  default = False, help="Associate virtual (LVO) space with atomic centers.")
+    parser.add_argument("-ndiis", type = int, default = 4, help = "DIIS for mp2 optim.")
+    #parser.add_argument("-inverse_test", type = bool, default = False, help = "Perform inversion and condition tests when initializing integral fitter." )
+    parser.add_argument("-inverse_test", action = "store_true",  default = False, help="Perform inversion and condition testing")
 
 
 
     args = parser.parse_args()
 
-
+    print("Invtest:", args.inverse_test)
 
     args.float_precision = eval(args.float_precision)
     import sys
@@ -3387,7 +3391,7 @@ if __name__ == "__main__":
 
     # Initialize integrals
     if args.ibuild is None:
-        ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, robust = args.robust, xi0=args.xi0, xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level)
+        ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, robust = args.robust, xi0=args.xi0, xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level, inverse_test = args.inverse_test)
         #ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=None, circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level)
 
         np.save("integral_build.npy", np.array([ib]), allow_pickle = True)
@@ -4771,7 +4775,7 @@ if __name__ == "__main__":
 
                                 pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains)
                                 #print(pair.compute_pair_fragment_energy())
-                                rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
+                                rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9, ndiis = args.ndiis)
                                 print("Convergence:", rn, it)
 
                                 p_energy = pair.compute_pair_fragment_energy()[2]
@@ -4839,7 +4843,7 @@ if __name__ == "__main__":
                                 pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains, retain_integrals = args.retain_integrals)
                                 #print(pair.compute_pair_fragment_energy())
                                 #print()
-                                rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
+                                rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9, ndiis = args.ndiis)
                                 print("Convergence:", rn, it)
 
                                 p_energy = pair.compute_pair_fragment_energy()[2]
@@ -4880,7 +4884,7 @@ if __name__ == "__main__":
 
                         pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains, retain_integrals = args.retain_integrals)
                         #print(pair.compute_pair_fragment_energy())
-                        rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
+                        rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9, ndiis = args.ndiis)
                         print("Convergence:", rn, it)
 
                         p_energies = pair.compute_pair_fragment_energy()
