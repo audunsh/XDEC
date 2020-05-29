@@ -23,7 +23,7 @@ def setup_pairs(    p,
                     cutoff_algorithm=2):
 
     min_dist = 0.0
-    max_dist = 20.0
+    max_dist = 30.0
     cutoff_algorithm = 4
 
     print ()
@@ -33,6 +33,10 @@ def setup_pairs(    p,
     print ('Max distance: ',max_dist)
     print ('Cutoff algorithm: ',cutoff_algorithm)
     print ()
+
+    if (cutoff_algorithm == 4) and (len(fragms) == 1):
+        cutoff_algorithm = 0
+        print ('Only one fragment in the refenerence cell, the cutoff algorithm is therefore changed from 4 to 0')
 
     SP = SortPairs()
     SP.set_crit(    fragms,
@@ -737,7 +741,7 @@ class PairDealer:
         self.SP.add_cellE(cellE,self.temp_cell)
 
     def add4(self,pair,pair_list):
-        j = [[0,0],[1,1],[1,0],[0,1]]
+        j = [[0,0],[1,1],[0,1],[1,0]]
         if pair[2] == 0:
             self.temp_group = self.P.add_E4(pair)
         else:
