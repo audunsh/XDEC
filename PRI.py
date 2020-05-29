@@ -1119,11 +1119,21 @@ class coefficient_fitter_static():
         N_c_max_layers = 20
         cm = estimate_coordinate_domain(p, auxname, N_c_max_layers, attenuation = attenuation)
 
+        C2 = tp.lattice_coords(n_points_p(p, N_c_max_layers))
+
+        R = np.sqrt(np.sum(p.coor2vec(C2)**2, axis = 1))
+
+        C2 = C2[np.argsort(R)]
+        R = R[np.argsort(R)]
+
         
-        for i in np.arange(len(xi_domain)):
+        #for i in np.arange(len(xi_domain)):
+
+        for ci in np.arange(len(C2)):
+            c2, R2 = C2[ci], R[ci] 
             # Compute JMN with nsep =  c2
 
-            c2, big_tmat = xi_domain[i]
+            #c2, big_tmat = xi_domain[i]
 
             
 
@@ -1278,6 +1288,7 @@ class coefficient_fitter_static():
                         print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
                         print("         Maximum value overall                              :", np.max(np.abs(Jmnc2_temp.blocks)))
                         print("         c2 = ", c2)
+                        print("         R  = ", R2)
 
 
 
@@ -1309,7 +1320,8 @@ class coefficient_fitter_static():
 
             if self.printing:
                 print("Intermediate overlaps (LJ|0mNn) with N =", c2, " included with %i blocks and maximum absolute %.2e" % (Jmnc2.blocks.shape[0],np.max(np.abs(Jmnc2.blocks)) ))
-
+            if np.max(np.abs(Jmnc2.blocks))<xi0 and np.abs(R[ci]-R[ci+1])>1e-10:
+                break
 
         self.coords = np.array(self.coords)
         self.c0 = np.argwhere(np.all(self.coords==np.array([0,0,0]), axis = 1))[0][0]
