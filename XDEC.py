@@ -3471,7 +3471,8 @@ if __name__ == "__main__":
 
             #ib.fragment = fragment
             t0 = time.time()
-            domain_max = tp.lattice_coords(PRI.n_points_p(p, 2*args.N_c))
+            #domain_max = tp.lattice_coords(PRI.n_points_p(p, 2*args.N_c))
+            domain_max = tp.lattice_coords(PRI.n_points_p(p, 20))
 
             if args.pao_sorting:
                 d_ia = build_weight_matrix(p, c, domain_max)
@@ -3782,7 +3783,7 @@ if __name__ == "__main__":
 
             #ib.fragment = fragment
             t0 = time.time()
-            domain_max = tp.lattice_coords(PRI.n_points_p(p, 2*args.N_c))
+            domain_max = tp.lattice_coords(PRI.n_points_p(p, 20))
 
             if args.pao_sorting:
                 d_ia = build_weight_matrix(p, c, domain_max)
@@ -4289,7 +4290,7 @@ if __name__ == "__main__":
 
             #ib.fragment = fragment
             t0 = time.time()
-            domain_max = tp.lattice_coords(PRI.n_points_p(p, 2*args.N_c))
+            domain_max = tp.lattice_coords(PRI.n_points_p(p, 20))
 
             if args.pao_sorting:
                 d_ia = build_weight_matrix(p, c, domain_max)
@@ -4958,7 +4959,7 @@ if __name__ == "__main__":
 
             #ib.fragment = fragment
             t0 = time.time()
-            domain_max = tp.lattice_coords(PRI.n_points_p(p, 2*args.N_c))
+            domain_max = tp.lattice_coords(PRI.n_points_p(p, 20))
 
             if args.pao_sorting:
                 d_ia = build_weight_matrix(p, c, domain_max)
@@ -5119,7 +5120,7 @@ if __name__ == "__main__":
 
             #ib.fragment = fragment
             t0 = time.time()
-            domain_max = tp.lattice_coords(PRI.n_points_p(p, 2*args.N_c))
+            domain_max = tp.lattice_coords(PRI.n_points_p(p, 20))
 
             if args.pao_sorting:
                 d_ia = build_weight_matrix(p, c, domain_max)

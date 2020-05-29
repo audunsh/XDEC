@@ -560,6 +560,70 @@ def compute_JK(p, s, attenuation = 1, auxname = "cc-pvdz", coulomb = False):
 
     return JK
 
+def compute_JK_auto(p, s, attenuation = 1, auxname = "cc-pvdz", coulomb = False):
+    """
+    Computes integrals of the type ( 0 J | T K )
+    for all coordinates T provided in t
+    attenuation set to 0 is equivalent to the coulomb operator, approaching
+    infinity it tends to the Dirac delta-function.
+
+    """
+    #auxname = "cc-pvdz"    #auxiliary basis (must be present)
+
+    atomsJ = "atoms_J.xyz"
+    atomsK = "atoms_K.xyz"
+
+    f = open(atomsJ, "w")
+    f.write(get_xyz(p))
+    f.close()
+
+    f = open(atomsK, "w")
+    f.write(get_xyz(p, np.array([[0,0,0]])))
+    f.close()
+
+    lint = li.engine()
+
+    if not coulomb:
+        lint.set_operator_erfc()
+    if coulomb:
+        lint.set_operator_coulomb()
+
+
+    # compute one cell to get dimensions
+
+    lint.setup_pq(atomsJ, auxname, atomsK, auxname)
+    lint.set_braket_xsxs()
+    lint.set_integrator_params(attenuation)
+
+    vint = np.array(lint.get_pq(atomsJ, auxname, atomsK, auxname))
+
+    blockshape = (vint.shape[0], vint.shape[1])
+
+
+    JK = tp.tmat()
+
+
+    atomsK = "atoms_K.xyz"
+    f = open(atomsK, "w")
+    f.write(get_xyz(p, s.coords))
+    f.close()
+
+    lint.setup_pq(atomsJ, auxname, atomsK, auxname)
+    lint.set_braket_xsxs()
+    if not coulomb:
+        lint.set_operator_erfc()
+        lint.set_integrator_params(attenuation)
+
+    vint = np.array(lint.get_pq(atomsJ, auxname, atomsK, auxname))
+
+    vint = vint.reshape((blockshape[0], s.coords.shape[0], blockshape[1]))
+    vint = vint.swapaxes(0,1)
+
+    JK.load_nparray(vint, s.coords)
+
+
+    return JK
+
 def verify_pqpq(attenuation = 0, coulomb = False):
     bname = "libint_basis" #libint basis (will be generated)
 
@@ -926,22 +990,90 @@ class estimate_coordinate_domain():
                 Jmn_full.append(Jmn_shell)
                 #print(Jmn_shell.coords)
                 N_blocks += Jmn_shell.coords.shape[0]
-                
-        # gather results, return tmat
-        rcoords = np.zeros((N_blocks, 3), dtype = int)
-        rblocks = np.zeros((N_blocks, Jmn_full[0].blocks.shape[1],Jmn_full[0].blocks.shape[2]), dtype = float)
         
-        ni = 0
-        for i in np.arange(len(Jmn_full)):
-            dn = Jmn_full[i].coords.shape[0]
-            #print(i)
+        ret = None
+        if len(Jmn_full)>=1:
+            # gather results, return tmat
+            rcoords = np.zeros((N_blocks, 3), dtype = int)
+            rblocks = np.zeros((N_blocks, Jmn_full[0].blocks.shape[1],Jmn_full[0].blocks.shape[2]), dtype = float)
             
-            rcoords[ni:ni+dn] = Jmn_full[i].coords
-            rblocks[ni:ni+dn] = Jmn_full[i].cget(Jmn_full[i].coords)
-            ni += dn
+            ni = 0
+            for i in np.arange(len(Jmn_full)):
+                dn = Jmn_full[i].coords.shape[0]
+                #print(i)
+                
+                rcoords[ni:ni+dn] = Jmn_full[i].coords
+                rblocks[ni:ni+dn] = Jmn_full[i].cget(Jmn_full[i].coords)
+                ni += dn
+            
+            ret = tp.tmat()
+            ret.load_nparray(rblocks, rcoords)
+        else:
+            s = tp.tmat()
+            scoords = np.array([[0,0,0], [1,0,0]])
+            s.load_nparray(np.ones((len(scoords), 2,2), dtype = float), scoords)
+            ret = compute_Jmn(self.p, s, attenuation = self.attenuation, auxname =self.basis, nshift = np.array([c2]))
+
         
-        ret = tp.tmat()
-        ret.load_nparray(rblocks, rcoords)
+        return ret
+
+    def compute_JK(self, thresh = 1e-8):
+        
+        Jmn_full = []
+        N_blocks = 0
+        
+        
+        # compute first block
+        #PRI.compute_Jmn(self.p, s, attenuation = self.attenuation, auxname =self.basis, nshift = np.array([c2]))
+        
+        for i in np.arange(self.Ru.shape[0]-1):
+            r0 = self.Ru[i]
+            r1 = self.Ru[i+1] +0.1
+            
+            
+            s = tp.tmat()
+            scoords = self.get_shell(r0,r1)
+            #print(scoords)
+            s.load_nparray(np.ones((len(scoords), 2,2), dtype = float), scoords)
+            #print(s.coords)
+            
+            Jmn_shell = compute_JK(self.p, s, attenuation = self.attenuation, auxname =self.basis)
+            
+            
+            
+            cmM = np.abs(Jmn_shell.blocks).max()
+            #print(cmM)
+            if cmM<thresh:
+                break
+            else:
+                Jmn_full.append(Jmn_shell)
+                #print(Jmn_shell.coords)
+                N_blocks += Jmn_shell.coords.shape[0]
+        
+        ret = None
+        if len(Jmn_full)>=1:
+            # gather results, return tmat
+            rcoords = np.zeros((N_blocks, 3), dtype = int)
+            rblocks = np.zeros((N_blocks, Jmn_full[0].blocks.shape[1],Jmn_full[0].blocks.shape[2]), dtype = float)
+            
+            ni = 0
+            for i in np.arange(len(Jmn_full)):
+                dn = Jmn_full[i].coords.shape[0]
+                #print(i)
+                
+                rcoords[ni:ni+dn] = Jmn_full[i].coords
+                rblocks[ni:ni+dn] = Jmn_full[i].cget(Jmn_full[i].coords)
+                ni += dn
+            
+            ret = tp.tmat()
+            ret.load_nparray(rblocks, rcoords)
+        else:
+            s = tp.tmat()
+            scoords = np.array([[0,0,0], [1,0,0]])
+            s.load_nparray(np.ones((len(scoords), 2,2), dtype = float), scoords)
+            ret = Jmn_shell = compute_JK(self.p, s, attenuation = self.attenuation, auxname =self.basis)
+
+        
         return ret
             
 
@@ -1095,6 +1227,7 @@ class coefficient_fitter_static():
                     if self.printing:
                         print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
                         print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
+                        
 
 
 
@@ -1143,6 +1276,7 @@ class coefficient_fitter_static():
                         
                         print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
                         print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
+                        print("         Maximum value overall                              :", np.max(np.abs(Jmnc2_temp.blocks)))
                         print("         c2 = ", c2)
 
 
@@ -1255,8 +1389,8 @@ class coefficient_fitter_static():
             else:
                 J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
                 
-                #n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
-                n_points = n_points_p(self.p, self.N_c)
+                n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
+                #n_points = n_points_p(self.p, self.N_c)
                 
                 pq_c.append(
                     self.JK.kspace_svd_solve(
@@ -1572,8 +1706,19 @@ class integral_builder_static():
         """
 
         #self.JKa = compute_JK(self.p,self.c, attenuation = attenuation, auxname = auxname)
-        self.JKa = compute_JK(self.p,big_tmat, attenuation = attenuation, auxname = auxname)
+        # How large should actually this one be?
+        #self.JKa = compute_JK(self.p,big_tmat, attenuation = attenuation, auxname = auxname)
+        #self.JKa.set_precision(self.float_precision)
+
+
+
+        N_c_max_layers = 20
+        cm = estimate_coordinate_domain(p, auxname, N_c_max_layers, attenuation = attenuation)
+        self.JKa = cm.compute_JK(thresh = xi0)
         self.JKa.set_precision(self.float_precision)
+
+
+
         if inverse_test:
             print(" Testing conditions")
             self.JKa.check_condition()
@@ -1670,6 +1815,7 @@ class integral_builder_static():
                     self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i][0].tT()
 
                 else:
+                    print("domain info:", coord_q[i], np.max(np.abs(Xreg[i].coords), axis = 0))
                     self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i].tT()
         #if robust:
         #    for i in np.arange(coord_q.shape[0]):
@@ -1681,8 +1827,8 @@ class integral_builder_static():
             # Compute JK_coulomb
             coulomb_extent = np.max(np.abs(self.XregT[0,0,0].coords), axis = 0)
             #coulomb_extent = np.max(np.abs(self.JKa[0,0,0].coords), axis = 0)
-            if printing:
-                print("Extent of Xreg          :", coulomb_extent)
+            #if printing:
+            print("Extent of Xreg          :", coulomb_extent)
 
             #coulomb_extent = (10,10,10)
             #print("Extent of Coulomb matrix:", coulomb_extent)
