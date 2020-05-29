@@ -842,7 +842,108 @@ def estimate_attenuation_distance_(p, attenuation = 0.1, c2 = [0,0,0], thresh = 
     return big_tmat #return expansion region in form of toeplitz matrix
 
 
+class estimate_coordinate_domain():
+    def __init__(self, p, basis, N_c, attenuation):
+        self.p = p
+        self.coords = tp.lattice_coords(n_points_p(p, N_c))
+        self.R = np.sqrt(np.sum(p.coor2vec(self.coords)**2, axis = 1))
+        self.coords = self.coords[ np.argsort(self.R) ]
+        self.R = self.R[np.argsort(self.R)]
+        self.basis = basis
+        self.attenuation = attenuation
+        
+        # set up unique list of distances
+        self.Ru = np.unique(self.R)
+        #print(self.Ru.max(), len(self.Ru))
+            
+        
+    
+    def get_shell(self, r0, r1):
+        #print(self.R)
+        return self.coords[np.all(np.array([self.R<r1, self.R>=r0]), axis = 0)]
+        #return self.coords[self.R<]
+        
 
+        
+    def get_shell_maxelement(self,i, c2 = np.array([0,0,0])):
+        try:
+            r0 = self.Ru[i]
+            r1 = self.Ru[i+1] +0.1
+        except:
+            # Expand list
+            print("WARNING: maximum fitting domain too small")
+            r0 = self.Ru[-2]
+            r1 = self.Ru[-1]
+            
+        #print(r0, r1)
+        
+        
+        
+        s = tp.tmat()
+        scoords = self.get_shell(r0,r1)
+        
+        s.load_nparray(np.ones((len(scoords), 2,2), dtype = float), scoords)
+        
+        Jmn = compute_Jmn(self.p, s, attenuation = self.attenuation, auxname =self.basis, nshift = np.array([c2]))
+        return np.abs(Jmn.blocks).max()
+    
+    def estimate_attenuation_domain(self, c2 = np.array([0,0,0]), thresh = 1e-8):
+        
+        for i in np.arange(self.Ru.shape[0]):
+            cmR, cmM = self.Ru[i+1]+0.1,self.get_shell_maxelement(i)
+            if cmM<thresh:
+                break
+        return np.max(np.abs(self.coords[self.R<cmR]), axis = 0), cmR
+    
+    def compute_Jmn(self, c2, thresh = 1e-8):
+        
+        Jmn_full = []
+        N_blocks = 0
+        
+        
+        # compute first block
+        #PRI.compute_Jmn(self.p, s, attenuation = self.attenuation, auxname =self.basis, nshift = np.array([c2]))
+        
+        for i in np.arange(self.Ru.shape[0]-1):
+            r0 = self.Ru[i]
+            r1 = self.Ru[i+1] +0.1
+            
+            
+            s = tp.tmat()
+            scoords = self.get_shell(r0,r1)
+            #print(scoords)
+            s.load_nparray(np.ones((len(scoords), 2,2), dtype = float), scoords)
+            #print(s.coords)
+            
+            Jmn_shell = compute_Jmn(self.p, s, attenuation = self.attenuation, auxname =self.basis, nshift = np.array([c2]))
+            
+            
+            cmM = np.abs(Jmn_shell.blocks).max()
+            #print(cmM)
+            if cmM<thresh:
+                break
+            else:
+                Jmn_full.append(Jmn_shell)
+                #print(Jmn_shell.coords)
+                N_blocks += Jmn_shell.coords.shape[0]
+                
+        # gather results, return tmat
+        rcoords = np.zeros((N_blocks, 3), dtype = int)
+        rblocks = np.zeros((N_blocks, Jmn_full[0].blocks.shape[1],Jmn_full[0].blocks.shape[2]), dtype = float)
+        
+        ni = 0
+        for i in np.arange(len(Jmn_full)):
+            dn = Jmn_full[i].coords.shape[0]
+            #print(i)
+            
+            rcoords[ni:ni+dn] = Jmn_full[i].coords
+            rblocks[ni:ni+dn] = Jmn_full[i].cget(Jmn_full[i].coords)
+            ni += dn
+        
+        ret = tp.tmat()
+        ret.load_nparray(rblocks, rcoords)
+        return ret
+            
 
 
 class coefficient_fitter_static():
@@ -883,23 +984,37 @@ class coefficient_fitter_static():
         #xi_domain = []
         #for i in np.arange(20):
         #    xi_domain.append([dM[i], 1])
+        N_c_max_layers = 20
+        cm = estimate_coordinate_domain(p, auxname, N_c_max_layers, attenuation = attenuation)
 
         
         for i in np.arange(len(xi_domain)):
             # Compute JMN with nsep =  c2
 
             c2, big_tmat = xi_domain[i]
+
+            
+
+
+
+
         
             #for i in np.arange(ddM.shape[0]):
             #c2 = ddM[i]
 
 
-            if True:
+            if False:
                 """
                 Alternative screening approach, somewhat inefficient but avoids premature truncation
                 It basically computes a large chunk, presumably larger than required
                 TODO: check boundaries for significant integrals, break if present
                 """
+
+                
+
+
+
+
                 Nc = self.N_c
                 if i == 0:
                     cellcut = 65 # bohr
@@ -932,6 +1047,19 @@ class coefficient_fitter_static():
                 # print(bc)
                 cellmax = np.max(np.sqrt(np.sum(self.p.coor2vec(bc)**2, axis = 1)))
 
+                #print(c2)
+                """
+                Nc, cellmax = cm.estimate_attenuation_domain(thresh = xi0, c2 = c2)
+                bcoords = tp.lattice_coords(Nc)
+                bR = np.sqrt(np.sum(p.coor2vec(bcoords)**2, axis = 1))
+                bc = bcoords[bR<cellmax]
+                """
+                
+                print("fitting:", c2, bc.shape)
+                
+
+
+
                 big_tmat = tp.tmat()
                 big_tmat.load_nparray(np.ones((bc.shape[0], 2,2), dtype = float), bc)
 
@@ -941,6 +1069,13 @@ class coefficient_fitter_static():
 
 
                 Jmnc2_temp = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2]))
+
+                
+
+
+
+
+
                 Jmnc2_temp.set_precision(self.float_precision)
 
                 screen = np.max(np.abs(Jmnc2_temp.cget(Jmnc2_temp.coords)), axis = (1,2))>=xi0
@@ -985,8 +1120,53 @@ class coefficient_fitter_static():
 
             else:
 
-                Jmnc2 = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
-                Jmnc2.set_precision(self.float_precision)
+                #Jmnc2 = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
+                Jmnc2_temp = cm.compute_Jmn(c2, thresh = xi0)
+                Jmnc2_temp.set_precision(self.float_precision)
+                #print("Number of blocks in ")
+
+                screen = np.max(np.abs(Jmnc2_temp.cget(Jmnc2_temp.coords)), axis = (1,2))>=xi0
+                screen[np.sum(Jmnc2_temp.coords**2, axis = 1)==0] = True
+                
+                
+
+                # Screened distances
+                distances = np.sqrt(np.sum(self.p.coor2vec(Jmnc2_temp.coords)**2, axis = 1))
+
+                Jmnc2_max =  np.max(distances[screen])
+
+                
+                if np.sum(screen)>1:
+                    max_outer_5pcnt = np.max(Jmnc2_temp.cget(Jmnc2_temp.coords[distances>Jmnc2_max*0.95]))
+                    
+                    if True: #self.printing:
+                        
+                        print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
+                        print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
+                        print("         c2 = ", c2)
+
+
+
+
+                    
+                    
+                    #r_curr, r_prev = np.sum(p.coor2vec(c2)**2), np.sum(p.coor2vec(xi_domain[i-1][0])**2)
+                    """
+                    if cellmax<=Jmnc2_max:
+                        #if r_curr-r-prev
+                        print("Warning: Jmnc2 fitting integrals for c = ", c2, " exceeds predefined matrix extents.")
+                        print("         Jmnc2_max = %.2e,    truncation_threshold = %.2e" % (Jmnc2_max, cellcut))
+                        #print("         Max value at boundary: ", Jmnc2_temp)
+                        #print("         Truncation threshold (cellcut) should be increased.") 
+                        print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
+                        #print("->", c2, xi_domain[i-1][0])
+                        #print("->", np.sum(p.coor2vec(c2)**2), np.sum(p.coor2vec(xi_domain[i-1][0])**2))
+                    cellcut =  Jmnc2_max*1.2#update truncation threshold
+                    """
+
+                Jmnc2 = tp.tmat()
+
+                Jmnc2.load_nparray(Jmnc2_temp.cget(Jmnc2_temp.coords[screen]), Jmnc2_temp.coords[screen])
 
 
             self.coords.append(c2)
