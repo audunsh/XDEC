@@ -3346,6 +3346,14 @@ if __name__ == "__main__":
 
         wcenters = np.append(wcenters_occ, wcenters_virt, axis = 0)
 
+    print("Spaces:")
+    print(c_occ.blocks.shape, c_virt.blocks.shape, wcenters.shape)
+
+    wcenters_occ, spreads = of.centers_spreads(c_occ, p, s.coords)
+
+    wcenters_virt, spreads = of.centers_spreads(c_virt, p, s.coords)
+
+    wcenters = np.append(wcenters_occ, wcenters_virt, axis = 0)
 
 
 
