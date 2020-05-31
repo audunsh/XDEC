@@ -20,6 +20,8 @@ import utils.prism as pr
 
 import time
 
+from pympler import muppy, summary
+
 
 
 #os.environ["LIBINT_DATA_PATH"] = os.getcwd() #"/usr/local/libint/2.5.0-beta.2/share/libint/2.5.0-beta.2/basis/"
@@ -1085,6 +1087,7 @@ class coefficient_fitter_static():
 
     """
 
+
     def __init__(self, c_occ,c_virt, p, attenuation, auxname, JK, JKInv, robust = False, circulant = True, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = False, N_c = 7):
         self.robust = robust
         self.coords = []
@@ -1403,11 +1406,25 @@ class coefficient_fitter_static():
                 
                 n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
                 #n_points = n_points_p(self.p, self.N_c)
+                #print("coefficient fitter statig, n_points:", n_points)
+                #print("C                      J_pq_c.shape:", J_pq_c.blocks.shape)
+
+                
                 
                 pq_c.append(
                     self.JK.kspace_svd_solve(
                         J_pq_c, 
                         n_points = n_points))
+                #print("                   pq_c.blocks.shape:", pq_c[-1].blocks.shape)
+
+        
+        #all_objects = muppy.get_objects()
+        #sum1 = summary.summarize(all_objects)
+        # Prints out a summary of the large objects
+        #print(" --- cfit")
+        #summary.print_(sum1)
+        #print(" ---")
+
         
         return pq_c
         
@@ -1671,6 +1688,7 @@ class integral_builder_static():
     RI-integral builder with stored AO-integrals
     For high performance (but high memory demand)
     """
+
     def __init__(self, c_occ, c_virt,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, robust  = False,  inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = True, N_c = 10):
         self.c_occ = c_occ
         self.c_virt = c_virt
@@ -1886,6 +1904,8 @@ class integral_builder_static():
                 self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
                 dels.append(d)
         self.JK, v_pqrs = tdot(self.p, self.XregT[dL[0], dL[1], dL[2]],self.JK,self.XregT[dM[0], dM[1], dM[2]].tT(), auxname = self.auxname, coords = M)
+        #print("Coulomb (JK) shape:", self.JK.blocks.shape)
+        #print(self.XregT.nbytes)
         
         if not keep:
             for d in dels:
@@ -1896,14 +1916,16 @@ class integral_builder_static():
 
 
 
-
-    def getorientation(self, dL, dM, adaptive_cdot = False, M=None):
+    def getorientation(self, dL, dM, adaptive_cdot = False, M=None, forget = False):
+        
+        D = [] #to be forgotten
         if adaptive_cdot:
             # not yet implementet
 
 
 
             return None
+
         else:
             # use circulant fomulation
             for d in [dL, dM]:
@@ -1934,6 +1956,17 @@ class integral_builder_static():
                             self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
 
                         print("        On-demand calculation:", d)
+
+                    D.append(d)
+                    
+                    #del(Xreg)
+
+        #print(" ... ibuild --- ")
+        
+        #all_objects = muppy.get_objects()
+        #sum1 = summary.summarize(all_objects)
+        # Prints out a summary of the large objects
+        #summary.print_(sum1)
             
         
         if self.robust:
@@ -1954,13 +1987,36 @@ class integral_builder_static():
         
         
         else:
-            #print("Return:")
+            #print("Return:", dL, dM)
             if self.circulant:
-                return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]), \
-                    (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
+
+                #for e in self.XregT.ravel():
+                #    print(e.blocks.nbytes)
+                #print("Tensor mem usage:", self.nbytes(), " bytes.")
+                
+                
+                #return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]), \
+                #    (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
+
+
+
+                ret = self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])
+                if forget:
+                    for d in D:
+
+                        self.VXreg[d[0], d[1], d[2]] = 0
+                        self.XregT[d[0], d[1], d[2]] = 0
+
+                        #print("Fitting: Removed tensor: ", d)
+                return ret, (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
+
+
+
             else:
-                return self.XregT[dL[0], dL[1], dL[2]].dot(self.VXreg[dM[0], dM[1], dM[2]]), \
+                #print("Kept tensors")
+                return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]]), \
                     (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
+        
 
 
 
@@ -2027,7 +2083,7 @@ class integral_builder_static():
 
     def nbytes(self):
         # Return memory usage of all arrays in instance
-        total_mem_usage = 0.0
+        total_mem_usage =  self.JK.blocks.nbytes
         for i in np.arange(self.VXreg.shape[0]):
             for j in np.arange(self.VXreg.shape[1]):
                 for k in np.arange(self.VXreg.shape[2]):
@@ -2035,7 +2091,7 @@ class integral_builder_static():
                         total_mem_usage += self.XregT[i,j,k].blocks.nbytes
                     if type(self.VXreg[i,j,k]) is tp.tmat:
                         total_mem_usage += self.VXreg[i,j,k].blocks.nbytes
-        return total_mem_usage*1e-6 #return in MB
+        return total_mem_usage #*1e-6 #return in MB
 
 
 

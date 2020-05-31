@@ -26,6 +26,10 @@ import domdef as dd
 import PRI
 import time
 
+from pympler import muppy, summary
+import gc
+
+
 """
 Functions that aids mapping of blocks in tensors
 """
@@ -88,6 +92,7 @@ class amplitude_solver():
         print("%i occupied orbitals included in fragment." % self.n_occupied_tot)
 
     def solve(self, norm_thresh = 1e-10, eqtype = "mp2", s_virt = None, damping = 0.2, ndiis = 8):
+        #print("NDIIS = ", ndiis)
         if eqtype == "mp2_nonorth":
             return self.solve_MP2PAO(norm_thresh, s_virt = s_virt, damping = damping)
         elif eqtype == "paodot":
@@ -1982,7 +1987,7 @@ class pair_fragment_amplitudes(amplitude_solver):
 
 
     """
-    def __init__(self, fragment_1, fragment_2, M, recycle_integrals = True, adaptive = False, retain_integrals = False):
+    def __init__(self, fragment_1, fragment_2, M, recycle_integrals = True, adaptive = False, retain_integrals = False, domain_def = 0):
         import copy
 
         self.f1 = fragment_1
@@ -2002,16 +2007,18 @@ class pair_fragment_amplitudes(amplitude_solver):
         # Set up occupied pair domain
 
         self.d_ii = copy.deepcopy(self.f1.d_ii) #dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers[:p.get_nocc()])
-
+        
         for coord in self.d_ii.coords:
             elmn = self.f2.d_ii.cget(coord)[self.f2.fragment[0], :] < self.f2.occupied_cutoff
             self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.99
             self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.99
-            self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.99
+            if domain_def == 0:
+                self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.99
 
 
             elmn = self.f1.d_ii.cget(coord)[self.f1.fragment[0], :] < self.f1.occupied_cutoff
-            self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.99
+            if domain_def == 0:
+                self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.99
             self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.occupied_cutoff*0.99
 
 
@@ -2061,10 +2068,12 @@ class pair_fragment_amplitudes(amplitude_solver):
             elmn = self.f2.d_ia.cget(coord)[self.f2.fragment[0], :] < self.f2.virtual_cutoff
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
-            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
+            if domain_def == 0:
+                self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
 
             elmn = self.f1.d_ia.cget(coord)[self.f1.fragment[0], :] < self.f1.virtual_cutoff
-            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
+            if domain_def == 0:
+                self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
 
 
@@ -2101,6 +2110,8 @@ class pair_fragment_amplitudes(amplitude_solver):
 
         self.init_amplitudes()
 
+        
+
     def init_amplitudes(self):
         """
         Initialize the amplitudes using the MP2-like starting guess
@@ -2125,7 +2136,7 @@ class pair_fragment_amplitudes(amplitude_solver):
 
         self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
-        print("t2 shape:", self.t2.shape)
+        #print("t2 shape:", self.t2.shape)
 
         reuse = 0    # count instances where coulomb integrals are recycled
         compute = 0  # count instances where coulomb integrals are computed
@@ -2253,7 +2264,9 @@ class pair_fragment_amplitudes(amplitude_solver):
                             I, Ishape = self.ib.get_adaptive(dL, dM,self.d_ii.coords[ di_indices ], keep = self.retain_integrals)
                         else:
 
-                            I, Ishape = self.ib.getorientation(dL, dM)
+                            I, Ishape = self.ib.getorientation(dL, dM, forget = True)
+                            #I, Ishape = self.ib.getorientation(dL*0, dM*0)
+                            
 
 
                         for m in sq_i[k:l]:
@@ -2423,7 +2436,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                         if self.adaptive:
                             I, Ishape = self.ib.get_adaptive(dM+self.M, dL-self.M, np.array([self.M]), keep = self.retain_integrals)
                         else:
-                            I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
+                            I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M, forget = True)
                         g_exchange = I.cget(self.M).reshape(Ishape) #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
                         computed += 1
 
@@ -2479,7 +2492,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                         if self.adaptive:
                             I, Ishape = self.ib.get_adaptive( dM-self.M, dL+self.M, np.array([-self.M]), keep = self.retain_integrals)
                         else:
-                            I, Ishape = self.ib.getorientation(dM-self.M, dL+self.M)
+                            I, Ishape = self.ib.getorientation(dM-self.M, dL+self.M, forget = True)
                         g_exchange = I.cget(-self.M).reshape(Ishape) # [self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
                         computed += 1
 
@@ -2602,7 +2615,6 @@ class pair_fragment_amplitudes(amplitude_solver):
         return np.array([e_mp2, e_mp2, e_mp2, e_mp2])
 
 
-
     def omega(self, t2):
 
         t2_new = np.zeros_like(t2)
@@ -2696,6 +2708,21 @@ class pair_fragment_amplitudes(amplitude_solver):
 
                     t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
         return t2_new
+
+    def nbytes(self):
+        mem_usage = self.d_ia.blocks.nbytes + self.d_ii.blocks.nbytes
+        mem_usage += self.t2.nbytes + self.g_d.nbytes
+        return mem_usage
+
+    def memory_profile(self):
+        all_objects = muppy.get_objects()
+        sum1 = summary.summarize(all_objects)
+        # Prints out a summary of the large objects
+        summary.print_(sum1)
+    
+    def deallocate(self):
+        pass
+
 
 
 
@@ -3115,8 +3142,9 @@ if __name__ == "__main__":
     parser.add_argument("-ndiis", type = int, default = 4, help = "DIIS for mp2 optim.")
     #parser.add_argument("-inverse_test", type = bool, default = False, help = "Perform inversion and condition tests when initializing integral fitter." )
     parser.add_argument("-inverse_test", action = "store_true",  default = False, help="Perform inversion and condition testing")
-
-
+    parser.add_argument("-pair_domain_def", type = int, default = 0, help = "Specification of pair domain type")
+    
+ 
 
     args = parser.parse_args()
 
@@ -3125,6 +3153,7 @@ if __name__ == "__main__":
     args.float_precision = eval(args.float_precision)
     import sys
 
+    
 
 
     #git_hh = sp.Popen(['git' , 'rev-parse', 'HEAD'], shell=False, stdout=sp.PIPE, cwd = sys.path[0])
@@ -3609,7 +3638,7 @@ if __name__ == "__main__":
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                     print("_________________________________________________________")
-                    print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                    print("Current memory usage of integrals (in bytes): %.2f" % ib.nbytes())
                     print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
                     print(" ",flush=True)
 
@@ -3670,7 +3699,7 @@ if __name__ == "__main__":
                         print("Unable to estimate error.")
                         print(" ")
                     print("estimated_pts", estimated_pts)
-                    print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                    print("Current memory usage of integrals (in bytes): %.2f" % ib.nbytes())
                     print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
                     print(" ")
                     print("_________________________________________________________",flush=True)
@@ -3920,7 +3949,7 @@ if __name__ == "__main__":
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                     print("_________________________________________________________")
-                    print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                    print("Current memory usage of integrals (in bytes): %.2f" % ib.nbytes())
                     print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
                     print(" ",flush=True)
 
@@ -3981,7 +4010,7 @@ if __name__ == "__main__":
                         print("Unable to estimate error.")
                         print(" ")
                     print("estimated_pts", estimated_pts)
-                    print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                    print("Current memory usage of integrals (in bytes): %.2f" % ib.nbytes())
                     print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
                     print(" ")
                     print("_________________________________________________________")
@@ -4095,7 +4124,7 @@ if __name__ == "__main__":
 
             for c in pair_coords:
 
-                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals)
+                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, domain_def = args.pair_domain_def)
                 rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
                 print("Convergence:", rn, it)
                 p_energy = pair.compute_pair_fragment_energy()
@@ -4189,7 +4218,7 @@ if __name__ == "__main__":
                             pos_a = wcenters[refcell_fragments[fa].fragment[0]]
                             pos_b = wcenters[refcell_fragments[fb].fragment[0]]
 
-                            pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains)
+                            pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains,  domain_def = args.pair_domain_def)
                             #print(pair.compute_pair_fragment_energy())
                             rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
                             print("Convergence:", rn, it)
@@ -4250,7 +4279,7 @@ if __name__ == "__main__":
                             frag_a = refcell_fragments[fa]
                             frag_b = refcell_fragments[fb]
 
-                            pair = pair_fragment_amplitudes(frag_a, frag_b, M = c)
+                            pair = pair_fragment_amplitudes(frag_a, frag_b, M = c,  domain_def = args.pair_domain_def)
 
 
                             #print(pair.compute_pair_fragment_energy())
@@ -4386,7 +4415,7 @@ if __name__ == "__main__":
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                     print("_________________________________________________________")
-                    print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                    print("Current memory usage of integrals (in bytes): %.2f" % ib.nbytes())
                     print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
                     print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
                     print(" ",flush=True)
@@ -4444,7 +4473,7 @@ if __name__ == "__main__":
                         print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                         print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                         print("_________________________________________________________")
-                        print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                        print("Current memory usage of integrals (in bytes): %.2f" % ib.nbytes())
                         print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
                         print(" ",flush=True)
 
@@ -4513,7 +4542,7 @@ if __name__ == "__main__":
                         print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                         print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                         print("_________________________________________________________")
-                        print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                        print("Current memory usage of integrals (in bytes): %.2f" % ib.nbytes())
                         print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
                         print(" ",flush=True)
 
@@ -4617,140 +4646,6 @@ if __name__ == "__main__":
 
         print("Total fragment energy:", fragment_energy_total, "+/-", np.sqrt(np.sum(fragment_errors**2)))
         print(" ")
-        """
-        c = np.array([0,0,0])
-        pair_total = 0
-        for fa in np.arange(len(refcell_fragments)):
-            for fb in np.arange(fa+1, len(refcell_fragments)):
-                frag_a = refcell_fragments[fa]
-                frag_b = refcell_fragments[fb]
-
-                pos_a = wcenters[refcell_fragments[fa].fragment[0]]
-                pos_b = wcenters[refcell_fragments[fb].fragment[0]]
-
-                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals)
-                #print(pair.compute_pair_fragment_energy())
-                rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
-                print("Convergence:", rn, it)
-
-                p_energy = pair.compute_pair_fragment_energy()
-                pair_total += p_energy
-                #pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
-                #pair_energies.append(p_energy)
-
-
-                print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
-        print(pair_total)
-        pair_total = 0
-
-
-        for c in np.array([[1,0,0]]):
-
-            for fa in np.arange(len(refcell_fragments)):
-                for fb in np.arange(len(refcell_fragments)):
-                    frag_a = refcell_fragments[fa]
-                    frag_b = refcell_fragments[fb]
-
-                    pos_a = wcenters[refcell_fragments[fa].fragment[0]]
-                    pos_b = wcenters[refcell_fragments[fb].fragment[0]]
-
-                    pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals)
-                    #print(pair.compute_pair_fragment_energy())
-                    rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
-                    print("Convergence:", rn, it)
-
-                    p_energy = pair.compute_pair_fragment_energy()
-                    pair_total += p_energy
-                    #pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
-                    #pair_energies.append(p_energy)
-                    print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
-
-            print("PAir total:", pair_total)
-        """
-
-
-
-        if False:
-
-            # LiH_specific run
-            pair_energies = []
-            pair_distances = []
-            pair_coords = tp.lattice_coords([10,10,10])
-            pair_coords = pair_coords[np.argsort(np.sum(p.coor2vec(pair_coords)**2, axis = 1))[0:]] #Sort in increasing distance
-            pair_total = 0
-
-            #pair_coords = np.array([[1,0,0], [-1,0,0]])
-
-            #domain = tp.lattice_coords([10,0,0])
-
-            #print(domain)
-            frag_a = refcell_fragments[0]
-            frag_b = refcell_fragments[1]
-            pos_a = wcenters[refcell_fragments[0].fragment[0]]
-            pos_b = wcenters[refcell_fragments[1].fragment[0]]
-
-
-            for c in pair_coords:
-
-                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals)
-                rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
-                print("Convergence:", rn, it)
-                p_energy = pair.compute_pair_fragment_energy()
-
-                pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_a)**2)**.5)
-                pair_energies.append(p_energy[0])
-
-                pair_distances.append(0.529177*np.sum((pos_b - p.coor2vec(c) - pos_b)**2)**.5)
-                pair_energies.append(p_energy[1])
-
-                pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
-                pair_energies.append(p_energy[2])
-
-                pair_distances.append(0.529177*np.sum((pos_b - p.coor2vec(c) - pos_a)**2)**.5)
-                pair_energies.append(p_energy[3])
-
-                print("_________________________________________________________")
-                print("dist_xdec = np.array(", pair_distances, ")")
-                print("e_mp2_xdec = np.array(", pair_energies, ")")
-                print(" ----- ")
-
-
-
-
-
-
-
-
-
-
-                """
-                for fa in np.arange(len(refcell_fragments)):
-                    for fb in np.arange(len(refcell_fragments)):
-                        frag_a = refcell_fragments[fa]
-                        frag_b = refcell_fragments[fb]
-
-                        pos_a = wcenters[refcell_fragments[fa].fragment[0]]
-                        pos_b = wcenters[refcell_fragments[fb].fragment[0]]
-
-                        pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals)
-                        #print(pair.compute_pair_fragment_energy())
-                        rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9)
-                        print("Convergence:", rn, it)
-
-                        p_energy = pair.compute_pair_fragment_energy()
-                        pair_total += p_energy
-                        pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
-                        pair_energies.append(p_energy)
-
-
-                        print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
-                        print("_________________________________________________________")
-                        print(pair_distances)
-                        print(pair_energies)
-                        print(" ----- ")
-                """
-
-
 
 
         if args.pairs:
@@ -4782,7 +4677,7 @@ if __name__ == "__main__":
                                 pos_a = wcenters[refcell_fragments[fa].fragment[0]]
                                 pos_b = wcenters[refcell_fragments[fb].fragment[0]]
 
-                                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains)
+                                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains,  domain_def = args.pair_domain_def)
                                 #print(pair.compute_pair_fragment_energy())
                                 rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9, ndiis = args.ndiis)
                                 print("Convergence:", rn, it)
@@ -4791,6 +4686,7 @@ if __name__ == "__main__":
                                 pair_total += p_energy
                                 pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
                                 pair_energies.append(p_energy)
+                                print("Memory usage (bytes)", pair.nbytes())
 
 
                                 print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
@@ -4849,9 +4745,11 @@ if __name__ == "__main__":
                                 pos_a = wcenters[refcell_fragments[fa].fragment[0]]
                                 pos_b = wcenters[refcell_fragments[fb].fragment[0]]
 
-                                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains, retain_integrals = args.retain_integrals)
+                                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains, retain_integrals = args.retain_integrals,  domain_def = args.pair_domain_def)
                                 #print(pair.compute_pair_fragment_energy())
                                 #print()
+                                #print("Memory profile before optim:")
+                                #pair.memory_profile()
                                 rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9, ndiis = args.ndiis)
                                 print("Convergence:", rn, it)
 
@@ -4859,6 +4757,9 @@ if __name__ == "__main__":
                                 pair_total += p_energy
                                 pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
                                 pair_energies.append(p_energy)
+
+
+                                
 
 
                                 #print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
@@ -4869,6 +4770,8 @@ if __name__ == "__main__":
                                 #print(pair_energies)
                                 #print("dist_xdec = np.array(", pair_distances, ")")
                                 #print("e_mp2_xdec = np.array(", pair_energies, ")")
+                                print("Memory usage (bytes)", pair.nbytes())
+                                p
                                 print(" ----- ")
                                 print(flush=True)
 
@@ -4891,12 +4794,27 @@ if __name__ == "__main__":
 
                         print ('Calculating pair: ',fa,fb,c)
 
-                        pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains, retain_integrals = args.retain_integrals)
+                        pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains, retain_integrals = args.retain_integrals,  domain_def = args.pair_domain_def)
+                        
+                        
                         #print(pair.compute_pair_fragment_energy())
-                        rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9, ndiis = args.ndiis)
-                        print("Convergence:", rn, it)
+                        #del(pair)
+                        #pair = 0
+                        #print("Memory profile pre optim:")
+                        #pair.memory_profile()
+                        
+                        
+                        #rn, it = 0,0, #pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9, ndiis = args.ndiis)
+                        #p_energies = [0,0,0,0] #pair.compute_pair_fragment_energy()
 
+                        rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9, ndiis = args.ndiis)
                         p_energies = pair.compute_pair_fragment_energy()
+
+                        #print(" We are here!")
+
+
+
+                        print("Convergence:", rn, it)
                         p_energy = p_energies[2]
                         pair_total += p_energy
                         pair_distances.append(dist)
@@ -4914,12 +4832,27 @@ if __name__ == "__main__":
                         #print(pair_energies)
                         #print("dist_xdec = np.array(", pair_distances, ")")
                         #print("e_mp2_xdec = np.array(", pair_energies, ")")
-                        print("Integrator memory usage:", ib.nbytes(), "(Mb)")
+                        print("Integrator memory usage:", ib.nbytes(), "(bytes)")
                         print ()
                         PD.P.print_de()
                         print ()
                         print(" ----- ")
                         print(flush=True)
+                        #print("Memory profile post optim:")
+                        #pair.memory_profile()
+                        #pair.deallocate()
+
+                        #gc.collect()
+
+                        #del(pair.t2)
+                        #del(pair.g_d)
+                        #del(pair.f1)
+                        #del(pair.f2)
+                        #del(pair.ib)
+                        #del(pair)
+                        #del(frag_a)
+                        #del(frag_b)
+                        
 
                         n_pairs += 1
 
@@ -5040,7 +4973,7 @@ if __name__ == "__main__":
                     print("_________________________________________________________")
                     print("E(CIM): %.8f      DE(fragment): %.8e" % (E_new, dE))
                     print("_________________________________________________________")
-                    print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                    print("Current memory usage of integrals (in bytes): %.2f" % ib.nbytes())
                     print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
                     print(" ")
                     E_prev = E_new
@@ -5077,7 +5010,7 @@ if __name__ == "__main__":
                     print("_________________________________________________________")
                     print("E(CIM): %.8f      DE(fragment): %.8e" % (E_new, dE))
                     print("_________________________________________________________")
-                    print("Current memory usage of integrals (in MB): %.2f" % ib.nbytes())
+                    print("Current memory usage of integrals (in bytes): %.2f" % ib.nbytes())
                     print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
                     print(" ")
                     E_prev = E_new
@@ -5170,3 +5103,17 @@ if __name__ == "__main__":
             refcell_fragments.append(a_frag)
             fragment_energy_total += E_prev_outer
         print("Total fragment energy:", fragment_energy_total)
+    
+
+
+    #all_objects = muppy.get_objects()
+    #sum1 = summary.summarize(all_objects)
+    # Prints out a summary of the large objects
+    #summary.print_(sum1)
+    # Get references to certain types of objects such as dataframe
+    """
+    dataframes = [ao for ao in all_objects if isinstance(ao, pd.DataFrame)]
+    for d in dataframes:
+        print(d.columns.values)
+        print(len(d))
+    """
