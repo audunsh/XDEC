@@ -2136,7 +2136,7 @@ class pair_fragment_amplitudes(amplitude_solver):
 
         self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
-        #print("t2 shape:", self.t2.shape)
+        print("t2 shape:", self.t2.shape)
 
         reuse = 0    # count instances where coulomb integrals are recycled
         compute = 0  # count instances where coulomb integrals are computed
@@ -2264,7 +2264,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                             I, Ishape = self.ib.get_adaptive(dL, dM,self.d_ii.coords[ di_indices ], keep = self.retain_integrals)
                         else:
 
-                            I, Ishape = self.ib.getorientation(dL, dM, forget = True)
+                            I, Ishape = self.ib.getorientation(dL, dM)
                             #I, Ishape = self.ib.getorientation(dL*0, dM*0)
                             
 
@@ -2436,7 +2436,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                         if self.adaptive:
                             I, Ishape = self.ib.get_adaptive(dM+self.M, dL-self.M, np.array([self.M]), keep = self.retain_integrals)
                         else:
-                            I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M, forget = True)
+                            I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
                         g_exchange = I.cget(self.M).reshape(Ishape) #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
                         computed += 1
 
@@ -2492,7 +2492,7 @@ class pair_fragment_amplitudes(amplitude_solver):
                         if self.adaptive:
                             I, Ishape = self.ib.get_adaptive( dM-self.M, dL+self.M, np.array([-self.M]), keep = self.retain_integrals)
                         else:
-                            I, Ishape = self.ib.getorientation(dM-self.M, dL+self.M, forget = True)
+                            I, Ishape = self.ib.getorientation(dM-self.M, dL+self.M)
                         g_exchange = I.cget(-self.M).reshape(Ishape) # [self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
                         computed += 1
 
@@ -4647,6 +4647,8 @@ if __name__ == "__main__":
         print("Total fragment energy:", fragment_energy_total, "+/-", np.sqrt(np.sum(fragment_errors**2)))
         print(" ")
 
+        ib.d_forget = [] # Ensure that only integrals beyond here are forgotten
+
 
         if args.pairs:
             import copy
@@ -4852,6 +4854,8 @@ if __name__ == "__main__":
                         #del(pair)
                         #del(frag_a)
                         #del(frag_b)
+
+                        ib.forget()
                         
 
                         n_pairs += 1

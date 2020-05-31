@@ -1703,6 +1703,8 @@ class integral_builder_static():
         self.n_occ = c_occ.blocks.shape[2]
         self.n_virt = c_virt.blocks.shape[2]
 
+        self.d_forget = [] #a list of orientations to forget (memory handling)
+
         # Oneshot calculations:
         # build attenuated JK matrix and inverse
         #big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 1e-14, auxname = auxname)
@@ -1916,7 +1918,7 @@ class integral_builder_static():
 
 
 
-    def getorientation(self, dL, dM, adaptive_cdot = False, M=None, forget = False):
+    def getorientation(self, dL, dM, adaptive_cdot = False, M=None):
         
         D = [] #to be forgotten
         if adaptive_cdot:
@@ -1957,7 +1959,8 @@ class integral_builder_static():
 
                         print("        On-demand calculation:", d)
 
-                    D.append(d)
+                    #D.append(d)
+                    self.d_forget.append(d)
                     
                     #del(Xreg)
 
@@ -2001,13 +2004,7 @@ class integral_builder_static():
 
 
                 ret = self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])
-                if forget:
-                    for d in D:
-
-                        self.VXreg[d[0], d[1], d[2]] = 0
-                        self.XregT[d[0], d[1], d[2]] = 0
-
-                        #print("Fitting: Removed tensor: ", d)
+                
                 return ret, (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
 
@@ -2016,6 +2013,15 @@ class integral_builder_static():
                 #print("Kept tensors")
                 return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]]), \
                     (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
+
+    def forget(self):
+        for d in self.d_forget:
+
+            self.VXreg[d[0], d[1], d[2]] = 0
+            self.XregT[d[0], d[1], d[2]] = 0
+
+            #print("Fitting: Removed tensor: ", d)
+            
         
 
 
