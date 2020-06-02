@@ -26,8 +26,8 @@ import domdef as dd
 import PRI
 import time
 
-from pympler import muppy, summary
-import gc
+#from pympler import muppy, summary
+#import gc
 
 
 """
@@ -4855,7 +4855,7 @@ if __name__ == "__main__":
                         #del(frag_a)
                         #del(frag_b)
 
-                        ib.forget()
+                        ib.forget() #Clear fitting coeffs specific to pair
                         
 
                         n_pairs += 1
