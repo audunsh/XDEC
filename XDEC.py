@@ -26,8 +26,8 @@ import domdef as dd
 import PRI
 import time
 
-from pympler import muppy, summary
-import gc
+#from pympler import muppy, summary
+#import gc
 
 
 """
@@ -4855,7 +4855,7 @@ if __name__ == "__main__":
                         #del(frag_a)
                         #del(frag_b)
 
-                        ib.forget()
+                        ib.forget() #Clear fitting coeffs specific to pair
                         
 
                         n_pairs += 1
@@ -5121,3 +5121,94 @@ if __name__ == "__main__":
         print(d.columns.values)
         print(len(d))
     """
+    if args.fragmentation == "fullspace":
+        """
+        cluster-in-molecule scheme
+        """
+
+        virt_cut = args.virtual_cutoff
+        occ_cut = args.occupied_cutoff
+
+        refcell_fragments = []
+        fragment_energy_total = 0
+
+        #complete fragmentation of the occupied space
+        #center_fragments = [[i] for i in np.arange(p.get_nocc()+args.n_core)[args.n_core:]]
+        #center_fragments = [[i] for i in np.arange(p.get_nocc())]
+        #print(center_fragments)
+
+        for fragment in center_fragments:
+
+
+            #ib.fragment = fragment
+            t0 = time.time()
+            domain_max = tp.lattice_coords(PRI.n_points_p(p, 20))
+
+            if args.pao_sorting:
+                d_ia = build_weight_matrix(p, c, domain_max)
+                a_frag = fragment_amplitudes(p, wcenters,domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = virt_cut, occupied_cutoff = occ_cut, float_precision = args.float_precision, d_ia = d_ia)
+
+
+            else:
+                a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = virt_cut, occupied_cutoff = occ_cut, float_precision = args.float_precision)
+
+            #print("Frag init:", time.time()-t0)
+
+            tt = 100
+
+            convergence = []
+
+
+            for i in np.arange(100):
+
+                dt, it = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = 1e-10, damping = args.damping)
+
+
+                print(dt, it)
+                print("shape:", a_frag.g_d.shape)
+                tt_new = np.sum(np.abs(a_frag.t2))
+
+
+                a_frag.autoexpand_occupied_space(n_orbs=args.orb_increment)
+
+                print("Expanded occupied space")
+                print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+                print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+                #print("Convergence:", dtt)
+                #print("Convergence", np.abs(tt_new-tt))
+                convergence.append(np.abs(tt_new-tt))
+                if np.abs(tt_new-tt)<args.fot:
+                    break
+                else:
+                    tt = tt_new
+                print("Convergence")
+                print(convergence)
+                
+
+
+
+            # Converge to fot
+            E_prev_outer = a_frag.compute_energy(exchange = True)
+            print("fragment_energy:", a_frag.compute_fragment_energy())
+            E_prev = E_prev_outer*1.0
+            dE_outer = 10
+
+            virtual_cutoff_prev = a_frag.virtual_cutoff
+            occupied_cutoff_prev = a_frag.occupied_cutoff
+
+            print("_________________________________________________________")
+            print("Initial cluster domain for fragment:")
+            print(fragment)
+            print(" ")
+            print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+            print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+            print("E(CIM): %.8f      DE(fragment): %.8e" % (E_prev, dE_outer))
+            print("dt , it:", dt, it)
+            print("_________________________________________________________")
+
+
+
+
+            refcell_fragments.append(a_frag)
+            fragment_energy_total += E_prev_outer
+        print("Total fragment energy:", fragment_energy_total)

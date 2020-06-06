@@ -20,7 +20,7 @@ import utils.prism as pr
 
 import time
 
-from pympler import muppy, summary
+#from pympler import muppy, summary
 
 
 
@@ -1800,10 +1800,13 @@ class integral_builder_static():
                 print(" ")
 
 
-        self.XregT = np.zeros((15,15,15), dtype = tp.tmat)  # RI - coefficient matrices ^T
-        self.VXreg = np.zeros((15,15,15), dtype = tp.tmat) # RI - matrices with V contracted
+        mx_l = 35 # maximum number of 
+
+
+        self.XregT = np.zeros((mx_l,mx_l,mx_l), dtype = tp.tmat)  # RI - coefficient matrices ^T
+        self.VXreg = np.zeros((mx_l,mx_l,mx_l), dtype = tp.tmat) # RI - matrices with V contracted
         if robust:
-            self.JpqXreg = np.zeros((15,15,15), dtype = tp.tmat)
+            self.JpqXreg = np.zeros((mx_l,mx_l,mx_l), dtype = tp.tmat)
 
         # initial coeffs computed in single layer around center cell
         if initial_virtual_dom is not None:
