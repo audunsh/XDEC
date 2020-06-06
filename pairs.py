@@ -24,7 +24,7 @@ def setup_pairs(    p,
 
     min_dist = 0.0
     max_dist = 30.0
-    cutoff_algorithm = 4
+    cutoff_algorithm = 6
 
     print ()
     print ('Setting up pairs ...')
@@ -34,7 +34,7 @@ def setup_pairs(    p,
     print ('Cutoff algorithm: ',cutoff_algorithm)
     print ()
 
-    if (cutoff_algorithm == 4) and (len(fragms) == 1):
+    if ((cutoff_algorithm == 4) or (cutoff_algorithm == 6)) and (len(fragms) == 1):
         cutoff_algorithm = 0
         print ('Only one fragment in the refenerence cell, the cutoff algorithm is therefore changed from 4 to 0')
 
@@ -58,6 +58,8 @@ def setup_pairs(    p,
                                     min_dist = min_dist,
                                     max_dist = max_dist,
                                     min_incr = min_incr     )
+    #if cutoff_algorithm == 5:
+    #PD.P.create_alg5_array(len(fragms))
 
     return PD
 
@@ -76,7 +78,7 @@ class Pairs:
         self.n_cells        = None  #number of unit cells
         ###IMPORTANT: self.a is assumed to be sorted by dist at all time###
 
-    def init_arrays(self,pair_indx,pair_coords,group_id,dist,n_cpairs,n_cpairs_ref,min_dist,max_dist):
+    def init_arrays(self,pair_indx,pair_coords,group_id,dist,n_cpairs,n_cpairs_ref,min_dist,max_dist,alg):
         self.n_pairs = len(dist)
 
         a = np.zeros([self.n_pairs,5],dtype=float)
@@ -87,10 +89,15 @@ class Pairs:
         dt = np.dtype([ ('ind_a',int),('ind_b',int),('cell_b',int),
                         ('group_id',int),('dist',float)   ])
 
-        ind_min = a[:,4] >= min_dist
-        ind_max = a[:,4] <= max_dist
-        ind = ind_min*ind_max
-        a = a[ind]
+        if alg == 5:
+            ind1 = a[:,4] <= max_dist
+            ind2 = np.isin(a[:,2],a[:,2][ind1])
+            a = a[ind2]
+        else:
+            ind_min = a[:,4] >= min_dist
+            ind_max = a[:,4] <= max_dist
+            ind = ind_min*ind_max
+            a = a[ind]
 
         self.n_pairs = len(a)
 
@@ -138,6 +145,12 @@ class Pairs:
         where = np.argmin(self.a['dist'][ind])
         return self.a[names][ind][where]
 
+    def get_notcalced_by_unitcell6(self,names=['ind_a','ind_b','cell_b','dist']):
+        ind = np.invert(self.a['calced'])
+        ind *= self.a['ind_a'] != self.a['ind_b']
+        where = np.argmin(self.a['cell_b'][ind])
+        return self.a[names][ind][where]
+
     def compute_cell(self,name):
         """
         returns the values summed over each unit cell, along with a boolean
@@ -153,6 +166,70 @@ class Pairs:
         ret_bool[1:] = np.sum(self.a['calced'][self.n_cpairs_ref:].reshape(self.n_cells-1,self.n_cpairs),axis=1)
 
         return ret_vals,ret_bool
+
+
+    def create_alg5_array(self,n_fragms):
+        a = self.a
+        n_pairs_per_cell = n_fragms**2
+        n_c = int((n_fragms**2 - n_fragms)/2)
+        alg5_array = np.zeros([n_c,4],dtype=int)
+        print (n_c)
+        ind = a['cell_b'] == 1
+        temp_array = a[ind]
+        temp_array = self.sort_by_ret(temp_array,['ind_a','ind_b'])
+        c = 0
+        for i in np.arange(n_fragms):
+            for j in np.arange(i+1,n_fragms):
+                print (i,j)
+                ind1 = np.where((temp_array['ind_a'] == i)&(temp_array['ind_b'] == i))[0][0]
+                ind2 = np.where((temp_array['ind_a'] == i)&(temp_array['ind_b'] == j))[0][0]
+                ind3 = np.where((temp_array['ind_a'] == j)&(temp_array['ind_b'] == i))[0][0]
+                ind4 = np.where((temp_array['ind_a'] == j)&(temp_array['ind_b'] == j))[0][0]
+                alg5_array[c,:] = [ind1,ind2,ind3,ind4]
+                c += 1
+
+        cell_inds = a['cell_b'] != 0
+        cell_array = a['cell_b'][cell_inds]
+
+        n_alg5_per_cell = len(alg5_array)
+        nonref_cells = np.unique(a['cell_b'][a['cell_b'] != 0])
+        n_nonref_cells = len(nonref_cells)
+        alg5_array_full = np.zeros([n_nonref_cells*n_alg5_per_cell,4],dtype=int)
+        start = 0
+        add_val = 0
+        #print (len(alg5_array))
+        for i in nonref_cells:
+            alg5_array_add = alg5_array + add_val
+            #print ('--------------------')
+            #print (alg5_array)
+            #print (alg5_array_add)
+            #print ('####################')
+            alg5_array_full[start:n_c+start] = alg5_array_add
+            add_val += n_pairs_per_cell
+            start += n_c
+        self.alg5_a = alg5_array_full
+        #np.set_printoptions(threshold=sys.maxsize)
+        #print (temp_array)
+        #print (alg5_array_full)
+        #test_array = self.a[self.a['cell_b'] != 0]
+        #test_array = self.sort_by_ret(test_array,['cell_b','ind_a','ind_b'])
+        #print (test_array[['ind_a','ind_b','cell_b']][alg5_array_full])
+
+        #print ('IN create_alg5_array:')
+        #print (alg5_array)
+        #print (temp_array[alg5_array])
+
+
+    def get_notcalced_by_alg5_E(self,names=['ind_a','ind_b','cell_b','dist']):
+        ind1 = self.a['cell_b'] != 0
+        temp_a = self.a[ind1]
+        temp_a = self.sort_by_ret(temp_a,['cell_b','ind_a','ind_b'])
+        calced_mask = np.invert(temp_a['calced'])[self.alg5_a].astype(int)
+        E1 = temp_a['estimE'][self.alg5_a]
+        E = np.sum(E1*calced_mask,axis=1)
+        alg5_ind = np.argmin(E)
+        pair_ind = self.alg5_a[alg5_ind,1]
+        return np.asarray(temp_a[names][pair_ind].tolist())
 
 
     def struct_to_unstruct(self,a_struct,names):
@@ -173,6 +250,9 @@ class Pairs:
 
     def sort_by(self,names):
         self.a = np.sort(self.a,order=names)
+
+    def sort_by_ret(self,array,names):
+        return np.sort(array,order=names)
 
 
 
@@ -345,6 +425,7 @@ class SortPairs:
         """
         fragments with similar set of orbital spreads are grouped together
         """
+
         index = -1
         temp_crit = []
         for i in range(len(crit)):
@@ -444,16 +525,29 @@ class PairDealer:
             group_id = self.SP.layer_regroup(group_id,coords_ext)
 
 
-        self.P.init_arrays(pair_indx,cell_indx,group_id,dists,n_cpairs,n_cpairs_ref,min_dist,max_dist)
+        self.P.init_arrays(pair_indx,cell_indx,group_id,dists,n_cpairs,n_cpairs_ref,min_dist,max_dist,self.pair_alg)
         self.P.add_param('E',float,0)
-        self.P.add_param('estimE',float,np.inf)
+        self.P.add_param('estimE',float,0)
         self.P.add_param('calced',bool,False)
         self.P.sort_by('dist')
 
-        if self.pair_alg != 0:
+        if (self.pair_alg != 0) and (self.pair_alg != 4):
             #self.early_cells = self.get_early_cells(coords_ext,cell_indx,dists)
             self.early_pairs = self.get_early_pairs(incr=min_incr)
+            if self.pair_alg == 5:
+                self.early_pairs = self.remove_equal_indices(self.early_pairs)
 
+
+    def remove_equal_indices(self,pairs):
+        n = len(pairs)
+        rm_ind = []
+        for i in np.arange(n):
+            if pairs[i][0] == pairs[i][1]:
+                rm_ind.append(i)
+        rm_ind.reverse()
+        for i in rm_ind:
+            del pairs[i]
+        return pairs
 
     def expand_coords(self,coords,n_cpairs,n_cpairs_ref):
         """
@@ -546,7 +640,7 @@ class PairDealer:
 
     def set_algorithm(self,alg_num=0):
         m = "pair_alg must be a non-negative integer smaller than 3"
-        assert ( type(alg_num) is int ) and ( alg_num < 5 ), m
+        assert ( type(alg_num) is int ) and ( alg_num < 7 ), m
 
         self.pair_alg = alg_num
 
@@ -578,9 +672,23 @@ class PairDealer:
             """
         elif alg_num == 4:
             """
-            same as algorithm 4, but only different orbital indices
+            same as algorithm 0, but only different orbital indices
             """
             self.get_pair = self.get_pair4
+            self.add = self.add4
+            self.estim_remainE = self.estim_remainE0
+        elif alg_num == 5:
+            """
+            same as algorithm 2, but only different orbital indices
+            """
+            self.get_pair = self.get_pair5
+            self.add = self.add4
+            self.estim_remainE = self.estim_remainE0
+        elif alg_num == 6:
+            """
+            same as algorithm 4, but sorted by unit cell
+            """
+            self.get_pair = self.get_pair6
             self.add = self.add4
             self.estim_remainE = self.estim_remainE0
 
@@ -677,6 +785,32 @@ class PairDealer:
         #return np.array(E_max_pairs)[E_max_ind,:]
     """
 
+    def get_refcell_pairs():
+        return 0
+
+    def interm_pair(self, min_dist, group_id):
+        ind1 = self.P.a['group_id'] == group_id
+        ind2 = self.P.a['calced']
+        ind3 = self.P.a >= min_dist
+        ind = ind1*ind2*ind3
+        ipair = a[ind][0]
+        ipair = [ipair['ind_a'],ipair['ind_b'],ipair['cell_b'],ipair['dist']]
+        return ipair
+
+    def get_interm_pairs(self,start_dist,min_incr,group_id,n_pairs):
+        prev_dist = start_dist
+        interm_pairs = []
+        for i in np.arange(n_pairs):
+            interm_pairs += self.interm_pair()
+            prev_dist += min_incr
+        return 0
+
+    def get_init_pairs(self,refcell_pairs=False):
+        init_pairs = []
+        if refcell_pairs:
+            init_pairs += self.get_refcell_pairs()
+        return 0
+
     def get_pair0(self):
         p = self.P.get_notcalced_by_dist()
         return p[0],p[1],p[2],p[3]
@@ -730,6 +864,26 @@ class PairDealer:
 
     def get_pair4(self):
         p = self.P.get_notcalced_by_dist4()
+        return p[0],p[1],p[2],p[3]
+
+    def get_pair5(self):
+        if self.early_pairs is not None:
+            ep = self.early_pairs[0]
+            del self.early_pairs[0]
+            print ('-_-_-EARLY_PAIRS-_-_-')
+            if len(self.early_pairs) == 0:
+                self.early_pairs = None
+            return ep[0],ep[1],ep[2],ep[3]
+        else:
+            p = self.P.get_notcalced_by_alg5_E()
+            print (p)
+            print (p[0],p[1],p[2],p[3])
+            print (type(p))
+            print (type(p[2]))
+            return int(p[0]),int(p[1]),int(p[2]),p[3]
+
+    def get_pair6(self):
+        p = self.P.get_notcalced_by_unitcell6()
         return p[0],p[1],p[2],p[3]
 
 
