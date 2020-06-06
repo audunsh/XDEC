@@ -1591,13 +1591,13 @@ class fragment_amplitudes(amplitude_solver):
                     #print(ddL,mM, ddM, self.g_d.shape)
 
 
-                    g_direct = self.g_d[:,ddL,:,mM, :, ddM, :][self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i]
+                    g_direct = self.g_d[:,ddL,:,mM, :, ddM, :][M_0][:, dL_i][:, :, M_i][:,:,:,dM_i]
                     #g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :]
 
                     ddM_M, ddL_M = get_index_where(self.d_ia.coords, dM+M), get_index_where(self.d_ia.coords, dL-M)
                     #g_exchange = self.g_d[:,ddM_M,:,mM, :, ddL_M, :][self.fragment][:, dM_i][:, :, M_i][:,:,:,dL_i]
 
-                    t = self.t2[:,ddL,:,mM, :, ddM, :][self.fragment][:, dL_i][:, :, M_i][:,:,:,dM_i]
+                    t = self.t2[:,ddL,:,mM, :, ddM, :][M_0][:, dL_i][:, :, M_i][:,:,:,dM_i]
 
                     e_mp2 += 2*np.einsum("iajb,iajb",t,g_direct, optimize = True)
 
@@ -1606,8 +1606,10 @@ class fragment_amplitudes(amplitude_solver):
                         try:
                             # Get exchange index / np.argwhere
                             #assert(False)
+                            
+
                             ddM_M, ddL_M = get_index_where(self.d_ia.coords, dM+M), get_index_where(self.d_ia.coords, dL-M)
-                            g_exchange = self.g_d[:,ddM_M,:,mM, :, ddL_M, :][self.fragment][:, dM_i][:, :, M_i][:,:,:,dL_i]
+                            g_exchange = self.g_d[:,ddM_M,:,mM, :, ddL_M, :][M_0][:, dM_i][:, :, M_i][:,:,:,dL_i]
                             #print("Reuse integrals for exchange")
                             #assert(False), "no"
                             #reuse += 1
@@ -1615,7 +1617,7 @@ class fragment_amplitudes(amplitude_solver):
 
                             #print("Exchange not precomputed")
                             I, Ishape = self.ib.getorientation(dM+M, dL-M)
-                            g_exchange = I.cget(M).reshape(Ishape)[self.fragment][:, dM_i][:, :, M_i][:,:,:,dL_i]
+                            g_exchange = I.cget(M).reshape(Ishape)[M_0][:, dM_i][:, :, M_i][:,:,:,dL_i]
                             #computed += 1
 
                         e_mp2 += - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
@@ -2384,7 +2386,7 @@ class pair_fragment_amplitudes(amplitude_solver):
         #print("E TOt", e_mp2_direct, e_mp2_exchange)
         return e_mp2
 
-    def compute_pair_fragment_energy(self):
+    def compute_pair_fragment_energy(self, opt = False):
         """
         Compute fragment energy
         """
@@ -2444,32 +2446,32 @@ class pair_fragment_amplitudes(amplitude_solver):
 
                     e_mp2_ab += 2*np.einsum("iajb,iajb",t[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
                                                         g_direct[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
-                                                        optimize = True) \
+                                                        optimize = opt) \
                                 - np.einsum("iajb,ibja",t[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
                                                         g_exchange[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i],
-                                                        optimize = True)
+                                                        optimize = opt)
 
 
                     e_mp2_ba += 2*np.einsum("iajb,iajb",t[self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
                                                         g_direct[self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
-                                                        optimize = True) \
+                                                        optimize = opt) \
                                 - np.einsum("iajb,ibja",t[self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
                                                         g_exchange[self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i],
-                                                        optimize = True)
+                                                        optimize = opt)
 
                     e_mp2_aa += 2*np.einsum("iajb,iajb",t[self.f1.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
                                                         g_direct[self.f1.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
-                                                        optimize = True) \
+                                                        optimize = opt) \
                                 - np.einsum("iajb,ibja",t[self.f1.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
                                                         g_exchange[self.f1.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i],
-                                                        optimize = True)
+                                                        optimize = opt)
 
                     e_mp2_bb += 2*np.einsum("iajb,iajb",t[self.f2.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
                                                         g_direct[self.f2.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
-                                                        optimize = True) \
+                                                        optimize = opt) \
                                 - np.einsum("iajb,ibja",t[self.f2.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
                                                         g_exchange[self.f2.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i],
-                                                        optimize = True)
+                                                        optimize = opt)
 
 
 
@@ -2504,31 +2506,31 @@ class pair_fragment_amplitudes(amplitude_solver):
 
                     e_mp2_ab += 2*np.einsum("iajb,iajb",t[self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
                                                         g_direct[self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
-                                                        optimize = True)  \
+                                                        optimize = opt)  \
                                 - np.einsum("iajb,ibja",t[self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
                                                         g_exchange[self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i],
-                                                        optimize = True)
+                                                        optimize = opt)
 
                     e_mp2_ba += 2*np.einsum("iajb,iajb",t[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
                                                         g_direct[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
-                                                        optimize = True)  \
+                                                        optimize = opt)  \
                                 - np.einsum("iajb,ibja",t[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
                                                         g_exchange[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i],
-                                                        optimize = True)
+                                                        optimize = opt)
 
                     e_mp2_aa += 2*np.einsum("iajb,iajb",t[self.f1.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
                                                         g_direct[self.f1.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
-                                                        optimize = True)  \
+                                                        optimize = opt)  \
                                 - np.einsum("iajb,ibja",t[self.f1.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i],
                                                         g_exchange[self.f1.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i],
-                                                        optimize = True)
+                                                        optimize = opt)
 
                     e_mp2_bb += 2*np.einsum("iajb,iajb",t[self.f2.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
                                                         g_direct[self.f2.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
-                                                        optimize = True)  \
+                                                        optimize = opt)  \
                                 - np.einsum("iajb,ibja",t[self.f2.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i],
                                                         g_exchange[self.f2.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i],
-                                                        optimize = True)
+                                                        optimize = opt)
         #print("Computed/reused:", computed, reuse)
         #print("Pair energies:", e_mp2_aa, e_mp2_ab, e_mp2_ba, e_mp2_bb)
         #return e_mp2_ab
@@ -3384,6 +3386,10 @@ if __name__ == "__main__":
 
     wcenters = np.append(wcenters_occ, wcenters_virt, axis = 0)
 
+    #print("Number of coefficients to truncate:", np.sum(np.abs(c_occ.blocks[np.abs(c_occ.blocks)>1e-14])<1e-6))
+    #print("Number of coefficients to keep    :", np.sum(np.abs(c_occ.blocks[np.abs(c_occ.blocks)>1e-14])>1e-6))
+    #print("Number of coefficients in total   :", np.prod(c_occ.blocks.shape))
+
 
 
 
@@ -3455,7 +3461,7 @@ if __name__ == "__main__":
     #if args.spacedef is not None:
     #    d_occ_ref = d.cget([0,0,0])[PRI.]
 
-    center_fragments = dd.atomic_fragmentation(ib.n_occ, d_occ_ref, args.afrag)[::-1]
+    center_fragments = dd.atomic_fragmentation(ib.n_occ, d_occ_ref, args.afrag) #[::-1]
 
 
     print(" ")
@@ -4787,6 +4793,8 @@ if __name__ == "__main__":
 
                     n_pairs = 0
 
+                    cprev = None
+
                     while not PD.conv:
                         fa,fb,c_ind,dist = PD.get_pair()
                         c = pair_coords[c_ind]
@@ -4810,13 +4818,15 @@ if __name__ == "__main__":
                         #p_energies = [0,0,0,0] #pair.compute_pair_fragment_energy()
 
                         rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9, ndiis = args.ndiis)
+                        print("Convergence:", rn, it)
                         p_energies = pair.compute_pair_fragment_energy()
+                        print(" DOne computing energy")
 
                         #print(" We are here!")
 
 
 
-                        print("Convergence:", rn, it)
+                        
                         p_energy = p_energies[2]
                         pair_total += p_energy
                         pair_distances.append(dist)
@@ -4854,8 +4864,16 @@ if __name__ == "__main__":
                         #del(pair)
                         #del(frag_a)
                         #del(frag_b)
+                        
+                        if cprev is None:
+                            cprev = c*1
+                        else:
+                            if np.sum((c-cprev)**2)!=0:
+                                print("Forget pair integrals")
 
-                        ib.forget() #Clear fitting coeffs specific to pair
+                                ib.forget() #Clear fitting coeffs specific to pair
+                            cprev = c*1
+
                         
 
                         n_pairs += 1
@@ -5160,6 +5178,7 @@ if __name__ == "__main__":
 
 
             for i in np.arange(100):
+                a_frag.autoexpand_occupied_space(n_orbs=args.orb_increment)
 
                 dt, it = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = 1e-10, damping = args.damping)
 
@@ -5167,20 +5186,24 @@ if __name__ == "__main__":
                 print(dt, it)
                 print("shape:", a_frag.g_d.shape)
                 tt_new = np.sum(np.abs(a_frag.t2))
+                tt_new=  a_frag.compute_energy(exchange = False)
+                
 
 
-                a_frag.autoexpand_occupied_space(n_orbs=args.orb_increment)
+                
 
                 print("Expanded occupied space")
                 print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                 print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                 #print("Convergence:", dtt)
                 #print("Convergence", np.abs(tt_new-tt))
+                print("energy (-exhange):", a_frag.compute_energy(exchange = False))
                 convergence.append(np.abs(tt_new-tt))
                 if np.abs(tt_new-tt)<args.fot:
                     break
                 else:
                     tt = tt_new
+                #a_frag.t2 *= 0
                 print("Convergence")
                 print(convergence)
                 
