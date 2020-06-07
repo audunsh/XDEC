@@ -1989,7 +1989,7 @@ class pair_fragment_amplitudes(amplitude_solver):
 
 
     """
-    def __init__(self, fragment_1, fragment_2, M, recycle_integrals = True, adaptive = False, retain_integrals = False, domain_def = 0):
+    def __init__(self, fragment_1, fragment_2, M, recycle_integrals = True, adaptive = False, retain_integrals = False, domain_def = 0, old_pair = None):
         import copy
 
         self.f1 = fragment_1
@@ -2110,11 +2110,11 @@ class pair_fragment_amplitudes(amplitude_solver):
 
 
 
-        self.init_amplitudes()
+        self.init_amplitudes(old_pair) #Reuse old pair integrals if present
 
         
 
-    def init_amplitudes(self):
+    def init_amplitudes(self, old_pair):
         """
         Initialize the amplitudes using the MP2-like starting guess
         """
@@ -2161,10 +2161,30 @@ class pair_fragment_amplitudes(amplitude_solver):
                         try:
                             #assert(False)
                             self.g_d[:,ddL,:,mM,:,ddM,:] = self.f1.g_d[:,ddLf1,:,mMf1,:,ddMf1,:]
-                            reuse += 1
+                            reuse += 0
                         except:
-                            compute += 1
+                            compute += 0
                             #pass
+            if old_pair is not None:
+                for mM in np.arange(self.n_occupied_cells):
+                    for ddL in np.arange(self.n_virtual_cells):
+                        for ddM in np.arange(self.n_virtual_cells):
+                            ddLf1 =  get_index_where(old_pair.d_ia.coords, self.d_ia.coords[ddL])
+                            ddMf1  =  get_index_where(old_pair.d_ia.coords, self.d_ia.coords[ddM])
+                            mMf1   =  get_index_where(old_pair.d_ii.coords, self.d_ii.coords[mM])
+
+
+
+
+                            try:
+                                #assert(False)
+                                self.g_d[:,ddL,:,mM,:,ddM,:] = old_pair.g_d[:,ddLf1,:,mMf1,:,ddMf1,:]
+                                reuse += 1
+                            except:
+                                compute += 1
+                                #pass
+        print("Compute, reuse:", compute, reuse)
+
 
 
 
@@ -4795,6 +4815,8 @@ if __name__ == "__main__":
 
                     cprev = None
 
+                    pair = None #to be updated
+
                     while not PD.conv:
                         fa,fb,c_ind,dist = PD.get_pair()
                         c = pair_coords[c_ind]
@@ -4804,7 +4826,7 @@ if __name__ == "__main__":
 
                         print ('Calculating pair: ',fa,fb,c)
 
-                        pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains, retain_integrals = args.retain_integrals,  domain_def = args.pair_domain_def)
+                        pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains, retain_integrals = args.retain_integrals,  domain_def = args.pair_domain_def, old_pair = pair)
                         
                         
                         #print(pair.compute_pair_fragment_energy())
@@ -4872,6 +4894,7 @@ if __name__ == "__main__":
                                 print("Forget pair integrals")
 
                                 ib.forget() #Clear fitting coeffs specific to pair
+                            
                             cprev = c*1
 
                         
