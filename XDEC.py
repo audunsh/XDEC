@@ -2138,6 +2138,8 @@ class pair_fragment_amplitudes(amplitude_solver):
 
         self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
+        self.g_x = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision) #optional storage for exchange type integrals
+
         print("t2 shape:", self.t2.shape)
 
         reuse = 0    # count instances where coulomb integrals are recycled
@@ -2183,6 +2185,12 @@ class pair_fragment_amplitudes(amplitude_solver):
                             except:
                                 compute += 1
                                 #pass
+
+                            try:
+                                self.g_x[:,ddL,:,mM,:,ddM,:] = old_pair.g_x[:,ddLf1,:,mMf1,:,ddMf1,:]
+                            except:
+                                pass
+
         print("Compute, reuse:", compute, reuse)
 
 
@@ -2445,22 +2453,28 @@ class pair_fragment_amplitudes(amplitude_solver):
                 if np.sum(dM_i)>0 and np.sum(dL_i)>0:
                     g_direct = self.g_d[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
 
+                    if np.max(np.abs(self.g_x[:,ddL,:,self.mM, :, ddM, :]))>1e-14:
+                        g_exchange = self.g_x[:,ddL,:,self.mM, :, ddM, :]
 
-                    try:
-                        # Get exchange index / np.argwhere
-                        ddM_M, ddL_M = get_index_where(self.d_ia.coords, dM+self.M), get_index_where(self.d_ia.coords, dL-self.M)
-                        g_exchange = self.g_d[:,ddM_M,:,self.mM, :, ddL_M, :] # [self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+                    else:
+                        try:
+                            # Get exchange index / np.argwhere
+                            ddM_M, ddL_M = get_index_where(self.d_ia.coords, dM+self.M), get_index_where(self.d_ia.coords, dL-self.M)
+                            g_exchange = self.g_d[:,ddM_M,:,self.mM, :, ddL_M, :] # [self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
 
-                        reuse += 1
-                    except:
+                            reuse += 1
+                        except:
 
-                        #print("Exchange not precomputed")
-                        if self.adaptive:
-                            I, Ishape = self.ib.get_adaptive(dM+self.M, dL-self.M, np.array([self.M]), keep = self.retain_integrals)
-                        else:
-                            I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
-                        g_exchange = I.cget(self.M).reshape(Ishape) #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
-                        computed += 1
+                            #print("Exchange not precomputed")
+                            if self.adaptive:
+                                I, Ishape = self.ib.get_adaptive(dM+self.M, dL-self.M, np.array([self.M]), keep = self.retain_integrals)
+                            else:
+                                I, Ishape = self.ib.getorientation(dM+self.M, dL-self.M)
+                            g_exchange = I.cget(self.M).reshape(Ishape) #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
+                            computed += 1
+                        self.g_x[:,ddL,:,self.mM, :, ddM, :] = g_exchange
+                    
+
 
                     t = self.t2[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
 
@@ -2504,19 +2518,22 @@ class pair_fragment_amplitudes(amplitude_solver):
                     g_direct = self.g_d[:,ddL,:,self.mM_, :, ddM, :] #[self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i]
 
 
-
-                    try:
-                        # Get exchange index / np.argwhere
-                        ddM_M, ddL_M = get_index_where(self.d_ia.coords, dM-self.M), get_index_where(self.d_ia.coords, dL+self.M)
-                        g_exchange = self.g_d[:,ddM_M,:,self.mM_, :, ddL_M, :] # [self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
-                        reuse += 1
-                    except:
-                        if self.adaptive:
-                            I, Ishape = self.ib.get_adaptive( dM-self.M, dL+self.M, np.array([-self.M]), keep = self.retain_integrals)
-                        else:
-                            I, Ishape = self.ib.getorientation(dM-self.M, dL+self.M)
-                        g_exchange = I.cget(-self.M).reshape(Ishape) # [self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
-                        computed += 1
+                    if np.max(np.abs(self.g_x[:,ddL,:,self.mM_, :, ddM, :]))>1e-14:
+                        g_exchange = self.g_x[:,ddL,:,self.mM_, :, ddM, :]
+                    else:
+                        try:
+                            # Get exchange index / np.argwhere
+                            ddM_M, ddL_M = get_index_where(self.d_ia.coords, dM-self.M), get_index_where(self.d_ia.coords, dL+self.M)
+                            g_exchange = self.g_d[:,ddM_M,:,self.mM_, :, ddL_M, :] # [self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
+                            reuse += 1
+                        except:
+                            if self.adaptive:
+                                I, Ishape = self.ib.get_adaptive( dM-self.M, dL+self.M, np.array([-self.M]), keep = self.retain_integrals)
+                            else:
+                                I, Ishape = self.ib.getorientation(dM-self.M, dL+self.M)
+                            g_exchange = I.cget(-self.M).reshape(Ishape) # [self.f2.fragment][:, dM_i][:, :, self.f1.fragment][:,:,:,dL_i]
+                            computed += 1
+                        self.g_x[:,ddL,:,self.mM_, :, ddM, :] = g_exchange
 
                     t = self.t2[:,ddL,:,self.mM_, :, ddM, :] #[self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i]
 
