@@ -2017,13 +2017,67 @@ class integral_builder_static():
                 return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]]), \
                     (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
-    def forget(self):
-        for d in self.d_forget:
+    def forget(self, memwall = None, retain = None):
+        if retain is None:
+            if memwall is None:
+                for d in self.d_forget:
 
-            self.VXreg[d[0], d[1], d[2]] = 0
-            self.XregT[d[0], d[1], d[2]] = 0
+                    self.VXreg[d[0], d[1], d[2]] = 0
+                    self.XregT[d[0], d[1], d[2]] = 0
 
-            #print("Fitting: Removed tensor: ", d)
+                    #print("Fitting: Removed tensor: ", d)
+                self.d_forget = []
+            else:
+                dynbuff = 0
+                for d in self.d_forget:
+                    
+                    dynbuff += self.VXreg[d[0], d[1], d[2]].nbytes()
+                    dynbuff += self.XregT[d[0], d[1], d[2]].nbytes()
+
+                tot = self.nbytes()
+
+
+
+
+
+                
+
+                print("---------------------------------------")
+                print("Integrator freeing up memory")
+                print("Current total usage :", tot, "bytes.")
+                print("Dynamic buffer usage:", dynbuff, "bytes / ", len(self.d_forget), "cells.")
+                print("Freeing up ", memwall, "cells.")
+                print("---------------------------------------")
+                for d in self.d_forget[:memwall]:
+
+                    self.VXreg[d[0], d[1], d[2]] = 0
+                    self.XregT[d[0], d[1], d[2]] = 0
+
+                self.d_forget = self.d_forget[memwall:]
+        else:
+            #print("---------------------------------------")
+            #print("Integrator freeing up memory")
+            keep = np.zeros(self.XregT.shape, dtype = bool)
+            for d in retain:
+                keep[d[0], d[1], d[2]] = True
+            d_forget_new = []
+            for d in self.d_forget:
+                if not keep[d[0], d[1], d[2]]:
+                    #print("Freeing up cell", d)
+                    self.VXreg[d[0], d[1], d[2]] = 0
+                    self.XregT[d[0], d[1], d[2]] = 0
+                else:
+                    d_forget_new.append(d)
+            self.d_forget = d_forget_new
+            #print("Retained integrals")
+            #print(self.d_forget)
+            
+
+
+                
+
+
+            
             
         
 

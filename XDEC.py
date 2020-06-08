@@ -4834,6 +4834,8 @@ if __name__ == "__main__":
 
                     pair = None #to be updated
 
+                    time_total = []
+
                     while not PD.conv:
                         fa,fb,c_ind,dist = PD.get_pair()
                         c = pair_coords[c_ind]
@@ -4843,8 +4845,29 @@ if __name__ == "__main__":
 
                         print ('Calculating pair: ',fa,fb,c)
 
+                        t0 = time.time()
+
                         pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains, retain_integrals = args.retain_integrals,  domain_def = args.pair_domain_def, old_pair = pair)
                         
+                        t1 = time.time()
+
+                        
+
+                        if cprev is None:
+                            cprev = c*1
+                        else:
+                            if np.sum((c-cprev)**2)!=0:
+                                print("Forget pair integrals")
+
+                                ib.forget(retain = pair.d_ia.coords[:pair.n_virtual_cells]) #Clear fitting coeffs not used by pair (from dyn buffer)
+                            
+                            cprev = c*1
+                        
+
+
+                        t2 = time.time()
+
+
                         
                         #print(pair.compute_pair_fragment_energy())
                         #del(pair)
@@ -4857,11 +4880,29 @@ if __name__ == "__main__":
                         #p_energies = [0,0,0,0] #pair.compute_pair_fragment_energy()
 
                         rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9, ndiis = args.ndiis)
+
+                        t3 = time.time()
+
+
                         print("Convergence:", rn, it)
                         p_energies = pair.compute_pair_fragment_energy()
-                        print(" DOne computing energy")
+                        #print("Done computing energy")
+
+                        t4 = time.time()
+
+                        print("Performance")
+                        print("Setup :", t1-t0, "s.")
+                        print("Sort  :", t2-t1, "s.")
+                        print("Solve :", t3-t2, "s.")
+                        print("Energy:", t4-t3, "s.")
+                        #time_total.append(t4-t0)
+                        #print("Total :", time_total)
 
                         #print(" We are here!")
+
+                        
+
+                        
 
 
 
@@ -4904,15 +4945,7 @@ if __name__ == "__main__":
                         #del(frag_a)
                         #del(frag_b)
                         
-                        if cprev is None:
-                            cprev = c*1
-                        else:
-                            if np.sum((c-cprev)**2)!=0:
-                                print("Forget pair integrals")
-
-                                ib.forget() #Clear fitting coeffs specific to pair
-                            
-                            cprev = c*1
+                        
 
                         
 
