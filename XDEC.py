@@ -2439,6 +2439,10 @@ class pair_fragment_amplitudes(amplitude_solver):
         #print(self.f1.fragment)
         #print(self.f2.fragment)
 
+        #R_1_accu = []
+        #R_2_accu = []
+        #EX_accu = []
+
 
 
 
@@ -2473,7 +2477,39 @@ class pair_fragment_amplitudes(amplitude_solver):
                             g_exchange = I.cget(self.M).reshape(Ishape) #[self.f1.fragment][:, dM_i][:, :, self.f2.fragment][:,:,:,dL_i]
                             computed += 1
                         self.g_x[:,ddL,:,self.mM, :, ddM, :] = g_exchange
+
                     
+                    #print(dM+self.M, dL-self.M, self.M, np.linalg.norm(g_exchange))
+
+                    #r0 = dM+self.M
+                    #r1 = dL-self.M +self.M
+                    #R_ = np.sqrt(np.sum((r1-r0)**2))
+                    #print(R_, np.max(np.abs(g_exchange)))
+
+                    # self.d_ia.cget(dM + self.M).ravel()
+                    # self.d_ia.cget(dL - self.M).ravel()
+                    # self.d_ii.cget(self.M).ravel()
+                    #R_1 = np.ones(g_exchange.shape, dtype = float)*(-self.d_ia.cget(dM + self.M))[:2,:, None, None]
+                    #R_2 = np.ones(g_exchange.shape, dtype = float)*(-self.d_ia.cget(dL - self.M))[None, None, :2, :] #*self.d_ii.cget(self.M)[:, None]**-3
+                    
+
+                    #im = np.argmax(g_exchange.ravel())
+                    
+                    
+                    #R_1_accu.append(R_1.ravel()[im])
+                    #R_2_accu.append(R_2.ravel()[im])
+                    #EX_accu.append(g_exchange.ravel()[im])
+
+
+                    #r0 = self.p.coor2vec(dM+self.M)
+                    #r1 = self.p.coor2vec(dL-self.M) #-self.M
+                    #d0 = np.sqrt(np.sum(r0**2))
+                    #d1 = np.sqrt(np.sum(r1**2))
+                    #d2 = np.sqrt(np.sum(self.p.coor2vec(self.M)**2))
+                    #R_ = np.exp(-d0)*np.exp(-d1)*d2**-3
+                    #print(R_, np.max(np.abs(g_exchange)))
+
+
 
 
                     t = self.t2[:,ddL,:,self.mM, :, ddM, :] #[self.f1.fragment][:, dL_i][:, :, self.f2.fragment][:,:,:,dM_i]
@@ -2535,6 +2571,24 @@ class pair_fragment_amplitudes(amplitude_solver):
                             computed += 1
                         self.g_x[:,ddL,:,self.mM_, :, ddM, :] = g_exchange
 
+                    #r0 = self.p.coor2vec(dM-self.M)
+                    #r1 = self.p.coor2vec(dL+self.M) #-self.M
+                    #d0 = np.sqrt(np.sum(r0**2))
+                    #d1 = np.sqrt(np.sum(r1**2))
+                    #d2 = np.sqrt(np.sum(self.p.coor2vec(self.M)**2))
+                    #R_ = np.exp(-d0)*np.exp(-d1)*d2**-3
+
+                    #R_ = np.exp(-self.d_ia.cget(dM - self.M).ravel())*np.exp(-self.d_ia.cget(dL + self.M).ravel())*self.d_ii.cget(-self.M).ravel()**-3
+                    #R_accu.append(R_)
+                    #EX_accu.append(g_exchange)
+
+
+
+
+                    #R_ = np.sqrt(np.sum((r1-r0)**2))
+                    #R_ = np.exp(-d0)*np.exp(-d1)/d2**6
+                    #print(R_, np.max(np.abs(g_exchange)))
+
                     t = self.t2[:,ddL,:,self.mM_, :, ddM, :] #[self.f2.fragment][:, dL_i][:, :, self.f1.fragment][:,:,:,dM_i]
 
 
@@ -2571,6 +2625,18 @@ class pair_fragment_amplitudes(amplitude_solver):
         #print("Computed/reused:", computed, reuse)
         #print("Pair energies:", e_mp2_aa, e_mp2_ab, e_mp2_ba, e_mp2_bb)
         #return e_mp2_ab
+        #EX_accu = np.array(EX_accu).ravel()
+        #R_1_accu = np.array(R_1_accu).ravel()
+        #R_2_accu = np.array(R_2_accu).ravel()
+        #np.save("ex_accu.npy",EX_accu )
+        #np.save( "r_1_accu.npy",R_1_accu)
+        #np.save( "r_2_accu.npy",R_2_accu)
+
+        #np.save("Integral_screen.npy", self.ib.Xscreen)
+        #np.save("Integral_dist.npy", self.ib.Xdist)
+        
+
+
         return np.array([e_mp2_aa, e_mp2_bb, e_mp2_ab, e_mp2_ba])
 
     def compute_pair_fragment_energy_(self):

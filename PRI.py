@@ -1700,6 +1700,10 @@ class integral_builder_static():
         self.float_precision = float_precision
         self.N_c = N_c # (2*N_c + 1)  = k-space resolution
 
+        self.screening_thresh = 1e-10
+        self.screen_trigger = 0
+        self.activation_count = 30 # activate global screening when this many cells has been screened
+
         self.n_occ = c_occ.blocks.shape[2]
         self.n_virt = c_virt.blocks.shape[2]
 
@@ -1805,6 +1809,14 @@ class integral_builder_static():
 
         self.XregT = np.zeros((mx_l,mx_l,mx_l), dtype = tp.tmat)  # RI - coefficient matrices ^T
         self.VXreg = np.zeros((mx_l,mx_l,mx_l), dtype = tp.tmat) # RI - matrices with V contracted
+
+
+        self.Xscreen = np.ones((mx_l,mx_l,mx_l), dtype = np.float) #for integral screening
+        self.Xdist = np.zeros((mx_l,mx_l,mx_l), dtype = np.float) #for integral screening extrapolation
+        
+
+
+
         if robust:
             self.JpqXreg = np.zeros((mx_l,mx_l,mx_l), dtype = tp.tmat)
 
@@ -1935,7 +1947,7 @@ class integral_builder_static():
             # use circulant fomulation
             for d in [dL, dM]:
                 #print(d)
-                if self.XregT[d[0], d[1], d[2]] is 0:
+                if self.XregT[d[0], d[1], d[2]] is 0 and self.Xscreen[d[0], d[1], d[2]]>=self.screening_thresh:
                     if self.robust:
                         Xreg = self.cfit.get(np.array([d]), robust = True)
                         self.XregT[d[0], d[1], d[2]] = Xreg[0][0].tT()
@@ -2005,8 +2017,32 @@ class integral_builder_static():
                 #    (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
 
+                if self.Xscreen[dL[0], dL[1], dL[2]] >= self.screening_thresh and self.Xscreen[dM[0], dM[1], dM[2]] >= self.screening_thresh:
+                    ret = self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])
 
-                ret = self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])
+                    if np.sum((dL-dM)**2)==0 and self.Xdist[dL[0], dL[1], dL[2]] <=0.1:
+                        self.Xscreen[dL[0], dL[1], dL[2]] = np.abs(ret.cget([0,0,0])).max()
+                        self.Xdist[dL[0], dL[1], dL[2]] = np.sqrt(np.sum(self.p.coor2vec(dL)**2))
+                        self.screen_trigger += 1
+                        if self.screen_trigger == self.activation_count:
+                            print("Activating global screening")
+
+                            self.screening_cutoff = self.get_screening_cutoff()
+                            print("Cutoff at ", self.screening_cutoff, " bohr.")
+
+
+                            for i in np.arange(-17,18):
+                                for j in np.arange(-17,18):
+                                    for k in np.arange(-17,18):
+                                        self.Xdist[i,j,k] = np.sqrt(np.sum(self.p.coor2vec([i,j,k])**2))
+                                        if self.Xdist[i,j,k] >= self.screening_cutoff:
+                                            self.Xscreen[i,j,k] = 0.0
+
+
+                else:
+                    #print("Integrals omitted due to screening:", dL, dM)
+                    ret = tp.get_zero_tmat([1,1,0], [self.n_occ*self.n_virt, self.n_occ*self.n_virt])
+                    #self.screen_trigger += 1
                 
                 return ret, (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
@@ -2016,6 +2052,16 @@ class integral_builder_static():
                 #print("Kept tensors")
                 return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]]), \
                     (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
+
+    def get_screening_cutoff(self):
+        ee = np.log(self.Xscreen.ravel())
+        dd = self.Xdist.ravel()
+
+        x = np.polyfit(dd,ee, 1)
+
+        return (np.log(self.screening_thresh) - x[1]) / x[0] #cutoff distance
+
+
 
     def forget(self, memwall = None, retain = None):
         if retain is None:
