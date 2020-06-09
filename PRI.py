@@ -1700,7 +1700,7 @@ class integral_builder_static():
         self.float_precision = float_precision
         self.N_c = N_c # (2*N_c + 1)  = k-space resolution
 
-        self.screening_thresh = 1e-10
+        self.screening_thresh = 1e-12
         self.screen_trigger = 0
         self.activation_count = 30 # activate global screening when this many cells has been screened
 
