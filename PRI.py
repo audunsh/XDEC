@@ -1700,9 +1700,9 @@ class integral_builder_static():
         self.float_precision = float_precision
         self.N_c = N_c # (2*N_c + 1)  = k-space resolution
 
-        self.screening_thresh = 1e-12
+        self.screening_thresh = 1e-10
         self.screen_trigger = 0
-        self.activation_count = 30 # activate global screening when this many cells has been screened
+        self.activation_count = 60 # activate global screening when this many cells has been screened
 
         self.n_occ = c_occ.blocks.shape[2]
         self.n_virt = c_virt.blocks.shape[2]
@@ -2016,7 +2016,7 @@ class integral_builder_static():
                 #return self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]]), \
                 #    (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
-
+                
                 if self.Xscreen[dL[0], dL[1], dL[2]] >= self.screening_thresh and self.Xscreen[dM[0], dM[1], dM[2]] >= self.screening_thresh:
                     ret = self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])
 
@@ -2024,8 +2024,10 @@ class integral_builder_static():
                         self.Xscreen[dL[0], dL[1], dL[2]] = np.abs(ret.cget([0,0,0])).max()
                         self.Xdist[dL[0], dL[1], dL[2]] = np.sqrt(np.sum(self.p.coor2vec(dL)**2))
                         self.screen_trigger += 1
-                        if self.screen_trigger == self.activation_count:
-                            print("Activating global screening")
+                        if np.sum(self.Xscreen<self.screening_thresh)>self.activation_count:
+                            #if self.screen_trigger == self.activation_count:
+                            print("---------------------------")
+                            print("Activating global screening at ", self.activation_count, " n. screens performed.")
 
                             self.screening_cutoff = self.get_screening_cutoff()
                             print("Cutoff at ", self.screening_cutoff, " bohr.")
@@ -2054,10 +2056,45 @@ class integral_builder_static():
                     (self.n_occ, self.n_virt, self.n_occ, self.n_virt)
 
     def get_screening_cutoff(self):
-        ee = np.log(self.Xscreen.ravel())
-        dd = self.Xdist.ravel()
+        e = np.log(self.Xscreen.ravel())
+        d = self.Xdist.ravel()
 
-        x = np.polyfit(dd,ee, 1)
+        e = e[d!=0]
+        d = d[d!=0]
+
+        di = np.argsort(d)
+
+
+        d = d[di]
+        e = e[di]
+        #nbins = 20
+        #print(d)
+
+        e_remain = e*1
+        d_remain = d*1
+        E = []
+        D = []
+        while len(d_remain) >0:
+            ei = np.argmax(e_remain)
+            E.append(e_remain[ei])
+            D.append(d_remain[ei])
+            
+            
+            
+            d_remain = d_remain[ei+1:]*1
+            e_remain = e_remain[ei+1:]*1
+
+
+
+
+
+
+
+        x = np.polyfit(D,E, 1)
+
+        np.save("screen_vals.npy", np.exp(e))
+        np.save("screen_dist.npy", d)
+
 
         return (np.log(self.screening_thresh) - x[1]) / x[0] #cutoff distance
 
