@@ -3723,9 +3723,12 @@ if __name__ == "__main__":
         wcenters = np.append(wcenters_occ, wcenters_virt, axis = 0)
 
     
-    wcenters_occ, spreads = of.centers_spreads(c_occ, p, s.coords)
+    wcenters_occ, spreads_occ = of.centers_spreads(c_occ, p, s.coords)
 
-    wcenters_virt, spreads = of.centers_spreads(c_virt, p, s.coords)
+    wcenters_virt, spreads_virt = of.centers_spreads(c_virt, p, s.coords)
+
+    spreads = np.array([spreads_occ, spreads_virt]).ravel()
+    #print(spreads)
 
     wcenters = np.append(wcenters_occ, wcenters_virt, axis = 0)
 

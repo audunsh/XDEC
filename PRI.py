@@ -1880,10 +1880,11 @@ class integral_builder_static():
             coulomb_extent = np.max(np.abs(self.XregT[0,0,0].coords), axis = 0)
             #coulomb_extent = np.max(np.abs(self.JKa[0,0,0].coords), axis = 0)
             #if printing:
-            print("Extent of Xreg          :", coulomb_extent)
+            
 
             #coulomb_extent = (10,10,10)
             #print("Extent of Coulomb matrix:", coulomb_extent)
+        print("Extent of Xreg          :", coulomb_extent)
 
         s = tp.tmat()
         scoords = tp.lattice_coords(coulomb_extent)
