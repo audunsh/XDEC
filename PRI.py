@@ -972,12 +972,12 @@ class estimate_coordinate_domain():
         
         for i in np.arange(self.Ru.shape[0]-1):
             r0 = self.Ru[i]
-            r1 = self.Ru[i+1] +0.1
+            r1 = self.Ru[i+1] # +0.1
             
             
             s = tp.tmat()
             scoords = self.get_shell(r0,r1)
-            #print(scoords)
+            
             s.load_nparray(np.ones((len(scoords), 2,2), dtype = float), scoords)
             #print(s.coords)
             
@@ -986,12 +986,16 @@ class estimate_coordinate_domain():
             
             cmM = np.abs(Jmn_shell.blocks).max()
             #print(cmM)
+            #print("estimate_coordinate_domain",c2,": computing shell ", r0, "to", r1," max value:", cmM) #+0.1)
+            #print(scoords)
+
             if cmM<thresh:
                 break
             else:
                 Jmn_full.append(Jmn_shell)
                 #print(Jmn_shell.coords)
                 N_blocks += Jmn_shell.coords.shape[0]
+            
         
         ret = None
         if len(Jmn_full)>=1:
@@ -1119,6 +1123,7 @@ class coefficient_fitter_static():
         #xi_domain = []
         #for i in np.arange(20):
         #    xi_domain.append([dM[i], 1])
+
         N_c_max_layers = 20
         cm = estimate_coordinate_domain(p, auxname, N_c_max_layers, attenuation = attenuation)
 

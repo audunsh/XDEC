@@ -1507,11 +1507,12 @@ class fragment_amplitudes(amplitude_solver):
 
 
     """
-    def __init__(self, p, wannier_centers, coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0, float_precision = np.float64, d_ia = None):
+    def __init__(self, p, wannier_centers, coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0, float_precision = np.float64, d_ia = None, store_exchange = False):
         self.p = p #prism object
         self.d = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers) # distance matrix
 
         self.float_precision = float_precision
+        self.store_exchange = store_exchange
 
 
 
@@ -1568,6 +1569,10 @@ class fragment_amplitudes(amplitude_solver):
         self.t2  = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
 
         self.g_d = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
+        self.g_x = None
+        if self.store_exchange:
+            self.g_x = np.zeros((n_occ, N_virt, n_virt, N_occ, n_occ, N_virt, n_virt), dtype = self.float_precision)
+
 
 
         f_aa = np.diag(self.f_mo_aa.cget([0,0,0]))
@@ -1801,11 +1806,26 @@ class fragment_amplitudes(amplitude_solver):
                             #assert(False), "no"
                             #reuse += 1
                         except:
+                            if self.store_exchange:
+                                if np.abs(self.g_x[:,ddL,:,mM, :, ddM, :]).max()>1e-10:
+                                    g_exchange = self.g_x[:,ddL,:,mM, :, ddM, :][M_0][:, dM_i][:, :, M_i][:,:,:,dL_i]
 
-                            #print("Exchange not precomputed")
-                            I, Ishape = self.ib.getorientation(dM+M, dL-M)
-                            g_exchange = I.cget(M).reshape(Ishape)[M_0][:, dM_i][:, :, M_i][:,:,:,dL_i]
-                            #computed += 1
+
+
+                                else:
+                                    I, Ishape = self.ib.getorientation(dM+M, dL-M)
+                                    g_exchange = I.cget(M).reshape(Ishape) #
+                                    
+                                    self.g_x[:,ddL,:,mM, :, ddM, :] = g_exchange
+                                    g_exchange = g_exchange[M_0][:, dM_i][:, :, M_i][:,:,:,dL_i]
+
+                            
+                            else:
+
+                                #print("Exchange not precomputed")
+                                I, Ishape = self.ib.getorientation(dM+M, dL-M)
+                                g_exchange = I.cget(M).reshape(Ishape)[M_0][:, dM_i][:, :, M_i][:,:,:,dL_i]
+                                #computed += 1
 
                         e_mp2 += - np.einsum("iajb,ibja",t,g_exchange, optimize = True)
 
@@ -1966,6 +1986,12 @@ class fragment_amplitudes(amplitude_solver):
                 g_d_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_d
                 self.g_d = g_d_new
 
+                if self.store_exchange:
+                    g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
+                    g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
+                    self.g_x = g_x_new
+
+
                 #g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
                 #g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
                 #self.g_x = g_x_new
@@ -2028,6 +2054,11 @@ class fragment_amplitudes(amplitude_solver):
                 g_d_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_d[:, :, :, :No, :, :, :]
                 self.g_d = g_d_new
 
+                if self.store_exchange:
+                    g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
+                    g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x[:, :, :, :No, :, :, :]
+                    self.g_x = g_x_new
+
                 #g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
                 #g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
                 #self.g_x = g_x_new
@@ -2080,6 +2111,11 @@ class fragment_amplitudes(amplitude_solver):
                 g_d_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_d
                 self.g_d = g_d_new
 
+                if self.store_exchange:
+                    g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
+                    g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
+                    self.g_x = g_x_new
+
                 #g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
                 #g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
                 #self.g_x = g_x_new
@@ -2127,7 +2163,8 @@ class fragment_amplitudes(amplitude_solver):
 
                 self.t2 = self.t2[:, :Nv, :, :No, :, :Nv, :]
                 self.g_d = self.g_d[:, :Nv, :, :No, :, :Nv, :]
-                #self.g_x = self.g_x[:, :Nv, :, :No, :, :Nv, :]
+                if self.store_exchange:
+                    self.g_x = self.g_x[:, :Nv, :, :No, :, :Nv, :]
 
 
 
@@ -5501,7 +5538,7 @@ if __name__ == "__main__":
 
         for f in np.arange(len(center_fragments)):
             fragment = center_fragments[f]
-            a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = v_range[i], occupied_cutoff = o_range[0], float_precision = args.float_precision)
+            a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = v_range[i], occupied_cutoff = o_range[0], float_precision = args.float_precision, store_exchange = True)
             nv = a_frag.n_virtual_tot
             no = a_frag.n_occupied_tot
             eng = a_frag.compute_cim_energy(exchange = True)
