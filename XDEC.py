@@ -199,7 +199,7 @@ class amplitude_solver():
 
         return xn
 
-    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0):
+    def solve_unfolded_(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0):
 
         #t0 = time.time()
         t2 = self.t2
@@ -263,14 +263,15 @@ class amplitude_solver():
                         Av, Jv, Bv = self.d_ia.coords[A]-Iv, self.d_ii.coords[J]-Iv, self.d_ii.coords[J] + self.d_ia.coords[B] - Iv
                         #g_unfolded[I,:, A, :, J, :, B, :] = self.ib.getcell_conventional(Av, Jv, Bv)
 
-                        dL = get_index_where(self.d_ia.coords, Av)
-                        M = get_index_where(self.d_ii.coords, Jv)
-                        dM = get_index_where(self.d_ia.coords, Bv)
+                        dL = get_index_where(self.d_ia.coords, Av)[0]
+                        M = get_index_where(self.d_ii.coords, Jv)[0]
+                        dM = get_index_where(self.d_ia.coords, Bv)[0]
 
 
 
 
-                        g_unfolded[I,:, A, :, J, :, B, :] = self.g_d[:,dL, :, M, :, dM, :]    #self.ib.getcell_conventional(Av, Jv, Bv)
+                        #g_unfolded[I,:, A, :, J, :, B, :] = self.g_d[:,dL, :, M, :, dM, :]    
+                        g_unfolded[I,:, A, :, J, :, B, :] = self.ib.getcell_conventional(Av, Jv, Bv)
 
 
 
@@ -387,7 +388,7 @@ class amplitude_solver():
         return np.max(np.abs(t2new)), i
 
 
-    def solve_unfolded_(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0):
+    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0):
 
         #t0 = time.time()
         t2 = self.t2
@@ -470,9 +471,9 @@ class amplitude_solver():
         for i in np.arange(maxiter):
             t2new = -1*v2s
 
-            t2new -= np.einsum("icjb,ac->iajb", t2s, Faa)*0
+            t2new -= np.einsum("icjb,ac->iajb", t2s, Faa) #*0
 
-            t2new -= np.einsum("iajc,bc->iajb", t2s, Faa)*0
+            t2new -= np.einsum("iajc,bc->iajb", t2s, Faa) #*0
 
             #tnew += np.einsum("iaKkb,Kkj->iajb",t2[:, dL, :, :, :, dM, :], Fkj)
 
@@ -756,7 +757,7 @@ class amplitude_solver():
                     tm1 += time.time()-tt #TIME
 
                     tt = time.time() #TImE
-                    F_bc = self.f_mo_aa.cget(self.d_ia.coords[:self.n_virtual_cells] - Mv - dMv)
+                    F_bc = self.f_mo_aa.cget(self.d_ia.coords[:self.n_virtual_cells] - dMv)
                     tm3 += time.time()-tt #TIME
 
                     tt = time.time() #TImE
