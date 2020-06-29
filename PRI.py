@@ -2169,7 +2169,8 @@ class integral_builder_static():
             
             
         
-
+    def getcell_conventional(self, A, J, B):
+        return self.getcell(A, J, B-J)
 
 
     def getcell(self, dL, M, dM):
