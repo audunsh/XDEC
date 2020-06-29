@@ -651,9 +651,14 @@ class amplitude_solver():
                     dMv = self.d_ia.coords[dM]
                     dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
 
-                    K_a = get_bvec_where(self.d_ii.coords[:self.n_occupied_cells], -1*self.d_ii.coords[:self.n_occupied_cells])
-                    dLv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], -1*self.d_ii.coords[:self.n_occupied_cells] + dLv - Mv)
-                    dMv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], -1*self.d_ii.coords[:self.n_occupied_cells] + dMv)
+                    K_a = get_bvec_where(self.d_ii.coords[:self.n_occupied_cells], self.d_ii.coords[:self.n_occupied_cells])
+                    dLv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ii.coords[:self.n_occupied_cells] + dLv - Mv)
+                    dMv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ii.coords[:self.n_occupied_cells] + dMv)
+
+                    #dLv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], -1*self.d_ii.coords[:self.n_occupied_cells] + dLv )
+                    #dMv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], -1*self.d_ii.coords[:self.n_occupied_cells] + dMv - Mv)
+
+
                     indx_a = np.all(np.array([K_a, dLv_a, dMv_a])>=0, axis = 0)
 
                     D3 = np.array([K_a, dLv_a, dMv_a, indx_a])
@@ -779,7 +784,7 @@ class amplitude_solver():
                     if np.any(indx):
                         tt = time.time() #TImE
 
-                        tnew += np.einsum("Kiakb,Kkj->iajb",t2[:, dLv_[indx], :, K_[indx], :, dMv_[indx], :], self.f_mo_ii.cget(-1*self.d_ii.coords[:self.n_occupied_cells]-Mv)[indx])
+                        tnew += np.einsum("Kiakb,Kkj->iajb",t2[:, dLv_[indx], :, K_[indx], :, dMv_[indx], :], self.f_mo_ii.cget(self.d_ii.coords[:self.n_occupied_cells]-Mv)[indx])
                         tm4 += time.time()-tt #TIme
 
                         # dot-implementation
