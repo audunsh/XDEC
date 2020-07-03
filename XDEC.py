@@ -154,8 +154,8 @@ class amplitude_solver():
         else:
             #self.t2 *= 0
             #print("NORM_THRESH = ", norm_thresh)
-            #return self.solve_unfolded(norm_thresh = norm_thresh, maxiter = 100, damping = damping)
-            return self.solve_MP2(norm_thresh, ndiis = ndiis)
+            return self.solve_unfolded(norm_thresh = norm_thresh, maxiter = 100, damping = damping)
+            #return self.solve_MP2(norm_thresh, ndiis = ndiis)
 
     def bfgs_solve(self, f, x0, N_alpha = 20, thresh = 1e-10):
         """
@@ -335,6 +335,7 @@ class amplitude_solver():
 
 
 
+                    # D1
                     tt = time.time() #TImE
                     F_ac = self.f_mo_aa.cget(self.d_ia.coords[:self.n_virtual_cells] - dLv)
                     tm3 += time.time()-tt #TIME
@@ -342,6 +343,9 @@ class amplitude_solver():
                     tt = time.time() #TImE
                     tnew -= np.einsum("iCcjb,Cac->iajb", t2[:, :, :, M, :, dM, :], F_ac)
                     tm1 += time.time()-tt #TIME
+
+
+                    # D2
 
                     tt = time.time() #TImE
                     F_bc = self.f_mo_aa.cget(self.d_ia.coords[:self.n_virtual_cells] - dMv)
@@ -365,6 +369,8 @@ class amplitude_solver():
                     #print("F_ii:", self.f_mo_ii.cget(self.d_ii.coords[:self.n_occupied_cells]-Mv))
                     #print("D3:", D3)
                     #print("D4:", D4)
+
+                    # D3
 
 
                     No_ = np.sum(indx)
@@ -392,6 +398,8 @@ class amplitude_solver():
 
  
                     tt = time.time() #TImE
+
+                    # D4
 
                     K_, dMv_, indx = D4
                     indx = np.array(indx, dtype = np.bool)
@@ -466,17 +474,39 @@ class amplitude_solver():
         t2_unfolded = np.zeros_like(self.t2)
         g_unfolded = np.zeros_like(self.g_d)
 
+        indx_flat = np.arange(t2_unfolded.size).reshape(self.t2.shape)
+        indx_flat__ = indx_flat.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+        indx_flat *= 0
+        indx_flat = indx_flat.ravel()
+        indx_flat[indx_flat__.ravel()] = np.arange(indx_flat__.size) #remapping elements
+        indx_flat = indx_flat.reshape(self.t2.shape)
+
+
+
+
+
+
+
+
+        
+        indx = np.zeros(self.g_d.shape, dtype = int)-1 #use -1 as default index
+
+
+        indx_full = np.zeros((No, no, Nv, nv, No, no, Nv, nv), dtype = int) -1
+
+
         miss = 0
+        miss_b = 0
         hit = 0
 
         for dL in np.arange(Nv):
             for M in np.arange(No):
                 for dM in np.arange(Nv):
-                    dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM] + self.d_ii.coords[M]) #[0]
+                    dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM] + self.d_ii.coords[M]) # \tilde{t} -> t, B = M + dM
 
 
-                    #dA_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dL]-self.d_ii.coords[M]) #[0]
-                    #dB_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]-self.d_ii.coords[M]) #[0]
+                    dA_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dL]-self.d_ii.coords[M]) # self.d_ia.coords[dA_J] == A - J
+                    dB_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]-self.d_ii.coords[M]) # self.d_ia.coords[dB_J] == B - J
 
                     
 
@@ -485,13 +515,44 @@ class amplitude_solver():
 
                             t2_unfolded[:, dL, :, M, :, dM_i[0], :] = self.t2[:, dL, :, M, :, dM]
                             g_unfolded[:, dL, :, M, :, dM_i[0], :] = self.g_d[:, dL, :, M, :, dM]
-                            #t2_diagram3[: ,  ] = #permuted elements
+
+                            indx[: , dL, :, M, :, dM_i[0], : ] = indx_flat[:,dA_J, M, dB_J]
+
                             hit += 1
                         except:
                             
                             miss += 1
+                        
+                    for N in np.arange(Nv):
 
-        print("misses:", miss, "hits:", hit)
+                        
+                        M_i = get_index_where(self.d_ii.coords[:self.n_virtual_cells], self.d_ii.coords[M]    - self.d_ii.coords[N])
+
+                        dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]  - self.d_ii.coords[N])
+
+                        dL_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dL]  - self.d_ii.coords[N])
+
+                        #print(dL_i, M_i, dM_i)
+                        #print(indx_flat[:, dL_i[0], :, M_i[0], :, dM_i[0], :] )
+
+                        try:
+
+
+
+
+                            indx_full[N, :, dL, :, M, :, dM, :] = indx_flat[:, dL_i[0], :, M_i[0], :, dM_i[0], :] 
+                        except:
+                            miss_b += 1
+
+
+        print("misses:", miss, "miss_b:", miss_b, "hits:", hit)
+        #print(np.sum(indx_full<0))
+
+
+        #for dL in np.arange(Nv):
+        #    for M in np.arange(No):
+        #        for dM in np.arange(Nv):
+
 
 
 
@@ -500,8 +561,16 @@ class amplitude_solver():
         #t2s = t2.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
         #v2s = self.g_d.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
 
-        t2s = t2_unfolded.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
-        v2s = g_unfolded.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+        t2s = t2_unfolded.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask] # Rank 4 tensor / 4 dimension
+        v2s = g_unfolded.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask] # Rank 4 tensor / 4 dimension
+        idx = indx.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask] # t2s.ravel()[idx] : t^{AB}_{0J} -> t^{B-J, A-J}_{0J}
+
+        idx_f = indx_full.reshape(No*no, Nv*nv, No*no, Nv*nv)[ii_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+        idx_f_mask = (idx_f<0).ravel()
+
+
+        #print("idx_f.shape:", idx_f.shape)
+        #print("idx:", idx_f)
 
 
 
@@ -538,11 +607,38 @@ class amplitude_solver():
         for i in np.arange(maxiter):
             t2new = -1*v2s
 
+            # D1
+
             t2new -= np.einsum("icjb,ac->iajb", t2s, Faa) #*0
+
+            # D2
 
             t2new -= np.einsum("iajc,bc->iajb", t2s, Faa)
 
-            t2new += np.einsum("jbka,ki->iajb", t2s, Fii).swapaxes(0,2)
+            # D3 --------------
+            """
+            t2s_ = t2s.ravel()[idx.ravel()]
+            t2s_[idx.ravel()<0] = 0
+            t2s_ = t2s_.reshape(idx.shape)
+            
+            t2new += np.einsum("jbka,ki->iajb", t2s_, Fii) #.swapaxes(0,2) # <- probably not correct
+            """
+            # Unfold the "fixed" axis
+            t2s_ = t2s.ravel()[idx_f]
+            t2s_ = t2s_.ravel()
+            t2s_[idx_f_mask] = 0
+            t2s_ = t2s_.reshape(idx_f.shape)
+            #print("t2s_.shape:", t2s_.shape)
+            t2new += np.einsum("kajb,ki->iajb", t2s_, Fii)[:t2s.shape[0]]
+
+
+
+
+
+
+
+
+            # D4
 
             t2new += np.einsum("iakb,kj->iajb", t2s, Fii)
             
