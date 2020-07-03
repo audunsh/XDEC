@@ -199,6 +199,404 @@ class amplitude_solver():
 
         return xn
 
+    def map_omega(self):
+        No = self.n_occupied_cells
+        Nv = self.n_virtual_cells
+        self.t2_map = np.zeros((Nv, No, Nv), dtype = np.object)
+
+        for dL in np.arange(self.n_virtual_cells):
+            dLv = self.d_ia.coords[dL]
+            dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+
+            
+            
+            #dL_i = (self.d_ia.cget(dLv)<self.virtual_cutoff)[:self.ib.n_occ, :]
+            #dL_i[M0_i == False, :] = 0
+
+            for M in np.arange(self.n_occupied_cells):
+                Mv = self.d_ii.coords[M]
+                M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
+
+
+                for dM in np.arange(self.n_virtual_cells):
+                    dMv = self.d_ia.coords[dM]
+                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+
+                    #K_a = get_bvec_where(self.d_ii.coords[:self.n_occupied_cells], self.d_ii.coords[:self.n_occupied_cells])
+                    #dLv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ii.coords[:self.n_occupied_cells] + dLv - Mv)
+                    #dMv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ii.coords[:self.n_occupied_cells] + dMv)
+
+                    K_a = get_bvec_where(self.d_ii.coords[:self.n_occupied_cells], self.d_ii.coords[:self.n_occupied_cells])
+                    dLv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ii.coords[:self.n_occupied_cells] + dLv - Mv)
+                    dMv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ii.coords[:self.n_occupied_cells] + dMv)
+
+
+
+
+
+
+                    #dLv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], -1*self.d_ii.coords[:self.n_occupied_cells] + dLv )
+                    #dMv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], -1*self.d_ii.coords[:self.n_occupied_cells] + dMv - Mv)
+
+
+                    indx_a = np.all(np.array([K_a, dLv_a, dMv_a])>=0, axis = 0)
+
+                    D3 = np.array([K_a, dLv_a, dMv_a, indx_a])
+
+
+
+
+
+
+                    dMv_b = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells],  -1*self.d_ii.coords[:self.n_occupied_cells] + dMv + Mv)
+                    K_b = np.arange(self.n_occupied_cells)
+                    indx_b = np.all(np.array([K_b, dMv_b])>=0, axis = 0)
+
+                    D4 = np.array([K_b, dMv_b, indx_b])
+                    
+                    self.t2_map[dL, M, dM] = np.array([D3, D4])
+
+
+
+
+
+    
+    def omega(self, t2):
+
+        #t0 = time.time()
+
+        t2_new = np.zeros_like(t2)
+        #print("SHAPE:", t2_new.shape)
+
+        M0_i = self.d_ii.cget([0,0,0])[self.fragment[0],:]<self.occupied_cutoff
+        #print(M0_i)
+        #print("M0_i;", M0_i.shape)
+
+        #M0_i = self.d_ii.cget([0,0,0])<self.occupied_cutoff
+        #print("self.n_occupied_cells:", self.n_occupied_cells)
+        #print("self.n_virtual_cells:", self.n_virtual_cells)
+
+        #print("d_ii.coords:", self.d_ii.coords[:self.n_occupied_cells])
+        #print("d_ia.coords:", self.d_ia.coords[:self.n_virtual_cells])
+
+        tm1 = 0
+        tm2 = 0
+        tm3 = 0
+        tm4 = 0
+        tm5 = 0
+
+        Nv = self.n_virtual_cells
+        No = self.n_occupied_cells
+        nv = self.ib.n_virt
+        no = self.ib.n_occ
+
+
+
+
+        for dL in np.arange(self.n_virtual_cells):
+            dLv = self.d_ia.coords[dL]
+            dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
+
+            
+            
+            #dL_i = (self.d_ia.cget(dLv)<self.virtual_cutoff)[:self.ib.n_occ, :]
+            #dL_i[M0_i == False, :] = 0
+
+            for M in np.arange(self.n_occupied_cells):
+                Mv = self.d_ii.coords[M]
+                M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
+
+
+                for dM in np.arange(self.n_virtual_cells):
+                    dMv = self.d_ia.coords[dM]
+                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
+                    
+                    #dM_i = (self.d_ia.cget(dMv)<self.virtual_cutoff)[:self.ib.n_occ, :]# dM index mask
+                    #dM_i[M_i == False, :] = 0
+
+                    
+
+
+
+
+                    
+                    
+                    
+                    
+                    #M_i = self.d_ii.cget(Mv)<self.occupied_cutoff # M index mask
+
+                    tnew = -self.g_d[:, dL, :, M, :, dM, :]
+
+                    #print(self.g_d[:, dL, :, M, :, dM, :][M0_i][:, dL_i][:, :, M_i][:,:,:,dM_i])
+
+                    tt = time.time() #TImE
+                    cell_map = np.arange(tnew.size).reshape(tnew.shape)[M0_i][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
+                    tm3 += time.time()-tt #TIME
+
+
+
+                    tt = time.time() #TImE
+                    F_ac = self.f_mo_aa.cget(self.d_ia.coords[:self.n_virtual_cells] - dLv)
+                    tm3 += time.time()-tt #TIME
+
+                    tt = time.time() #TImE
+                    tnew -= np.einsum("iCcjb,Cac->iajb", t2[:, :, :, M, :, dM, :], F_ac)
+                    tm1 += time.time()-tt #TIME
+
+                    tt = time.time() #TImE
+                    F_bc = self.f_mo_aa.cget(self.d_ia.coords[:self.n_virtual_cells] - dMv)
+                    tm3 += time.time()-tt #TIME
+                    #print("F_bc:", F_bc)
+
+                    tt = time.time() #TImE
+                    tnew -= np.einsum("iajCc,Cbc->iajb", t2[:, dL, :, M, :, :, :], F_bc)
+                    tm1 += time.time()-tt #TIme
+
+
+
+
+                    D3, D4 = self.t2_map[dL, M, dM] 
+
+                    tt = time.time() #TImE
+
+                    K_, dLv_, dMv_, indx = D3
+                    indx = np.array(indx, dtype = np.bool)
+
+                    #print("F_ii:", self.f_mo_ii.cget(self.d_ii.coords[:self.n_occupied_cells]-Mv))
+                    #print("D3:", D3)
+                    #print("D4:", D4)
+
+
+                    No_ = np.sum(indx)
+                    if np.any(indx):
+                        tt = time.time() #TImE
+
+                        tnew += np.einsum("Kiakb,Kkj->iajb",t2[:, dLv_[indx], :, K_[indx], :, dMv_[indx], :], self.f_mo_ii.cget(self.d_ii.coords[:self.n_occupied_cells]-Mv)[indx])
+                        tm4 += time.time()-tt #TIme
+
+                        # dot-implementation
+                        # tt = time.time()
+                        # F_kj = self.f_mo_ii.cget(-1*self.d_ii.coords[:self.n_occupied_cells]-Mv)[indx]
+                        # t2_ = t2[:, dLv_[indx], :, K_[indx], :, dMv_[indx], :].swapaxes(3,4).swapaxes(0,3) #Kiakb -> biaKk
+                        # t2F = np.dot(t2_.reshape([nv*no*nv, No_*no]), F_kj.reshape([No_*no, no])).reshape([nv,no*nv*no]) # -> biaj
+                        # tnew += t2F.swapaxes(0,1).reshape((no,nv,no,nv))
+                        #tm5 += time.time() - tt
+
+
+
+
+
+
+
+
+
+ 
+                    tt = time.time() #TImE
+
+                    K_, dMv_, indx = D4
+                    indx = np.array(indx, dtype = np.bool)
+
+                    tm2 += time.time()-tt #TIme
+
+                    if np.any(indx):
+                        tt = time.time() #TImE
+                        tnew += np.einsum("Kiakb,Kkj->iajb",t2[:, dL, :, K_[indx], :, dMv_[indx], :], self.f_mo_ii.cget(-1*self.d_ii.coords[:self.n_occupied_cells]+Mv)[indx])
+                        tm1 += time.time()-tt #TIme
+
+
+
+                    tt = time.time() #TImE
+                    t2_mapped = np.zeros_like(tnew).ravel()
+                    
+                    t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
+
+                    #print("self.e_iajb:", self.e_iajb[M0_i][:, dL_i][:, :, M_i][:,:,:,dM_i])
+                    
+                    #t2_mapped[cell_map] = .1*tnew.ravel()[cell_map]
+                    #t2_mapped = (tnew*self.e_iajb**-1).ravel()
+
+
+
+
+                    t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
+                    tm2 += time.time()-tt #TIme
+        #print("Cellmap omitted.")
+        #print(tm1, tm2, tm3, tm4, tm5)
+        return t2_new
+
+    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0):
+
+        #For quick reference
+        t2 = self.t2               # amplitudes
+        no = self.ib.n_occ         # number of occupieds per cell
+        No = self.n_occupied_cells # numer of occupied cells
+        nv = self.ib.n_virt        # number of virtuals per cell
+        Nv = self.n_virtual_cells  # number of virtual cells
+        
+        # Get the virtual and occupied cells with orbitals inside domain
+        vcoords = self.d_ia.coords[:self.n_virtual_cells]
+        ocoords = self.d_ii.coords[:self.n_occupied_cells]
+
+        # set up boolean masking arrays
+        ia_mask = self.d_ia.cget(vcoords)[:, self.fragment[0], :]
+        ia_mask = ia_mask.ravel()<self.virtual_cutoff    # active virtual indices
+
+        ii_mask = self.d_ii.cget(ocoords)[:, self.fragment[0], :]
+        ii_mask = ii_mask.ravel()<self.occupied_cutoff   # active occupied indices
+
+        i0_mask = self.d_ii.cget([0,0,0])[self.fragment[0], :]<self.occupied_cutoff #active occupied indices in reference cell
+
+
+        # Unfold Fock-matrix
+
+        Fii = self.f_mo_ii.tofull(self.f_mo_ii, ocoords, ocoords)[ii_mask][:, ii_mask]
+
+        #Fii_neg = self.f_mo_ii.tofull(self.f_mo_ii, np.array([[0,0,0]]),-1*ocoords)[i0_mask][:, ii_mask]
+        #
+        #Fii_neg = self.f_mo_ii.tofull(self.f_mo_ii, -1*ocoords, ocoords)[ii_mask][:, ii_mask]
+
+
+        Faa = self.f_mo_aa.tofull(self.f_mo_aa, vcoords, vcoords)[ia_mask][:, ia_mask]
+
+
+        
+
+
+        
+        t2_unfolded = np.zeros_like(self.t2)
+        g_unfolded = np.zeros_like(self.g_d)
+
+        miss = 0
+        hit = 0
+
+        for dL in np.arange(Nv):
+            for M in np.arange(No):
+                for dM in np.arange(Nv):
+                    dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM] + self.d_ii.coords[M]) #[0]
+
+
+                    #dA_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dL]-self.d_ii.coords[M]) #[0]
+                    #dB_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]-self.d_ii.coords[M]) #[0]
+
+                    
+
+                    if len(dM_i)>0:
+                        try:
+
+                            t2_unfolded[:, dL, :, M, :, dM_i[0], :] = self.t2[:, dL, :, M, :, dM]
+                            g_unfolded[:, dL, :, M, :, dM_i[0], :] = self.g_d[:, dL, :, M, :, dM]
+                            #t2_diagram3[: ,  ] = #permuted elements
+                            hit += 1
+                        except:
+                            
+                            miss += 1
+
+        print("misses:", miss, "hits:", hit)
+
+
+
+        
+
+        #t2s = t2.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+        #v2s = self.g_d.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+
+        t2s = t2_unfolded.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+        v2s = g_unfolded.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+
+
+
+
+
+        t2i = np.arange(t2.size).reshape(t2.shape)
+        t2i_map = t2i.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask].ravel()
+
+        #Construct fock denominator
+
+        fii0 = np.diag(self.f_mo_ii.cget([0,0,0])).ravel()
+
+        faa0 = np.diag(self.f_mo_aa.cget([0,0,0]))
+
+        fii0_ = np.outer(np.ones(No, dtype = float), fii0).ravel()[ii_mask]
+
+        fii0 = np.diag(self.f_mo_ii.cget([0,0,0])).ravel()[i0_mask]
+
+        faa0_ = np.outer(np.ones(Nv, dtype = float), faa0).ravel()[ia_mask]
+
+        fiajb = fii0[:,None,None,None] - faa0_[None,:,None,None] + fii0_[None,None,:,None] - faa0_[None,None,None,:]
+
+
+        norm_prev = 1000
+        
+        t0 = time.time()
+
+        #print("damping:", damping)
+        #print("t2new.shape:",v2s.shape)
+        #print("t2s.shape:", t2s.shape)
+        #print("F_ii_neg.shape:", Fii_neg.shape)
+        #print("newshape",np.einsum("jbka,ki->iajb", t2s, Fii_neg).shape)
+
+        for i in np.arange(maxiter):
+            t2new = -1*v2s
+
+            t2new -= np.einsum("icjb,ac->iajb", t2s, Faa) #*0
+
+            t2new -= np.einsum("iajc,bc->iajb", t2s, Faa)
+
+            t2new += np.einsum("jbka,ki->iajb", t2s, Fii).swapaxes(0,2)
+
+            t2new += np.einsum("iakb,kj->iajb", t2s, Fii)
+            
+            t2s -= t2new*fiajb**-1
+
+            abs_dev = np.max(np.abs(t2new))
+
+            if abs_dev<norm_thresh: #np.abs(norm_prev - norm_new)<norm_thresh:
+                print("Converged at", i, "iterations.")
+                break
+            #else:
+            #    pass
+            #    norm_prev = norm_new*1
+
+        t_t = (time.time()-t0)/i
+        print("Time per iteration:", t_t)
+                
+
+
+
+        t2new_full = np.zeros_like(t2).ravel()
+        t2new_full[t2i_map] = t2s.ravel()
+        t2new_full = t2new_full.reshape(t2.shape)
+
+        miss = 0
+
+        for dL in np.arange(Nv):
+            for M in np.arange(No):
+                for dM in np.arange(Nv):
+                    dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM] - self.d_ii.coords[M]) 
+
+
+                    #dA_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dL]-self.d_ii.coords[M]) 
+                    #dB_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]-self.d_ii.coords[M])
+
+                    
+
+                    if len(dM_i)>0:
+                        try:
+
+                            self.t2[:, dL, :, M, :, dM_i[0], :] = t2new_full[:, dL, :, M, :, dM]
+                            
+                        except:
+                            
+                            miss += 1
+
+
+
+
+
+        #self.t2 = t2new_full
+
+        return np.max(np.abs(t2new)), i
+
     def solve_unfolded_(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0):
 
         #t0 = time.time()
@@ -232,7 +630,7 @@ class amplitude_solver():
 
         Fii = self.f_mo_ii.tofull(self.f_mo_ii, ocoords, ocoords)[ii_mask][:, ii_mask]
 
-        Fii_neg = self.f_mo_ii.tofull(self.f_mo_ii, -1*ocoords, -1*ocoords)[ii_mask][:, ii_mask]
+        Fii_neg = self.f_mo_ii.tofull(self.f_mo_ii, -1*ocoords, ocoords)[ii_mask][:, ii_mask]
 
         Faa = self.f_mo_aa.tofull(self.f_mo_aa, vcoords, vcoords)[ia_mask][:, ia_mask] #Note indexing along y-axis
 
@@ -252,9 +650,12 @@ class amplitude_solver():
         t2s = t2.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
 
         t2s =  np.zeros((No*no, Nv*nv, No*no, Nv*nv), dtype = float)[ii_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+        #t2s[0] = 
 
         #unfolded g-tensor
         g_unfolded = np.zeros((No,no, Nv,nv, No,no, Nv,nv), dtype = float)
+        t2s_unfolded = np.zeros((No,no, Nv,nv, No,no, Nv,nv), dtype = float)
+
         for I in np.arange(No):
             for A in np.arange(Nv):
                 for J in np.arange(No):
@@ -272,6 +673,7 @@ class amplitude_solver():
 
                         #g_unfolded[I,:, A, :, J, :, B, :] = self.g_d[:,dL, :, M, :, dM, :]    
                         g_unfolded[I,:, A, :, J, :, B, :] = self.ib.getcell_conventional(Av, Jv, Bv)
+                        #t2s_unfolded[I,:, A, :, J, :, B, :] = 0 #self.t2[:,dL, :, M, :, dM, :]
 
 
 
@@ -349,7 +751,7 @@ class amplitude_solver():
 
 
             
-            t2s -= damping*t2new/fiajb
+            t2s -= t2new/fiajb
             #print(np.linalg.norm(t2s))
             norm_new = np.linalg.norm(t2s)
 
@@ -375,11 +777,16 @@ class amplitude_solver():
 
         t_t = (time.time()-t0)/i
         print("Time per iteration:", t_t)
+
+
+        
                 
 
 
 
         t2new_full = np.zeros_like(t2).ravel()
+        print("shapes:", t2s.shape, t2new_full[t2i_map].shape)
+        
         t2new_full[t2i_map] = t2s[0].ravel()
         t2new_full = t2new_full.reshape(t2.shape)
 
@@ -387,8 +794,166 @@ class amplitude_solver():
 
         return np.max(np.abs(t2new)), i
 
+    def solve_unfolded_july2020(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0):
+        t2 = self.t2
 
-    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0):
+        t2_new = np.zeros_like(t2)
+
+        #print("SHAPE:", t2_new.shape)
+
+        #M0_i = self.d_ii.cget([0,0,0])[self.fragment[0],:]<self.occupied_cutoff
+        #print(M0_i)
+        #print("M0_i;", M0_i.shape)
+
+        #M0_i = self.d_ii.cget([0,0,0])<self.occupied_cutoff
+
+        #print(t2.shape, t2.size)
+        t2i = np.arange(t2.size).reshape(t2.shape)
+
+        vcoords = self.d_ia.coords[:self.n_virtual_cells]
+        ocoords = self.d_ii.coords[:self.n_occupied_cells]
+
+
+        ia_mask = self.d_ia.cget(vcoords)[:, self.fragment[0], :]
+        ia_mask = ia_mask.ravel()<self.virtual_cutoff
+
+        ii_mask = self.d_ii.cget(ocoords)[:, self.fragment[0], :]
+        ii_mask = ii_mask.ravel()<self.occupied_cutoff
+
+        i0_mask = self.d_ii.cget([0,0,0])[self.fragment[0], :]<self.occupied_cutoff
+
+
+        Fii = self.f_mo_ii.tofull(self.f_mo_ii, ocoords, ocoords)[ii_mask][:, ii_mask]
+
+        Fii_neg = self.f_mo_ii.tofull(self.f_mo_ii, -1*ocoords, ocoords)[ii_mask][:, ii_mask] #<- most promising
+
+        #Fii_neg = self.f_mo_ii.tofull(self.f_mo_ii, -1*ocoords, -1*ocoords)[ii_mask][:, ii_mask]
+
+        Faa = self.f_mo_aa.tofull(self.f_mo_aa, vcoords, vcoords)[ia_mask][:, ia_mask]
+        #Faa_2 = self.f_mo_aa.tofull(self.f_mo_aa, -1*vcoords, vcoords)[ia_mask][:, ia_mask]
+
+        
+
+
+        no = self.ib.n_occ
+        No = self.n_occupied_cells
+
+        nv = self.ib.n_virt
+        Nv = self.n_virtual_cells
+
+        t2_unfolded = np.zeros_like(self.t2)
+        g_unfolded = np.zeros_like(self.g_d)
+
+        miss = 0
+
+        for dL in np.arange(Nv):
+            for M in np.arange(No):
+                for dM in np.arange(Nv):
+                    dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM] + self.d_ii.coords[M]) #[0]
+
+
+                    dA_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dL]-self.d_ii.coords[M]) #[0]
+                    dB_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]-self.d_ii.coords[M]) #[0]
+
+                    
+
+                    if len(dM_i)>0:
+                        try:
+
+                            t2_unfolded[:, dL, :, M, :, dM_i[0], :] = self.t2[:, dL, :, M, :, dM]
+                            g_unfolded[:, dL, :, M, :, dM_i[0], :] = self.g_d[:, dL, :, M, :, dM]
+                            #t2_diagram3[: ,  ] = #permuted elements
+                        except:
+                            
+                            miss += 1
+
+        print("misses:", miss)
+
+        
+
+        #t2s = t2.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+        #v2s = self.g_d.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+
+        t2s = t2_unfolded.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+        v2s = g_unfolded.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+
+
+
+
+
+
+        t2i_map = t2i.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask].ravel()
+
+        #print(t2s.shape, Fii.shape, Faa.shape)
+
+        fii0 = np.diag(self.f_mo_ii.cget([0,0,0])).ravel()
+
+        faa0 = np.diag(self.f_mo_aa.cget([0,0,0]))
+
+        fii0_ = np.outer(np.ones(No, dtype = float), fii0).ravel()[ii_mask]
+
+        fii0 = np.diag(self.f_mo_ii.cget([0,0,0])).ravel()[i0_mask]
+
+        faa0_ = np.outer(np.ones(Nv, dtype = float), faa0).ravel()[ia_mask]
+
+        #fiajb = np.einsum("i,j,a,b->iajb", fii, fii, -faa, -faa)
+
+        fiajb = fii0[:,None,None,None] - faa0_[None,:,None,None] + fii0_[None,None,:,None] - faa0_[None,None,None,:]
+
+
+
+
+
+
+
+        norm_prev = 1000
+        
+        t0 = time.time()
+
+        for i in np.arange(maxiter):
+            t2new = -1*v2s
+
+            t2new -= np.einsum("icjb,ac->iajb", t2s, Faa) #*0
+
+            t2new -= np.einsum("iajc,bc->iajb", t2s, Faa) #*0
+
+            t2new += np.einsum("ibka,kj->iajb", t2s, Fii_neg) #*0
+
+            #t2new += np.einsum("ibka,kj->iajb", t2s[permutation], Fii_neg) #*0
+
+            t2new += np.einsum("iakb,kj->iajb", t2s, Fii) 
+            
+            t2s -= damping*t2new/fiajb
+            #print(np.linalg.norm(t2s))
+            #norm_new = np.linalg.norm(t2s)
+
+            abs_dev = np.max(np.abs(t2new))
+
+            if abs_dev<norm_thresh: #np.abs(norm_prev - norm_new)<norm_thresh:
+                print("Converged at", i, "iterations.")
+                break
+            #else:
+            #    pass
+            #    norm_prev = norm_new*1
+
+        t_t = (time.time()-t0)/i
+        print("Time per iteration:", t_t)
+                
+
+
+
+        t2new_full = np.zeros_like(t2).ravel()
+        t2new_full[t2i_map] = t2s.ravel()
+        t2new_full = t2new_full.reshape(t2.shape)
+
+        self.t2 = t2new_full
+
+        return np.max(np.abs(t2new)), i
+
+    
+
+
+    def solve_unfolded_old(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0):
 
         #t0 = time.time()
         t2 = self.t2
@@ -500,13 +1065,16 @@ class amplitude_solver():
             
             t2s -= damping*t2new/fiajb
             #print(np.linalg.norm(t2s))
-            norm_new = np.linalg.norm(t2s)
+            #norm_new = np.linalg.norm(t2s)
 
-            if np.abs(norm_prev - norm_new)<norm_thresh:
+            abs_dev = np.max(np.abs(t2new))
+
+            if abs_dev<norm_thresh: #np.abs(norm_prev - norm_new)<norm_thresh:
                 print("Converged at", i, "iterations.")
                 break
-            else:
-                norm_prev = norm_new*1
+            #else:
+            #    pass
+            #    norm_prev = norm_new*1
 
         t_t = (time.time()-t0)/i
         print("Time per iteration:", t_t)
@@ -628,212 +1196,7 @@ class amplitude_solver():
         return t2_new
         """
 
-    def map_omega(self):
-        No = self.n_occupied_cells
-        Nv = self.n_virtual_cells
-        self.t2_map = np.zeros((Nv, No, Nv), dtype = np.object)
-
-        for dL in np.arange(self.n_virtual_cells):
-            dLv = self.d_ia.coords[dL]
-            dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-            
-            
-            #dL_i = (self.d_ia.cget(dLv)<self.virtual_cutoff)[:self.ib.n_occ, :]
-            #dL_i[M0_i == False, :] = 0
-
-            for M in np.arange(self.n_occupied_cells):
-                Mv = self.d_ii.coords[M]
-                M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-
-                    K_a = get_bvec_where(self.d_ii.coords[:self.n_occupied_cells], self.d_ii.coords[:self.n_occupied_cells])
-                    dLv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ii.coords[:self.n_occupied_cells] + dLv - Mv)
-                    dMv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ii.coords[:self.n_occupied_cells] + dMv)
-
-                    #dLv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], -1*self.d_ii.coords[:self.n_occupied_cells] + dLv )
-                    #dMv_a = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells], -1*self.d_ii.coords[:self.n_occupied_cells] + dMv - Mv)
-
-
-                    indx_a = np.all(np.array([K_a, dLv_a, dMv_a])>=0, axis = 0)
-
-                    D3 = np.array([K_a, dLv_a, dMv_a, indx_a])
-
-
-
-
-
-
-                    dMv_b = get_bvec_where(self.d_ia.coords[:self.n_virtual_cells],  -1*self.d_ii.coords[:self.n_occupied_cells] + dMv + Mv)
-                    K_b = np.arange(self.n_occupied_cells)
-                    indx_b = np.all(np.array([K_b, dMv_b])>=0, axis = 0)
-
-                    D4 = np.array([K_b, dMv_b, indx_b])
-                    
-                    self.t2_map[dL, M, dM] = np.array([D3, D4])
-
-
-
-
-
-
-    def omega(self, t2):
-
-        #t0 = time.time()
-
-        t2_new = np.zeros_like(t2)
-        #print("SHAPE:", t2_new.shape)
-
-        M0_i = self.d_ii.cget([0,0,0])[self.fragment[0],:]<self.occupied_cutoff
-        #print(M0_i)
-        #print("M0_i;", M0_i.shape)
-
-        #M0_i = self.d_ii.cget([0,0,0])<self.occupied_cutoff
-        #print("self.n_occupied_cells:", self.n_occupied_cells)
-        #print("self.n_virtual_cells:", self.n_virtual_cells)
-
-        #print("d_ii.coords:", self.d_ii.coords[:self.n_occupied_cells])
-        #print("d_ia.coords:", self.d_ia.coords[:self.n_virtual_cells])
-
-        tm1 = 0
-        tm2 = 0
-        tm3 = 0
-        tm4 = 0
-        tm5 = 0
-
-        Nv = self.n_virtual_cells
-        No = self.n_occupied_cells
-        nv = self.ib.n_virt
-        no = self.ib.n_occ
-
-
-
-
-        for dL in np.arange(self.n_virtual_cells):
-            dLv = self.d_ia.coords[dL]
-            dL_i = self.d_ia.cget(dLv)[self.fragment[0],:]<self.virtual_cutoff # dL index mask
-
-            
-            
-            #dL_i = (self.d_ia.cget(dLv)<self.virtual_cutoff)[:self.ib.n_occ, :]
-            #dL_i[M0_i == False, :] = 0
-
-            for M in np.arange(self.n_occupied_cells):
-                Mv = self.d_ii.coords[M]
-                M_i = self.d_ii.cget(Mv)[self.fragment[0],:]<self.occupied_cutoff # M index mask
-
-
-                for dM in np.arange(self.n_virtual_cells):
-                    dMv = self.d_ia.coords[dM]
-                    dM_i = self.d_ia.cget(dMv)[self.fragment[0],:]<self.virtual_cutoff # dM index mask
-                    
-                    #dM_i = (self.d_ia.cget(dMv)<self.virtual_cutoff)[:self.ib.n_occ, :]# dM index mask
-                    #dM_i[M_i == False, :] = 0
-
-                    
-
-
-
-
-                    
-                    
-                    
-                    
-                    #M_i = self.d_ii.cget(Mv)<self.occupied_cutoff # M index mask
-
-                    tnew = -self.g_d[:, dL, :, M, :, dM, :]
-
-                    tt = time.time() #TImE
-                    cell_map = np.arange(tnew.size).reshape(tnew.shape)[M0_i][:, dL_i][:, :, M_i][:,:,:,dM_i].ravel()
-                    tm3 += time.time()-tt #TIME
-
-
-
-                    tt = time.time() #TImE
-                    F_ac = self.f_mo_aa.cget(self.d_ia.coords[:self.n_virtual_cells] - dLv)
-                    tm3 += time.time()-tt #TIME
-
-                    tt = time.time() #TImE
-                    tnew -= np.einsum("iCcjb,Cac->iajb", t2[:, :, :, M, :, dM, :], F_ac)
-                    tm1 += time.time()-tt #TIME
-
-                    tt = time.time() #TImE
-                    F_bc = self.f_mo_aa.cget(self.d_ia.coords[:self.n_virtual_cells] - dMv)
-                    tm3 += time.time()-tt #TIME
-
-                    tt = time.time() #TImE
-                    tnew -= np.einsum("iajCc,Cbc->iajb", t2[:, dL, :, M, :, :, :], F_bc)
-                    tm1 += time.time()-tt #TIme
-
-
-
-
-                    D3, D4 = self.t2_map[dL, M, dM] 
-
-                    tt = time.time() #TImE
-
-                    K_, dLv_, dMv_, indx = D3
-                    indx = np.array(indx, dtype = np.bool)
-
-
-                    No_ = np.sum(indx)
-                    if np.any(indx):
-                        tt = time.time() #TImE
-
-                        tnew += np.einsum("Kiakb,Kkj->iajb",t2[:, dLv_[indx], :, K_[indx], :, dMv_[indx], :], self.f_mo_ii.cget(self.d_ii.coords[:self.n_occupied_cells]-Mv)[indx])
-                        tm4 += time.time()-tt #TIme
-
-                        # dot-implementation
-                        # tt = time.time()
-                        # F_kj = self.f_mo_ii.cget(-1*self.d_ii.coords[:self.n_occupied_cells]-Mv)[indx]
-                        # t2_ = t2[:, dLv_[indx], :, K_[indx], :, dMv_[indx], :].swapaxes(3,4).swapaxes(0,3) #Kiakb -> biaKk
-                        # t2F = np.dot(t2_.reshape([nv*no*nv, No_*no]), F_kj.reshape([No_*no, no])).reshape([nv,no*nv*no]) # -> biaj
-                        # tnew += t2F.swapaxes(0,1).reshape((no,nv,no,nv))
-                        #tm5 += time.time() - tt
-
-
-
-
-
-
-
-
-
- 
-                    tt = time.time() #TImE
-
-                    K_, dMv_, indx = D4
-                    indx = np.array(indx, dtype = np.bool)
-
-                    tm2 += time.time()-tt #TIme
-
-                    if np.any(indx):
-                        tt = time.time() #TImE
-                        tnew += np.einsum("Kiakb,Kkj->iajb",t2[:, dL, :, K_[indx], :, dMv_[indx], :], self.f_mo_ii.cget(-1*self.d_ii.coords[:self.n_occupied_cells]+Mv)[indx])
-                        tm1 += time.time()-tt #TIme
-
-
-
-                    tt = time.time() #TImE
-                    t2_mapped = np.zeros_like(tnew).ravel()
-                    
-                    t2_mapped[cell_map] = (tnew*self.e_iajb**-1).ravel()[cell_map]
-                    
-                    #t2_mapped[cell_map] = .1*tnew.ravel()[cell_map]
-                    #t2_mapped = (tnew*self.e_iajb**-1).ravel()
-
-
-
-
-                    t2_new[:, dL, :, M, :, dM, :] = t2_mapped.reshape(tnew.shape)
-                    tm2 += time.time()-tt #TIme
-        #print("Cellmap omitted.")
-        #print(tm1, tm2, tm3, tm4, tm5)
-        return t2_new
+    
 
     def omega_working(self, t2):
 
