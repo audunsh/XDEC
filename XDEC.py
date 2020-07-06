@@ -464,7 +464,7 @@ class amplitude_solver():
         #Fii_neg = self.f_mo_ii.tofull(self.f_mo_ii, -1*ocoords, ocoords)[ii_mask][:, ii_mask]
 
 
-        Faa = self.f_mo_aa.tofull(self.f_mo_aa, vcoords, vcoords)[ia_mask][:, ia_mask]
+        Faa = self.f_mo_aa.tofull(self.f_mo_aa, vcoords,vcoords)[ia_mask][:, ia_mask]
 
 
         
@@ -498,25 +498,26 @@ class amplitude_solver():
         miss = 0
         miss_b = 0
         hit = 0
+        hit_b = 0
 
         for dL in np.arange(Nv):
             for M in np.arange(No):
                 for dM in np.arange(Nv):
-                    dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM] + self.d_ii.coords[M]) # \tilde{t} -> t, B = M + dM
+                    dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM] - self.d_ii.coords[M]) # \tilde{t} -> t, B = M + dM
 
 
-                    dA_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dL]-self.d_ii.coords[M]) # self.d_ia.coords[dA_J] == A - J
-                    dB_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]-self.d_ii.coords[M]) # self.d_ia.coords[dB_J] == B - J
+                    #dA_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dL]-self.d_ii.coords[M]) # self.d_ia.coords[dA_J] == A - J
+                    #dB_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]-self.d_ii.coords[M]) # self.d_ia.coords[dB_J] == B - J
 
                     
 
                     if len(dM_i)>0:
                         try:
 
-                            t2_unfolded[:, dL, :, M, :, dM_i[0], :] = self.t2[:, dL, :, M, :, dM]
-                            g_unfolded[:, dL, :, M, :, dM_i[0], :] = self.g_d[:, dL, :, M, :, dM]
+                            t2_unfolded[:, dL, :, M, :, dM, :] = self.t2[:, dL, :, M, :, dM_i[0]]
+                            g_unfolded[:, dL, :, M, :, dM, :] = self.g_d[:, dL, :, M, :, dM_i[0]]
 
-                            indx[: , dL, :, M, :, dM_i[0], : ] = indx_flat[:,dA_J, M, dB_J]
+                            #indx[: , dL, :, M, :, dM, : ] = indx_flat[:,dA_J, M, dB_J]
 
                             hit += 1
                         except:
@@ -528,7 +529,7 @@ class amplitude_solver():
                         
                         M_i = get_index_where(self.d_ii.coords[:self.n_virtual_cells], self.d_ii.coords[M]    - self.d_ii.coords[N])
 
-                        dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]  - self.d_ii.coords[N])
+                        dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]  - self.d_ii.coords[N] +  self.d_ii.coords[M])
 
                         dL_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dL]  - self.d_ii.coords[N])
 
@@ -541,11 +542,12 @@ class amplitude_solver():
 
 
                             indx_full[N, :, dL, :, M, :, dM, :] = indx_flat[:, dL_i[0], :, M_i[0], :, dM_i[0], :] 
+                            hit_b += 1
                         except:
                             miss_b += 1
 
 
-        print("misses:", miss, "miss_b:", miss_b, "hits:", hit)
+        print("misses:", miss, "miss_b:", miss_b, "hits:", hit, "hits_b:", hit_b)
         #print(np.sum(indx_full<0))
 
 
@@ -629,7 +631,7 @@ class amplitude_solver():
             t2s_[idx_f_mask] = 0
             t2s_ = t2s_.reshape(idx_f.shape)
             #print("t2s_.shape:", t2s_.shape)
-            t2new += np.einsum("kajb,ki->iajb", t2s_, Fii)[:t2s.shape[0]]
+            t2new += np.einsum("kajb,ki->iajb", t2s_, Fii[:, :t2s.shape[0]])
 
 
 
