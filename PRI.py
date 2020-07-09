@@ -985,7 +985,7 @@ class estimate_coordinate_domain():
             
             
             cmM = np.abs(Jmn_shell.blocks).max()
-            #print(cmM)
+            #print("cmM:", cmM)
             #print("estimate_coordinate_domain",c2,": computing shell ", r0, "to", r1," max value:", cmM) #+0.1)
             #print(scoords)
 
@@ -1134,12 +1134,15 @@ class coefficient_fitter_static():
         C2 = C2[np.argsort(R)]
         R = R[np.argsort(R)]
 
+        #print("C2:", C2, len(C2))
+
         
         #for i in np.arange(len(xi_domain)):
 
         for ci in np.arange(len(C2)):
             c2, R2 = C2[ci], R[ci] 
             # Compute JMN with nsep =  c2
+            #print("ci, c2, R2:", ci, c2, R2)
 
             #c2, big_tmat = xi_domain[i]
 
@@ -1325,10 +1328,13 @@ class coefficient_fitter_static():
             self.coords.append(c2)
             self.Jmn.append( Jmnc2 ) #New formulation without uppercase-transpose
 
+            #print("Min overall:", np.max(np.abs(Jmnc2.blocks)))
+
 
             if self.printing:
                 print("Intermediate overlaps (LJ|0mNn) with N =", c2, " included with %i blocks and maximum absolute %.2e" % (Jmnc2.blocks.shape[0],np.max(np.abs(Jmnc2.blocks)) ))
             if np.max(np.abs(Jmnc2.blocks))<xi0 and np.abs(R[ci]-R[ci+1])>1e-10:
+                #print("Min overall:", np.max(np.abs(Jmnc2.blocks)))
                 break
 
         self.coords = np.array(self.coords)
@@ -1420,6 +1426,8 @@ class coefficient_fitter_static():
                     self.JK.kspace_svd_solve(
                         J_pq_c, 
                         n_points = n_points))
+
+
                 #print("                   pq_c.blocks.shape:", pq_c[-1].blocks.shape)
 
         

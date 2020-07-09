@@ -1541,7 +1541,7 @@ class tmat():
         
 
 
-    def kspace_svd_solve(self, other, tolerance = 1e-10, complex_precision = np.complex128, n_points = None, complx = False):
+    def kspace_svd_solve(self, other, tolerance = 1e-14, complex_precision = np.complex128, n_points = None, complx = False):
         """
         IBT (Infinite Block-Circulant) svd solver
         """
@@ -1612,7 +1612,7 @@ class tmat():
         return ret
 
 
-    def kspace_svd_solve_(self, other, tolerance = 1e-10, complex_precision = np.complex128, n_points = None):
+    def kspace_svd_solve_(self, other, tolerance = 1e-14, complex_precision = np.complex128, n_points = None):
         """
         transforms to reciprocal space and solves 
             self \cdot x = other
