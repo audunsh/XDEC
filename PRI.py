@@ -1949,6 +1949,7 @@ class integral_builder_static():
 
     def getorientation(self, dL, dM, adaptive_cdot = False, M=None):
         
+        
         D = [] #to be forgotten
         if adaptive_cdot:
             # not yet implementet
@@ -1956,6 +1957,7 @@ class integral_builder_static():
 
 
             return None
+        
 
         else:
             # use circulant fomulation

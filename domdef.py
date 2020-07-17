@@ -48,7 +48,7 @@ def build_pair_distance_matrix(p, coords, wcenters_a, wcenters_b, M, dist_cut_0,
     return d
 
 
-def build_distance_matrix(p, coords, wcenters_a, wcenters_b):
+def build_distance_matrix(p, coords, wcenters_a, wcenters_b, sort_index = None):
     """
     Given two N*3 arrays with wannier centers, construct the BT-distance matrix with elements
 
@@ -69,14 +69,18 @@ def build_distance_matrix(p, coords, wcenters_a, wcenters_b):
     dblocks = np.zeros((coords.shape[0], wcenters_a.shape[0], wcenters_b.shape[0]), dtype = float)
     for c in np.arange(coords.shape[0]):
         dblocks[c] = np.sqrt(np.sum( (wcenters_a[:, None] - wcenters_b[None, :] - p.coor2vec(coords[c]))**2, axis = 2))
+        #dblocks[c] = np.sqrt(np.sum( (0*wcenters_a[:, None] - 0*wcenters_b[None, :] - p.coor2vec(coords[c]))**2, axis = 2))
         
     #sort blocks and coords in order of increasing distance
 
-    d_order = np.argsort(np.min(dblocks,axis=(1,2)))
+    if sort_index is None:
+        d_order = np.argsort(np.min(dblocks,axis=(1,2))) #THIS IS ONLY PARTIALLY CORRECT! when d_ia is computed, d_aa elements are included and equals zero
+    else:
+        d_order = np.argsort(np.min(dblocks[:, sort_index, :],axis=(1)))
 
     d = tp.tmat()
     d.load_nparray(dblocks[d_order], coords[d_order])
-
+    
     #Slightly hacky way do avoid referencing outside matrix
     d.blocks[-1] += 1000.0 #bohr
 

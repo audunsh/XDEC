@@ -847,6 +847,9 @@ class prism():
         
         #find number of atoms
         pass
+
+    
+
     
     def coor2vec(self, c):
         return np.dot(c,self.lattice)
