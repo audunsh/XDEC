@@ -6648,9 +6648,9 @@ if __name__ == "__main__":
                     if occupied:
                         a_frag.autoexpand_occupied_space(n_orbs=args.orb_increment)
                     t_1 = time.time()
-                    dt, it = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.01, damping = args.damping)
+                    dt, it, E_new = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.01, damping = args.damping)
                     t_2 = time.time()
-                    E_new = a_frag.compute_fragment_energy()
+                    #E_new = a_frag.compute_fragment_energy()
                     t_3 = time.time()
                     dE = np.abs(E_prev - E_new)
                     """
@@ -6959,9 +6959,9 @@ if __name__ == "__main__":
                     if occupied:
                         a_frag.autoexpand_occupied_space(n_orbs=args.orb_increment)
                     t_1 = time.time()
-                    dt, it = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.01, damping = args.damping)
+                    dt, it, E_new = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.01, damping = args.damping)
                     t_2 = time.time()
-                    E_new = a_frag.compute_fragment_energy()
+                    #E_new = a_frag.compute_fragment_energy()
                     t_3 = time.time()
                     dE = np.abs(E_prev - E_new)
                     """
