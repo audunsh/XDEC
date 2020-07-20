@@ -172,7 +172,9 @@ class amplitude_solver():
         else:
             #self.t2 *= 0
             #print("NORM_THRESH = ", norm_thresh)
-            return self.solve_unfolded____(norm_thresh = norm_thresh, maxiter = 100, damping = damping, energy = energy, compute_missing_exchange = False)
+            return self.solve_unfolded(norm_thresh = norm_thresh, maxiter = 100, damping = damping, energy = energy, compute_missing_exchange = False)
+
+            #return self.solve_completely_unfolded(norm_thresh = norm_thresh, maxiter = 100, damping = damping, energy = energy, compute_missing_exchange = False)
             #return self.solve_unfolded(norm_thresh = norm_thresh, maxiter = 100, damping = damping, energy = energy, compute_missing_exchange = False)
             if False:
                 dt, it = self.solve_MP2(norm_thresh, ndiis = ndiis, damping = damping)
@@ -456,12 +458,14 @@ class amplitude_solver():
         #print(tm1, tm2, tm3, tm4, tm5)
         return t2_new
 
-    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = True):
+    def solve_completely_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = True):
         t2 = self.t2               # amplitudes
         no = self.ib.n_occ         # number of occupieds per cell
         No = self.n_occupied_cells # numer of occupied cells
         nv = self.ib.n_virt        # number of virtuals per cell
         Nv = self.n_virtual_cells  # number of virtual cells
+
+        t0 = time.time()
 
         vcoords = self.d_ia.coords[:self.n_virtual_cells]
         ocoords = self.d_ii.coords[:self.n_occupied_cells]
@@ -478,6 +482,11 @@ class amplitude_solver():
 
         t2_unfolded = np.zeros((No, no, Nv, nv, No, no, Nv, nv), dtype = float)
         g_unfolded =  np.zeros((No, no, Nv, nv, No, no, Nv, nv), dtype = float)
+
+        print("Preparations (1):", time.time()-t0)
+        t0 = time.time()
+
+
 
         for dL in np.arange(Nv):
             for M in np.arange(No):
@@ -505,7 +514,8 @@ class amplitude_solver():
 
 
 
-
+        print("Unfolding (1):", time.time()-t0)
+        t0 = time.time()
 
 
         """
@@ -558,8 +568,10 @@ class amplitude_solver():
 
         fiajb = fii0_[:,None,None,None] - faa0_[None,:,None,None] + fii0_[None,None,:,None] - faa0_[None,None,None,:]
 
+        print("Preparations (2):", time.time()-t0)
+        t0 = time.time()
 
-        print("diff:", np.abs(g - np.einsum("iajb->jbia", g)).max())
+        #print("diff:", np.abs(g - np.einsum("iajb->jbia", g)).max())
 
 
 
@@ -599,6 +611,10 @@ class amplitude_solver():
             #else:
             #    pass
             #    norm_prev = norm_new*1
+        
+        print("Solution (0):", time.time()-t0)
+        t0 = time.time()
+
         if energy == "fragment":
             d_ii_1 = self.d_ii*1
             d_ii_1.blocks *= 0
@@ -619,6 +635,8 @@ class amplitude_solver():
 
             energy = 2*np.einsum("iajb,iajb->j", t2s[fragment_mask][:, :, fragment_mask], g[fragment_mask][:, :, fragment_mask]) - np.einsum("iajb,ibja->j", t2s[fragment_mask][:, :, fragment_mask], g[fragment_mask][:, :, fragment_mask])
             print("energy:", energy)
+            print("Energy (1):", time.time()-t0)
+            t0 = time.time()
             #return np.max(np.abs(t2new)), i
             return np.max(np.abs(t2new)), i, energy #[fragment_mask]
 
@@ -713,9 +731,12 @@ class amplitude_solver():
             print(energy_12, energy_2_1) # first one ... energy_12 \approx 2*energy_2_1 
             print(energy_1_2, energy_21) # sedcond one
 
+            print("Energy (1):", time.time()-t0)
+            t0 = time.time()
+
             
 
-            energy = np.array([energy_11, energy_22, energy_12, energy_21])
+            energy = 2*np.array([energy_11, energy_22, energy_12, energy_21])
             
             return np.max(np.abs(t2new)), i, energy
 
@@ -728,7 +749,413 @@ class amplitude_solver():
 
 
 
+    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = True):
 
+        
+        t0 = time.time()
+
+        #For quick reference
+        t2 = self.t2               # amplitudes
+        no = self.ib.n_occ         # number of occupieds per cell
+        No = self.n_occupied_cells # numer of occupied cells
+        nv = self.ib.n_virt        # number of virtuals per cell
+        Nv = self.n_virtual_cells  # number of virtual cells
+        no0 = len(self.fragment) #number of occupied orbitals in refcell
+        
+        # Get the virtual and occupied cells with orbitals inside domain
+        vcoords = self.d_ia.coords[:self.n_virtual_cells]
+        ocoords = self.d_ii.coords[:self.n_occupied_cells]
+        
+
+
+        # set up boolean masking arrays
+        ia_mask = self.d_ia.cget(vcoords)[:, self.fragment[0], :]
+        ia_mask = ia_mask.ravel()<self.virtual_cutoff    # active virtual indices
+
+
+        ii_mask = self.d_ii.cget(ocoords)[:, self.fragment[0], :]        
+        ii_mask = ii_mask.ravel()<self.occupied_cutoff   # active occupied indices
+        
+        i0_mask = self.d_ii.cget([0,0,0])[self.fragment[0], :]<self.occupied_cutoff #active occupied indices in reference cell
+
+
+        # Unfold Fock-matrix
+        Fii = self.f_mo_ii.tofull(self.f_mo_ii, ocoords, ocoords)[ii_mask][:, ii_mask]
+        Faa = self.f_mo_aa.tofull(self.f_mo_aa, vcoords,vcoords)[ia_mask][:, ia_mask]
+
+        
+        t2_unfolded = np.zeros_like(self.t2)  
+        g_unfolded  = np.zeros_like(self.g_d)
+
+        # preparing mapping array for t2-tensor unfolding
+        indx_flat = np.arange(t2_unfolded.size).reshape(self.t2.shape)
+        indx_flat__ = indx_flat.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+        indx_flat *= 0
+        indx_flat -= 1
+        indx_flat = indx_flat.ravel()
+        indx_flat[indx_flat__.ravel()] = np.arange(indx_flat__.size) #remapping elements
+        indx_flat = indx_flat.reshape(self.t2.shape)
+
+
+
+
+
+
+
+
+        
+        indx = np.zeros(self.g_d.shape, dtype = int)-1 #use -1 as default index
+
+        indx_full = np.zeros((No, no, Nv, nv, No, no, Nv, nv), dtype = int) -1
+
+        print("Preparations (1):", time.time()-t0)
+        t0 = time.time()
+
+
+        for dL in np.arange(Nv):
+            for M in np.arange(No):
+                for dM in np.arange(Nv):
+                    dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM] - self.d_ii.coords[M]) # \tilde{t} -> t, B = M + dM
+
+
+                    
+
+                    if dM_i is not None:
+                        t2_unfolded[:, dL, :, M, :, dM, :] = self.t2[:, dL, :, M, :, dM_i]
+                        g_unfolded[:, dL, :, M, :, dM, :] = self.g_d[:, dL, :, M, :, dM_i]
+                        
+                    else:
+                        if compute_missing_exchange:
+                            # compute the integrals missing from relative index tensor
+                        
+                            I, Is = self.ib.getorientation(self.d_ia.coords[dL], self.d_ia.coords[dM])
+                            g_unfolded[:, dL, :, M, :, dM, :] = I.cget(self.d_ii.coords[M]).reshape(Is)
+
+                        
+                    for N in np.arange(No):
+
+                        
+                        M_i = get_index_where(self.d_ii.coords[:self.n_occupied_cells], self.d_ii.coords[M]    - self.d_ii.coords[N])
+
+                        dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]  - self.d_ii.coords[N])
+                        
+                        dL_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dL]  - self.d_ii.coords[N])
+
+
+                        if np.any(np.array([dL_i, M_i, dM_i])==None):
+                            pass
+                        else:
+                            indx_full[N, :, dL, :, M, :, dM, :] = indx_flat[:, dL_i, :, M_i, :, dM_i, :]  # 
+                            """
+                            try:
+                                indx_full[N, :, dL, :, M, :, dM, :] = indx_flat[:, dL_i, :, M_i, :, dM_i, :] 
+                            except:
+                                pass
+                            """
+
+                        
+        print("Unfolding (1):", time.time()-t0)
+        t0 = time.time()
+
+
+        t2s = t2_unfolded.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask] # Rank 4 tensor / 4 dimensions
+        v2s = g_unfolded.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask] # Rank 4 tensor / 4 dimensions
+
+
+        # Unfolded tensor
+        idx = indx.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask] # t2s.ravel()[idx] : t^{AB}_{0J} -> t^{B-J, A-J}_{0J}
+        idx_f = indx_full.reshape(No*no, Nv*nv, No*no, Nv*nv)[ii_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask]
+        idx_f_mask = (idx_f<0).ravel()
+
+
+
+        t2i = np.arange(t2.size).reshape(t2.shape)
+        t2i_map = t2i.reshape(no, Nv*nv, No*no, Nv*nv)[i0_mask][:, ia_mask][:, :, ii_mask][:, :, :, ia_mask].ravel()
+
+        #Construct fock denominator
+
+        fii0 = np.diag(self.f_mo_ii.cget([0,0,0])).ravel()
+
+        faa0 = np.diag(self.f_mo_aa.cget([0,0,0]))
+
+        fii0_ = np.outer(np.ones(No, dtype = float), fii0).ravel()[ii_mask]
+
+        fii0 = np.diag(self.f_mo_ii.cget([0,0,0])).ravel()[i0_mask]
+
+        faa0_ = np.outer(np.ones(Nv, dtype = float), faa0).ravel()[ia_mask]
+
+        fiajb = fii0[:,None,None,None] - faa0_[None,:,None,None] + fii0_[None,None,:,None] - faa0_[None,None,None,:]
+
+
+        norm_prev = 1000
+        
+        
+
+        
+        nvt = np.sum(ia_mask) #number of axtive virtuals
+
+        print("Preparations (2):", time.time()-t0)
+        t0 = time.time()
+
+        t0a = 0
+        t0b = 0
+        t0c = 0
+        t0d = 0
+
+
+        for i in np.arange(maxiter):
+            t0_ = time.time()
+
+            t2new = -1*v2s
+
+            # D1
+
+            t2new -= np.einsum("icjb,ac->iajb", t2s, Faa) #*0
+
+            t0a += t0_-time.time()
+            t0_ = time.time()
+
+            # D2
+
+            t2new -= np.einsum("iajc,bc->iajb", t2s, Faa)
+
+            t0b += t0_-time.time()
+            t0_ = time.time()
+
+            # D3 
+            # Unfold the "fixed" axis
+            t2s_ = t2s.ravel()[idx_f]
+            t2s_ = t2s_.ravel()
+            t2s_[idx_f_mask] = 0
+            t2s_ = t2s_.reshape(idx_f.shape)
+            t2new += np.einsum("kajb,ki->iajb", t2s_, Fii[:, :t2s.shape[0]])
+
+            t0c += t0_-time.time()
+            t0_ = time.time()
+
+
+
+
+            # D4
+
+            t2new += np.einsum("iakb,kj->iajb", t2s, Fii)
+            
+            t2s -= damping*t2new*(fiajb**-1)
+
+            abs_dev = np.max(np.abs(t2new))
+            t0d += t0_-time.time()
+            t0_ = time.time()
+
+
+            if abs_dev<norm_thresh: #np.abs(norm_prev - norm_new)<norm_thresh:
+                #print("Converged at", i, "iterations.")
+                break
+
+        t_t = (time.time()-t0)/i
+        print("Time per iteration:", t_t)
+
+        print("Solving (1):", time.time()-t0)
+        print(t0a)
+        print(t0b)
+        print(t0c)
+        print(t0d)
+        t0 = time.time()
+
+        
+                
+
+
+
+        t2new_full = np.zeros_like(t2).ravel()
+        t2new_full[t2i_map] = t2s.ravel()
+        t2new_full = t2new_full.reshape(t2.shape)
+
+        miss = 0
+
+        for dL in np.arange(Nv):
+            for M in np.arange(No):
+                for dM in np.arange(Nv):
+                    dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM] - self.d_ii.coords[M]) 
+
+
+                    #dA_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dL]-self.d_ii.coords[M]) 
+                    #dB_J = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]-self.d_ii.coords[M])
+
+                    
+
+                    #if dM_i is not None:
+                    try:
+
+                        self.t2[:, dL, :, M, :, dM_i, :] = t2new_full[:, dL, :, M, :, dM]
+                        
+                    except:
+                        
+                        miss += 1
+        
+        print("Remapping (1):", time.time()-t0)
+        t0 = time.time()
+
+
+        # Compute the requested energy
+
+        if energy == "fragment":
+            # Fragment energy
+            d_ii_1 = self.d_ii*1
+            d_ii_1.blocks *= 0
+
+            d_ii_1.blocks[d_ii_1.mapping[ d_ii_1._c2i(np.array([0,0,0]))], self.fragment[0], self.fragment] = 1
+
+            i0_full_mask = np.array((d_ii_1.cget(ocoords)[:, self.fragment[0], :].ravel())[ii_mask], dtype = np.bool) # fragment 1 in refcell
+            f0_mask = np.array((d_ii_1.cget([0,0,0])[self.fragment[0], :].ravel())[i0_mask], dtype = np.bool) #fragment 1 in refcell, only indexes in refcell
+
+
+
+
+            t20 = t2s[f0_mask][:, :, i0_full_mask]
+            v20 = v2s[f0_mask][:, :, i0_full_mask]
+            
+
+            energy = 2*np.einsum("iajb,iajb", t20, v20) - np.einsum("iajb,ibja", t20, v20)
+            print("Energy (1):", time.time()-t0)
+            t0 = time.time()
+            
+            return np.max(np.abs(t2new)), i, energy
+
+        if energy == "cim": 
+            # Cluster-in-molecule energy
+            d_ii_1 = self.d_ii*1
+            d_ii_1.blocks *= 0
+
+            d_ii_1.blocks[d_ii_1.mapping[ d_ii_1._c2i(np.array([0,0,0]))], self.fragment[0], self.fragment] = 1
+
+            f0_mask = np.array((d_ii_1.cget([0,0,0])[self.fragment[0], :].ravel())[i0_mask], dtype = np.bool) #fragment 1 in refcell, only indexes in refcell
+
+            energy = 2*np.einsum("iajb,iajb", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja", t2s[f0_mask], v2s[f0_mask])
+            print("Energy (1):", time.time()-t0)
+            t0 = time.time()
+
+            return np.max(np.abs(t2new)), i, energy
+
+
+        if energy == "pair":
+            # Pair-fragment energy
+            d_ii_1 = self.d_ii*1
+            d_ii_1.blocks *= 0
+
+            d_ii_1.blocks[d_ii_1.mapping[ d_ii_1._c2i(np.array([0,0,0]))], self.f1.fragment[0], self.f1.fragment] = 1
+
+            d_ii_2 = self.d_ii*1
+            d_ii_2.blocks *= 0
+
+            d_ii_2.blocks[d_ii_2.mapping[ d_ii_2._c2i(np.array([0,0,0]))], self.f2.fragment[0], self.f2.fragment] = 1
+
+
+            mask_01 = np.array((d_ii_1.cget(ocoords)[:, self.f1.fragment[0], :].ravel())[ii_mask], dtype = np.bool) # fragment 1 in refcell
+            mask_11 = np.array((d_ii_1.cget(ocoords-self.M)[:, self.f1.fragment[0], :].ravel())[ii_mask], dtype = np.bool) # fragment 1 in +1
+            mask_1_1 = np.array((d_ii_1.cget(ocoords+self.M)[:, self.f1.fragment[0], :].ravel())[ii_mask], dtype = np.bool) #fragment 1 in -1
+            mask_10 = np.array((d_ii_1.cget([0,0,0])[self.f1.fragment[0], :].ravel())[i0_mask], dtype = np.bool) #fragment 1 in refcell, only indexes in refcell
+
+            mask_02 = np.array((d_ii_2.cget(ocoords)[:, self.f2.fragment[0], :].ravel())[ii_mask], dtype = np.bool)
+            mask_22 = np.array((d_ii_2.cget(ocoords-self.M)[:, self.f2.fragment[0], :].ravel())[ii_mask], dtype = np.bool)
+            mask_2_2 = np.array((d_ii_2.cget(ocoords+self.M)[:, self.f2.fragment[0], :].ravel())[ii_mask], dtype = np.bool)
+            mask_20 = np.array((d_ii_2.cget([0,0,0])[self.f2.fragment[0], :].ravel())[i0_mask], dtype = np.bool)
+
+
+
+            if True:
+                energy_jj_11 = 2*np.einsum("iajb,iajb->j", t2s[mask_10], v2s[mask_10]) - np.einsum("iajb,ibja->j", t2s[mask_10], v2s[mask_10]) 
+                energy_jj_22 = 2*np.einsum("iajb,iajb->j", t2s[mask_20], v2s[mask_20]) - np.einsum("iajb,ibja->j", t2s[mask_20], v2s[mask_20]) 
+                #print("All energies:")
+                #print(energy_jj_11)
+                #print(energy_jj_22)
+
+            energy_11 = 2*np.einsum("iajb,iajb", t2s[mask_10][:, :, mask_11], v2s[mask_10][:, :, mask_11]) -  \
+                          np.einsum("iajb,ibja", t2s[mask_10][:, :, mask_11], v2s[mask_10][:, :, mask_11]) 
+            
+            energy_1_1 =2*np.einsum("iajb,iajb", t2s[mask_10][:, :, mask_1_1], v2s[mask_10][:, :, mask_1_1]) -  \
+                          np.einsum("iajb,ibja", t2s[mask_10][:, :, mask_1_1], v2s[mask_10][:, :, mask_1_1])
+
+            
+
+            
+
+
+
+            energy_12 = 2*np.einsum("iajb,iajb", t2s[mask_10][:, :, mask_22], v2s[mask_10][:, :, mask_22]) -  \
+                          np.einsum("iajb,ibja", t2s[mask_10][:, :, mask_22], v2s[mask_10][:, :, mask_22]) 
+            
+            
+
+            energy_2_1= 2*np.einsum("iajb,iajb", t2s[mask_20][:, :, mask_1_1], v2s[mask_20][:, :, mask_1_1]) -  \
+                          np.einsum("iajb,ibja", t2s[mask_20][:, :, mask_1_1], v2s[mask_20][:, :, mask_1_1])
+
+            
+
+
+            energy_1_2 =2*np.einsum("iajb,iajb", t2s[mask_10][:, :, mask_2_2], v2s[mask_10][:, :, mask_2_2]) -  \
+                          np.einsum("iajb,ibja", t2s[mask_10][:, :, mask_2_2], v2s[mask_10][:, :, mask_2_2])
+
+            
+            
+
+            
+
+            energy_21 = 2*np.einsum("iajb,iajb", t2s[mask_20][:, :, mask_11], v2s[mask_20][:, :, mask_11]) -  \
+                          np.einsum("iajb,ibja", t2s[mask_20][:, :, mask_11], v2s[mask_20][:, :, mask_11]) 
+
+            
+
+            
+
+            energy_22 = 2*np.einsum("iajb,iajb", t2s[mask_20][:, :, mask_22], v2s[mask_20][:, :, mask_22]) -  \
+                          np.einsum("iajb,ibja", t2s[mask_20][:, :, mask_22], v2s[mask_20][:, :, mask_22]) 
+
+            energy_2_2 =2*np.einsum("iajb,iajb", t2s[mask_20][:, :, mask_2_2], v2s[mask_20][:, :, mask_2_2]) -  \
+                          np.einsum("iajb,ibja", t2s[mask_20][:, :, mask_2_2], v2s[mask_20][:, :, mask_2_2])
+
+
+            print("Energies:")
+            print(energy_11, energy_1_1) # first one
+            print(energy_22, energy_2_2) #first one
+            print(energy_12, energy_2_1) # first one ... energy_12 \approx 2*energy_2_1 
+            print(energy_1_2, energy_21) # sedcond one
+
+            
+
+            #print("Energies:", energy_11, energy_1_1, energy_22, energy_2_2, energy_12, energy_2_1, energy_21,energy_1_2 )
+
+            energy = np.array([energy_11, energy_22, energy_12, energy_21])
+            #energy = np.array([energy_1_1, energy_2_2, energy_2_1, energy_1_2])
+            
+            
+            #energy = np.array([energy_11+energy_1_1, energy_22+energy_2_2, energy_2_1+energy_12, energy_21+energy_1_2])
+
+            # Counter-Poise
+            #print(mask_10, mask_20, np.sum(mask_02), np.sum(mask_01))
+            #energy_0101 = 2*np.einsum("iajb,iajb", t2s[mask_10][:, :, mask_01], v2s[mask_10][:, :, mask_01]) -  \
+            #                np.einsum("iajb,ibja", t2s[mask_10][:, :, mask_01], v2s[mask_10][:, :, mask_01]) 
+
+            #energy_0202 = 2*np.einsum("iajb,iajb", t2s[mask_20][:, :, mask_02], v2s[mask_20][:, :, mask_02]) -  \
+            #                np.einsum("iajb,ibja", t2s[mask_20][:, :, mask_02], v2s[mask_20][:, :, mask_02]) 
+
+            #print("Counter-Poise energies:", energy_0101, energy_0202)
+
+
+
+
+            #print("Energy:", energy)
+            print("Energy (1):", time.time()-t0)
+            t0 = time.time()
+            return np.max(np.abs(t2new)), i, energy
+
+
+            #ii_mask = ii_mask.ravel()<self.occupied_cutoff   # active occupied indices
+
+
+
+
+
+        return np.max(np.abs(t2new)), i
 
 
 
@@ -755,76 +1182,55 @@ class amplitude_solver():
         ia_mask = self.d_ia.cget(vcoords)[:, self.fragment[0], :]
         #print("ia_mask:", ia_mask)
         ia_mask = ia_mask.ravel()<self.virtual_cutoff    # active virtual indices
-        print(ia_mask)
-
-        # Visual repr. ex space, 2D LiH
-        nl = 4*(np.max(np.abs(vcoords), axis = 0)+1) + 2
-        print(nl)
-        Z = np.zeros((nl[0], nl[1]), dtype = np.int)
-        #print(Z.shape, vcoords)
-        Z[vcoords[:, 0], vcoords[:, 1]] = 1
-        Z[0,0] +=1
-        try:
-            Z[self.M[0], self.M[1]] = 3
-        except:
-            pass
-        print("Virtual")
-        print(np.roll(Z, np.int(Z.shape[0]/2), axis = (0,1)))
-
-        nl = 4*(np.max(np.abs(ocoords), axis = 0)+1) + 2
-        print(nl)
-        Z = np.zeros((nl[0], nl[1]), dtype = np.int)
-        #print(Z.shape, ocoords)
-        Z[ocoords[:, 0], ocoords[:, 1]] = 1
-        Z[0,0] +=1
-        try:
-            Z[self.M[0], self.M[1]] = 3
-        except:
-            pass
-        print("Occupied")
-        print(np.roll(Z, np.int(Z.shape[0]/2), axis = (0,1)))
 
 
+        if False:
+            # debug option, simple representation of 2D domains
+
+            # Visual repr. ex space, 2D LiH
+            nl = 4*(np.max(np.abs(vcoords), axis = 0)+1) + 2
+            
+            Z = np.zeros((nl[0], nl[1]), dtype = np.int)
+            #print(Z.shape, vcoords)
+            Z[vcoords[:, 0], vcoords[:, 1]] = 1
+            Z[0,0] +=1
+            try:
+                Z[self.M[0], self.M[1]] = 3
+            except:
+                pass
+            print("Virtual")
+            print(np.roll(Z, np.int(Z.shape[0]/2), axis = (0,1)))
+
+            nl = 4*(np.max(np.abs(ocoords), axis = 0)+1) + 2
+            print(nl)
+            Z = np.zeros((nl[0], nl[1]), dtype = np.int)
+            #print(Z.shape, ocoords)
+            Z[ocoords[:, 0], ocoords[:, 1]] = 1
+            Z[0,0] +=1
+            try:
+                Z[self.M[0], self.M[1]] = 3
+            except:
+                pass
+            print("Occupied")
+            print(np.roll(Z, np.int(Z.shape[0]/2), axis = (0,1)))
 
 
 
 
 
-        #ia_mask[:] = True
-
-        #print("ocoords:", ocoords)
 
         ii_mask = self.d_ii.cget(ocoords)[:, self.fragment[0], :]
-        #print("ii_mask", ii_mask)
+        
         ii_mask = ii_mask.ravel()<self.occupied_cutoff   # active occupied indices
         
-
         i0_mask = self.d_ii.cget([0,0,0])[self.fragment[0], :]<self.occupied_cutoff #active occupied indices in reference cell
-
-        #i0_mask[:] = True
-
-        
-        
-
 
 
         # Unfold Fock-matrix
 
         Fii = self.f_mo_ii.tofull(self.f_mo_ii, ocoords, ocoords)[ii_mask][:, ii_mask]
 
-        #Fii_neg = self.f_mo_ii.tofull(self.f_mo_ii, np.array([[0,0,0]]),-1*ocoords)[i0_mask][:, ii_mask]
-        #
-        #Fii_neg = self.f_mo_ii.tofull(self.f_mo_ii, -1*ocoords, ocoords)[ii_mask][:, ii_mask]
-
-
         Faa = self.f_mo_aa.tofull(self.f_mo_aa, vcoords,vcoords)[ia_mask][:, ia_mask]
-
-        #print("ii_mask:", ii_mask)
-        #print("aa_mas:", ia_mask)
-
-
-        
-
 
         
         t2_unfolded = np.zeros_like(self.t2)
@@ -853,28 +1259,29 @@ class amplitude_solver():
 
 
         
-        """
-        for dL in np.arange(Nv):
-            print("RECOMPUTING ALL INTEGRALS")
-            for M in np.arange(No):
-                for dM in np.arange(Nv):
-                    
-                    I, Is = self.ib.getorientation(self.d_ia.coords[dL], self.d_ia.coords[dM])
-                    #Ii = self.ib.getcell(self.d_ia.coords[dL], self.d_ii.coords[M], self.d_ia.coords[dM])
-                    #print(np.abs(Ii-I.cget(self.d_ii.coords[M]).reshape(Is)).max())
-                    
-                    
-                    print(self.d_ia.coords[dL], self.d_ii.coords[M], self.d_ia.coords[dM], \
-                          np.max(np.abs(self.g_d[:,dL,:,M, :, dM, :])), \
-                          np.max(np.abs(I.cget(self.d_ii.coords[M]).reshape(Is))), \
-                          np.max(np.abs(self.g_d[:,dL,:,M, :, dM, :]-I.cget(self.d_ii.coords[M]).reshape(Is))) \
-                          )
-                    if(np.max(np.abs(self.g_d[:,dL,:,M, :, dM, :]-I.cget(self.d_ii.coords[M]).reshape(Is)))>1e-10):
-                        print("ERROR")
-                        import sys
-                        sys.exit()
-                    self.g_d[:, dL, :, M, :, dM, :] = I.cget(self.d_ii.coords[M]).reshape(Is)
-        """
+        if False:
+            # test all integrals to ensure consistent unfolding
+            for dL in np.arange(Nv):
+                print("RECOMPUTING ALL INTEGRALS")
+                for M in np.arange(No):
+                    for dM in np.arange(Nv):
+                        
+                        I, Is = self.ib.getorientation(self.d_ia.coords[dL], self.d_ia.coords[dM])
+                        #Ii = self.ib.getcell(self.d_ia.coords[dL], self.d_ii.coords[M], self.d_ia.coords[dM])
+                        #print(np.abs(Ii-I.cget(self.d_ii.coords[M]).reshape(Is)).max())
+                        
+                        
+                        print(self.d_ia.coords[dL], self.d_ii.coords[M], self.d_ia.coords[dM], \
+                            np.max(np.abs(self.g_d[:,dL,:,M, :, dM, :])), \
+                            np.max(np.abs(I.cget(self.d_ii.coords[M]).reshape(Is))), \
+                            np.max(np.abs(self.g_d[:,dL,:,M, :, dM, :]-I.cget(self.d_ii.coords[M]).reshape(Is))) \
+                            )
+                        if(np.max(np.abs(self.g_d[:,dL,:,M, :, dM, :]-I.cget(self.d_ii.coords[M]).reshape(Is)))>1e-10):
+                            print("ERROR")
+                            import sys
+                            sys.exit()
+                        self.g_d[:, dL, :, M, :, dM, :] = I.cget(self.d_ii.coords[M]).reshape(Is)
+        
         
 
 
@@ -921,12 +1328,11 @@ class amplitude_solver():
                         """
                     else:
                         if compute_missing_exchange:
+                            # compute the integrals missing from relative index tensor
                         
                             I, Is = self.ib.getorientation(self.d_ia.coords[dL], self.d_ia.coords[dM])
                             miss += 1
 
-                            #t2_unfolded[:, dL, :, M, :, dM, :] = 
-                            #print("Compute missing")
                             g_unfolded[:, dL, :, M, :, dM, :] = I.cget(self.d_ii.coords[M]).reshape(Is)
 
                         
@@ -935,13 +1341,10 @@ class amplitude_solver():
                         
                         M_i = get_index_where(self.d_ii.coords[:self.n_occupied_cells], self.d_ii.coords[M]    - self.d_ii.coords[N])
 
-                        dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]  - self.d_ii.coords[N] -  0*self.d_ii.coords[M])
-                        #dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]  - self.d_ii.coords[N] +  self.d_ii.coords[M])
-
+                        dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM]  - self.d_ii.coords[N])
+                        
                         dL_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dL]  - self.d_ii.coords[N])
 
-                        #print(dL_i, M_i, dM_i)
-                        #print(indx_flat[:, dL_i[0], :, M_i[0], :, dM_i[0], :] )
 
                         if np.any(np.array([dL_i, M_i, dM_i])==None):
                             miss_b += 1
@@ -952,22 +1355,12 @@ class amplitude_solver():
                             except:
                                 miss_b += 1
 
-                        """
-                        try:
+                        
 
 
 
 
-                            indx_full[N, :, dL, :, M, :, dM, :] = indx_flat[:, dL_i, :, M_i, :, dM_i, :] 
-                            hit_b += 1
-                        except:
-                            miss_b += 1
-                        """
-
-        #print(np.max(np.abs(g_unfolded), axis = (0,2,4,6)).reshape(Nv, No*Nv))
-
-
-        print("misses:", miss, "miss_b:", miss_b, "hits:", hit, "hits_b:", hit_b)
+        #print("misses:", miss, "miss_b:", miss_b, "hits:", hit, "hits_b:", hit_b)
         #print(np.sum(indx_full<0))
 
         
@@ -1026,6 +1419,9 @@ class amplitude_solver():
         #print("F_ii_neg.shape:", Fii_neg.shape)
         #print("newshape",np.einsum("jbka,ki->iajb", t2s, Fii_neg).shape)
 
+
+        """
+
         i0__mask = np.zeros(no, dtype = int)
         i0__mask[i0_mask] = np.arange(np.sum(i0_mask)) # active occupied indices in refcell
         f0_mask = i0__mask[self.fragment] #occupied indices in fragment
@@ -1034,20 +1430,24 @@ class amplitude_solver():
         i0_full_mask[f0_mask] = True #masking of full occupied axis onto the refcell orbitals
         #print(i0_full_mask.shape, i0_full_mask)
         i0_full_mask = np.array(i0_full_mask, dtype = np.bool)
+        
 
 
 
 
 
-        nvt = np.sum(ia_mask) #number of axtive virtuals
+        
         #print("shape:", no0, nvt, v2s.shape)
         #print("i0_maks:", i0_mask)
         #print("i0_full_mask", i0_full_mask)
         #print( v2s[i0_mask][:, :, i0_full_mask].shape)
         v20 = v2s[f0_mask][:, :, i0_full_mask] #.reshape(no0, nvt, no0, nvt)
-        #print(v20.shape)
+        """
 
-        if True:
+        #print(v20.shape)
+        nvt = np.sum(ia_mask) #number of axtive virtuals
+
+        if False:
             # Unfold the "fixed" axis
             print(np.sum(idx_f==0))
             t2s_ = v2s.ravel()[idx_f]
@@ -1170,18 +1570,27 @@ class amplitude_solver():
         # Create a view of t2s, v2s to the refcell
         if energy == "fragment":
             #t20 = t2s[i0_full_mask[:no]][:, :, i0_full_mask]
-            print("Fragment masking")
+            #print("Fragment masking")
             #f0_mask = np.zeros(t2s.shape[0], dtype = np.bool)
             #f0_mask[self.fragment] = True
 
 
-            print(f0_mask)
-            print(i0_full_mask)
+            #print(f0_mask)
+            #print(i0_full_mask)
+            print(self.fragment[0], self.fragment)
+            d_ii_1 = self.d_ii*1
+            d_ii_1.blocks *= 0
+
+            d_ii_1.blocks[d_ii_1.mapping[ d_ii_1._c2i(np.array([0,0,0]))], self.fragment[0], self.fragment] = 1
+
+            i0_full_mask = np.array((d_ii_1.cget(ocoords)[:, self.fragment[0], :].ravel())[ii_mask], dtype = np.bool) # fragment 1 in refcell
+            f0_mask = np.array((d_ii_1.cget([0,0,0])[self.fragment[0], :].ravel())[i0_mask], dtype = np.bool) #fragment 1 in refcell, only indexes in refcell
 
 
 
 
             t20 = t2s[f0_mask][:, :, i0_full_mask]
+            v20 = v2s[f0_mask][:, :, i0_full_mask]
             
 
             energy = 2*np.einsum("iajb,iajb", t20, v20) - np.einsum("iajb,ibja", t20, v20)
@@ -1189,7 +1598,17 @@ class amplitude_solver():
             #return np.max(np.abs(t2new)), i
             return np.max(np.abs(t2new)), i, energy
 
-        if energy == "cim":            
+        if energy == "cim": 
+            d_ii_1 = self.d_ii*1
+            d_ii_1.blocks *= 0
+
+            d_ii_1.blocks[d_ii_1.mapping[ d_ii_1._c2i(np.array([0,0,0]))], self.fragment[0], self.fragment] = 1
+
+            #i0_full_mask = np.array((d_ii_1.cget(ocoords)[:, self.f1.fragment[0], :].ravel())[ii_mask], dtype = np.bool) # fragment 1 in refcell
+            f0_mask = np.array((d_ii_1.cget([0,0,0])[self.fragment[0], :].ravel())[i0_mask], dtype = np.bool) #fragment 1 in refcell, only indexes in refcell
+
+
+
 
             energy = 2*np.einsum("iajb,iajb", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja", t2s[f0_mask], v2s[f0_mask])
             print("CIM energy:", energy)
@@ -4712,10 +5131,10 @@ class pair_fragment_amplitudes(amplitude_solver):
             elmn = self.f2.d_ia.cget(coord)[self.f2.fragment[0], :] < self.f2.virtual_cutoff
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99 # remove to reproduce cryscor
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
-            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99 
+            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99 #remove this one for smaller space
 
             elmn = self.f1.d_ia.cget(coord)[self.f1.fragment[0], :] < self.f1.virtual_cutoff
-            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99
+            self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord-M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99 #remove this one for smaller space
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99 #superfluous?
             self.d_ia.blocks[ self.d_ia.mapping[ self.d_ia._c2i(coord+M) ], self.f1.fragment[0],  elmn] = self.f1.virtual_cutoff*0.99 # remove to reproduce cryscor
 
@@ -6509,7 +6928,7 @@ if __name__ == "__main__":
     #    d_occ_ref = d.cget([0,0,0])[PRI.]
 
     center_fragments = dd.atomic_fragmentation(ib.n_occ, d_occ_ref, args.afrag) #[::-1]
-    #center_fragments = [[1], [0]]
+    #center_fragments = [[0,1,2], [3,4,5]]
 
     #print(wcenters)
 
@@ -6583,13 +7002,13 @@ if __name__ == "__main__":
 
             #print("Frag init:", time.time()-t0)
 
-            a_frag.solve(eqtype = args.solver, s_virt = s_virt, damping = args.damping)
+            dt, it, E_prev_outer = a_frag.solve(eqtype = args.solver, s_virt = s_virt, damping = args.damping)
 
             #print("t2 (max/min/absmin):", np.max(a_frag.t2), np.min(a_frag.t2), np.abs(a_frag.t2).min())
             #print("g_d (max/min/absmin):", np.max(a_frag.g_d), np.min(a_frag.g_d), np.abs(a_frag.g_d).min())
 
             # Converge to fot
-            E_prev_outer = a_frag.compute_fragment_energy()
+            #E_prev_outer = a_frag.compute_fragment_energy()
             E_prev = E_prev_outer*1.0
             dE_outer = 10
 
@@ -6894,13 +7313,13 @@ if __name__ == "__main__":
 
             #print("Frag init:", time.time()-t0)
 
-            a_frag.solve(eqtype = args.solver, s_virt = s_virt, damping = args.damping)
+            dt, it, E_prev_outer = a_frag.solve(eqtype = args.solver, s_virt = s_virt, damping = args.damping)
 
             #print("t2 (max/min/absmin):", np.max(a_frag.t2), np.min(a_frag.t2), np.abs(a_frag.t2).min())
             #print("g_d (max/min/absmin):", np.max(a_frag.g_d), np.min(a_frag.g_d), np.abs(a_frag.g_d).min())
 
             # Converge to fot
-            E_prev_outer = a_frag.compute_fragment_energy()
+            #E_prev_outer = a_frag.compute_fragment_energy()
             E_prev = E_prev_outer*1.0
             dE_outer = 10
 
@@ -6959,7 +7378,7 @@ if __name__ == "__main__":
                     if occupied:
                         a_frag.autoexpand_occupied_space(n_orbs=args.orb_increment)
                     t_1 = time.time()
-                    dt, it, E_new = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.01, damping = args.damping)
+                    dt, it, E_new = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.01, damping = args.damping,energy = "fragment")
                     t_2 = time.time()
                     #E_new = a_frag.compute_fragment_energy()
                     t_3 = time.time()
@@ -7401,13 +7820,13 @@ if __name__ == "__main__":
 
             #print("Frag init:", time.time()-t0)
 
-            a_frag.solve(eqtype = args.solver, s_virt = s_virt, damping = args.damping, norm_thresh = args.fot*0.01)
+            dt, it, E_prev_outer = a_frag.solve(eqtype = args.solver, s_virt = s_virt, damping = args.damping, norm_thresh = args.fot*0.01,energy = "fragment")
 
             #print("t2 (max/min/absmin):", np.max(a_frag.t2), np.min(a_frag.t2), np.abs(a_frag.t2).min())
             #print("g_d (max/min/absmin):", np.max(a_frag.g_d), np.min(a_frag.g_d), np.abs(a_frag.g_d).min())
 
             # Converge to fot
-            E_prev_outer = a_frag.compute_fragment_energy()
+            #E_prev_outer = a_frag.compute_fragment_energy()
             E_prev = E_prev_outer*1.0
             dE_outer = 10
 
@@ -7575,7 +7994,8 @@ if __name__ == "__main__":
                     # When converged, take one step back
                     a_frag.set_extent(virtual_cutoff_prev, occupied_cutoff_prev)
 
-                    E_prev_o = a_frag.compute_fragment_energy()
+                    #E_prev_o = a_frag.compute_fragment_energy()
+                    dt, it, E_prev_o = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.01, damping = args.damping, energy = "fragment")
 
                     e_mp2.append(E_prev_o)
                     de_mp2.append(dE_v)
@@ -7629,7 +8049,8 @@ if __name__ == "__main__":
                     # When converged, take one step back
                     a_frag.set_extent(virtual_cutoff_prev, occupied_cutoff_prev)
 
-                    E_new = a_frag.compute_fragment_energy()
+                    dt, it, E_prev_o = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.01, damping = args.damping, energy = "fragment")
+
 
                     dE = np.abs(E_prev - E_new)
 
@@ -7741,32 +8162,37 @@ if __name__ == "__main__":
                 for c in pair_coords:
                     for fa in np.arange(len(refcell_fragments)):
                         for fb in np.arange(len(refcell_fragments)):
-                            if fa==1:
-                                frag_a = refcell_fragments[fa]
-                                frag_b = refcell_fragments[fb]
+                            #if fa==1:
+                            frag_a = refcell_fragments[fa]
+                            frag_b = refcell_fragments[fb]
 
-                                pos_a = wcenters[refcell_fragments[fa].fragment[0]]
-                                pos_b = wcenters[refcell_fragments[fb].fragment[0]]
+                            pos_a = wcenters[refcell_fragments[fa].fragment[0]]
+                            pos_b = wcenters[refcell_fragments[fb].fragment[0]]
 
-                                pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains,  domain_def = args.pair_domain_def)
-                                #print(pair.compute_pair_fragment_energy())
-                                rn, it = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9, ndiis = args.ndiis)
-                                print("Convergence:", rn, it)
+                            pair = pair_fragment_amplitudes(frag_a, frag_b, M = c, recycle_integrals = args.recycle_integrals, adaptive = args.adaptive_domains,  domain_def = args.pair_domain_def)
+                            #print(pair.compute_pair_fragment_energy())
+                            rn, it, p_energies = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=args.fot*0.01, ndiis = args.ndiis, energy = "pair", damping = args.damping)
 
-                                p_energy = pair.compute_pair_fragment_energy()[2]
-                                pair_total += p_energy
-                                pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
-                                pair_energies.append(p_energy)
-                                print("Memory usage (bytes)", pair.nbytes())
+                            #rn, it, p_energy = pair.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh=1e-9, ndiis = args.ndiis)
+                            print("Convergence:", rn, it)
+
+                            #p_energy = pair.compute_pair_fragment_energy()[2]
+                            #pair_total += p_energy
+                            #pair_distances.append(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5)
+                            print(p_energies)
+                            pair_energies.append(p_energies[0])
+                            print(np.sum(pair_energies))
+                            print("Memory usage (bytes)", pair.nbytes())
+                            
 
 
-                                print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energy,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
-                                print("_________________________________________________________")
-                                #print(pair_distances)
-                                #print(pair_energies)
-                                print("dist_xdec = np.array(", pair_distances, ")")
-                                print("e_mp2_xdec = np.array(", pair_energies, ")")
-                                print(" ----- ",flush=True)
+                            print(0.529177*np.sum((pos_a - p.coor2vec(c) - pos_b)**2)**.5, c, fa, fb, p_energies,np.sum(pair.d_ii.blocks[:, frag_a.fragment[0], :]<frag_a.occupied_cutoff), "/", np.sum(pair.d_ia.blocks[:, frag_a.fragment[0], :]<frag_a.virtual_cutoff))
+                            print("_________________________________________________________")
+                            #print(pair_distances)
+                            #print(pair_energies)
+                            print("dist_xdec = np.array(", pair_distances, ")")
+                            print("e_mp2_xdec = np.array(", pair_energies, ")")
+                            print(" ----- ",flush=True)
 
 
 
@@ -8026,6 +8452,7 @@ if __name__ == "__main__":
         occ_cut = 2.0
 
         refcell_fragments = []
+        energies = []
         fragment_energy_total = 0
 
         for fragment in center_fragments:
@@ -8045,13 +8472,13 @@ if __name__ == "__main__":
 
             #print("Frag init:", time.time()-t0)
 
-            a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.1, damping = args.damping)
+            dt, it, E_prev_outer = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.1, damping = args.damping, energy = "cim")
 
             #print("t2 (max/min/absmin):", np.max(a_frag.t2), np.min(a_frag.t2), np.abs(a_frag.t2).min())
             #print("g_d (max/min/absmin):", np.max(a_frag.g_d), np.min(a_frag.g_d), np.abs(a_frag.g_d).min())
 
             # Converge to fot
-            E_prev_outer = a_frag.compute_energy(exchange = False)
+            #E_prev_outer = a_frag.compute_energy(exchange = False)
             E_prev = E_prev_outer*1.0
             dE_outer = 10
 
@@ -8065,6 +8492,7 @@ if __name__ == "__main__":
             print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
             print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
             print("E(CIM): %.8f      DE(fragment): %.8e" % (E_prev, dE_outer))
+            print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
             print("_________________________________________________________")
 
 
@@ -8097,9 +8525,9 @@ if __name__ == "__main__":
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
                     t_1 = time.time()
-                    a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.001, damping = args.damping)
+                    dt, it, E_new = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.001, damping = args.damping, energy = "cim")
                     t_2 = time.time()
-                    E_new = a_frag.compute_energy(exchange = False)
+                    #E_new = a_frag.compute_energy(exchange = False)
                     t_3 = time.time()
                     dE = np.abs(E_prev - E_new)
 
@@ -8108,6 +8536,7 @@ if __name__ == "__main__":
                     print("_________________________________________________________")
                     print("Current memory usage of integrals (in bytes): %.2f" % ib.nbytes())
                     print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
+                    print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
                     print(" ")
                     E_prev = E_new
 
@@ -8134,9 +8563,9 @@ if __name__ == "__main__":
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
                     t_1 = time.time()
-                    a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.001, damping = args.damping)
+                    dt, it, E_new = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.001, damping = args.damping, energy = "cim")
                     t_2 = time.time()
-                    E_new = a_frag.compute_energy(exchange = False)
+                    #E_new = a_frag.compute_energy(exchange = False)
                     t_3 = time.time()
                     dE = np.abs(E_prev - E_new)
 
@@ -8145,6 +8574,7 @@ if __name__ == "__main__":
                     print("_________________________________________________________")
                     print("Current memory usage of integrals (in bytes): %.2f" % ib.nbytes())
                     print("Time (expand/solve/energy) (s) : %.1f / %.1f / %.1f" % (t_1-t_0, t_2-t_1, t_3-t_2))
+                    print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
                     print(" ")
                     E_prev = E_new
 
@@ -8160,18 +8590,23 @@ if __name__ == "__main__":
                 print("dE_outer:", dE_outer)
                 E_prev_outer = E_prev
             #print("Current memory usage of integrals (in MB):", ib.nbytes())
-            E_final = a_frag.compute_energy(exchange = True)
+            #E_final = a_frag.compute_energy(exchange = True)
             print("_________________________________________________________")
             print("Final cluster containing occupied orbitals:", a_frag.fragment)
-            print("Converged CIM energy: %.12f" % E_final)
+            print("Converged CIM energy: %.12f" % E_new)
             print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
             print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
             print("_________________________________________________________")
             print(" ")
             print(" ")
             refcell_fragments.append(a_frag)
+            energies.append(E_new)
             fragment_energy_total += E_new
-        print("Total fragment energy:", fragment_energy_total)
+        for i in np.arange(len(energies)):
+            print("     E_{Fragment %i} :" %i, energies[i], " Hartree")
+        print("_________________________________________________________")
+        print("Total cluster energy :", fragment_energy_total, " Hartree")
+        print("=========================================================")
 
     if args.fragmentation == "cim":
         """
