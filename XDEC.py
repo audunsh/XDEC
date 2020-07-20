@@ -8049,7 +8049,7 @@ if __name__ == "__main__":
                     # When converged, take one step back
                     a_frag.set_extent(virtual_cutoff_prev, occupied_cutoff_prev)
 
-                    dt, it, E_prev_o = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.01, damping = args.damping, energy = "fragment")
+                    dt, it, E_new = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.01, damping = args.damping, energy = "fragment")
 
 
                     dE = np.abs(E_prev - E_new)
