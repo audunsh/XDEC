@@ -1361,7 +1361,7 @@ class coefficient_fitter_static():
 
         
 
-        Nc = 15
+        Nc = 20
         cellcut = 35
         if p.cperiodicity == "POLYMER":
             cellcut = 180
