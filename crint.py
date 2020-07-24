@@ -91,6 +91,18 @@ WANDM
 END
 CRYAPI_OUT
 END""" % (newk, cyctol, cyctol, cyctol)
+
+    # Alternative input
+
+    properties_input = """NEWK
+%i %i %i
+1 0
+LOCALWF
+VALENCE
+END
+CRYAPI_OUT
+END
+END""" % (newk, newk, newk)
     
 
     
@@ -159,6 +171,17 @@ WANDM
 END
 CRYAPI_OUT
 END""" % (newk, core[0]+1, core[1]+1, cyctol, cyctol, cyctol)
+
+    properties_core_input = """NEWK
+%i %i %i
+1 0
+LOCALWF
+INIFIBND
+%i %i
+END
+CRYAPI_OUT
+END
+END""" % (newk, newk, newk, core[0]+1, core[1]+1)
     
     
     f = open(folder + "/wann_input_core.d3"  , "w")
@@ -182,6 +205,17 @@ WANDM
 END
 CRYAPI_OUT
 END""" % (newk, virt[0]+1, virt[-1] , cyctol, cyctol, cyctol)
+
+    properties_virtual_input = """NEWK
+%i %i %i
+1 0
+LOCALWF
+INIFIBND
+%i %i
+END
+CRYAPI_OUT
+END
+END""" % (newk, newk, newk, virt[0]+1, virt[-1])
     
     
     

@@ -1428,27 +1428,7 @@ class tmat():
 
     #def kspace_svd_inv()
 
-    def kspace_svd_lowdin(self, screening_threshold = 1e-10):
-        # construct self^-.5
-        n_points = np.max(np.array([n_lattice(self)]), axis = 0)
-        self_k = transform(self, np.fft.fftn, n_points = n_points)
-
-        u = tmat()
-        u.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], self_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
-        u.blocks*=0.0
-
-        for i in np.arange(len(self_k.blocks)-1):
-            u_,s_,vh_ = np.linalg.svd(self_k.blocks[i])
-
-            screen = s_**-.5>=screening_threshold
-            #print(screen)
-            
-
-
-            u.blocks[i] = np.dot(vh_.T.conj()[:, screen], np.dot(np.diag(s_[screen]**-.5), u_.T.conj())[screen,:])
-
-        u = transform(u, np.fft.ifftn, n_points = n_points, complx = False)
-        return u
+    
 
 
     def kspace_svd(self):
@@ -1537,6 +1517,71 @@ class tmat():
 
         for i in np.arange(len(self_k.blocks)-1):
             self_k.blocks[i] -= other_k.blocks[i]
+
+    def kspace_svd_lowdin_(self, screening_threshold = 1e-10):
+        # construct self^-.5
+        n_points = np.max(np.array([n_lattice(self)]), axis = 0)
+        self_k = transform(self, np.fft.fftn, n_points = n_points)
+        #print(n_points)
+
+        u = tmat()
+        u.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], self_k.blockshape[1]), dtype = np.complex), self_k.coords, safemode = False)
+        u.blocks*=0.0
+
+        for i in np.arange(len(self_k.blocks)-1):
+            u_,s_,vh_ = np.linalg.svd(self_k.blocks[i])
+
+            screen = s_**-.5>=screening_threshold
+            #print(screen)
+            
+
+
+            u.blocks[i] = np.dot(vh_.T.conj()[:, screen], np.dot(np.diag(s_[screen]**-.5), u_.T.conj())[screen,:])
+
+        u = transform(u, np.fft.ifftn, n_points = n_points, complx = False)
+        return u
+    
+    def kspace_svd_lowdin(self, n_points = None, tolerance = 1e-10):
+        # construct self^-.5
+
+        if n_points is None:
+            n_points = np.max(np.abs(self.coords), axis = 0)
+
+        #print()
+
+        nx,ny,nz = 2*n_points + 1
+        m1x,m1y = self.blocks.shape[1], self.blocks.shape[2]
+
+        coords = np.roll(lattice_coords(n_points).reshape(nx,ny,nz, 3), -n_points, axis = (0,1,2)).reshape(nx*ny*nz, 3)
+
+        m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
+        
+        M1 = np.fft.fftn(m1r, axes = (0,1,2))
+        M3 = np.zeros((nx,ny,nz,m1x, m1y),dtype = np.complex128)
+
+
+        for c in coords:
+            u_,s_,vh_ = np.linalg.svd(M1[c[0], c[1], c[2]])
+            b = M1[c[0], c[1], c[2]]
+
+            t = s_>tolerance #screening
+            if np.any(t == False):
+                print("Warning (SVD): poorly conditioned JK matrix (singular values).") #, s_)
+
+            #u.blocks[i] = np.dot(vh_.T.conj()[:, screen], np.dot(np.diag(s_[screen]**-.5), u_.T.conj())[screen,:])
+                
+            pinv = np.dot(vh_.T.conj()[:, t], np.dot(np.diag(s_[t]**-.5), u_.T.conj())[t,:])
+            #pinv = np.dot(vh_[t,:].conj().T, np.dot(np.diag(s_[t]**-.5), u_[:,t].conj().T))
+            #x = np.dot(pinv, b)
+
+            M3[c[0], c[1], c[2]] = pinv #x
+        
+
+        
+
+        ret = tmat()
+        ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m1y), axes = (0,1,2)).real.reshape(coords.shape[0], m1x,m1y), coords)
+        return ret
 
         
 

@@ -25,8 +25,22 @@ struct engine{
         void set_operator_emultipole(){_opt = libint2::Operator::emultipole3;}
         void set_operator_kinetic(){_opt = libint2::Operator::kinetic;}
         void set_integrator_params(double w){_integrator.set_params(w);}
+		
         void set_braket_xsxs(){_integrator.set(libint2::BraKet::xs_xs);}
         std::vector<double> get(){return std::vector<double>(4,2.0);};
+
+		void set_charges(std::string geometry_p, std::string geometry_q){
+			ifstream input_file_p(geometry_p);
+			vector<libint2::Atom> atoms_p = libint2::read_dotxyz(input_file_p);
+			//libint2::BasisSet obs_p(basis_p, atoms_p);
+
+			ifstream input_file_q(geometry_q);
+			vector<libint2::Atom> atoms_q = libint2::read_dotxyz(input_file_q);
+			//libint2::BasisSet obs_q(basis_q, atoms_q);
+
+
+			
+			_integrator.set_params(libint2::make_point_charges(atoms_q));}
 
         
         //  Two body interaction integrals
@@ -272,6 +286,8 @@ struct engine{
                    //_retbuff = std::vector<std::vector<float>>  (np, vector<float>(nq,0.0));
         
 };
+
+
 
 
         std::vector<vector<double>> get_pq(std::string geometry_p,
@@ -620,6 +636,7 @@ PYBIND11_MODULE(lwrap, m) {
 		.def("set_operator_emultipole", &engine::set_operator_emultipole)
         .def("set_braket_xsxs", &engine::set_braket_xsxs)
         .def("set_integrator_params", &engine::set_integrator_params)
+		.def("set_charges", &engine::set_charges)
         .def("set_operator_erf", &engine::set_operator_erf)
         .def("set_operator_erfc", &engine::set_operator_erfc)
         .def("setup_pqpq", &engine::setup_pqpq)

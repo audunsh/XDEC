@@ -194,6 +194,7 @@ class amplitude_solver():
 
     def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = True):
         # Standard solver for orthogonal virtual space
+        #self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i([0,0,0]) ] ] *= 0
 
         
         t0 = time.time()
@@ -221,6 +222,9 @@ class amplitude_solver():
         ii_mask = ii_mask.ravel()<self.occupied_cutoff   # active occupied indices
         
         i0_mask = self.d_ii.cget([0,0,0])[self.fragment[0], :]<self.occupied_cutoff #active occupied indices in reference cell
+        print("i0_mask:", i0_mask)
+        print("self.d_ii:", self.d_ii.cget([0,0,0])[self.fragment[0], :])
+        print("fragmetn:", self.fragment[0])
 
 
         # Unfold Fock-matrix
@@ -346,6 +350,7 @@ class amplitude_solver():
         t0a = 0
         t0b = 0
         t0c = 0
+        t0c_2 = 0
         t0d = 0
 
 
@@ -358,14 +363,14 @@ class amplitude_solver():
 
             t2new -= np.einsum("icjb,ac->iajb", t2s, Faa) #*0
 
-            t0a += t0_-time.time()
+            t0a += time.time()-t0_
             t0_ = time.time()
 
             # D2
 
             t2new -= np.einsum("iajc,bc->iajb", t2s, Faa)
 
-            t0b += t0_-time.time()
+            t0b += time.time()-t0_
             t0_ = time.time()
 
             # D3 
@@ -374,9 +379,14 @@ class amplitude_solver():
             t2s_ = t2s_.ravel()
             t2s_[idx_f_mask] = 0
             t2s_ = t2s_.reshape(idx_f.shape)
-            t2new += np.einsum("kajb,ki->iajb", t2s_, Fii[:, :t2s.shape[0]])
 
-            t0c += t0_-time.time()
+            t0c_2 += time.time()-t0_
+            t0_ = time.time()
+            
+            #t2new += np.einsum("ki,kajb->iajb", Fii[:, :t2s.shape[0]], t2s_)
+            t2new += np.einsum("ik,kajb->iajb", Fii[:t2s.shape[0], :], t2s_)
+
+            t0c += time.time()-t0_
             t0_ = time.time()
 
 
@@ -389,7 +399,7 @@ class amplitude_solver():
             t2s -= damping*t2new*(fiajb**-1)
 
             abs_dev = np.max(np.abs(t2new))
-            t0d += t0_-time.time()
+            t0d += time.time()-t0_
             t0_ = time.time()
 
 
@@ -403,7 +413,9 @@ class amplitude_solver():
         print("Solving (1):", time.time()-t0)
         print(t0a)
         print(t0b)
+        print(t0c_2)
         print(t0c)
+
         print(t0d)
         t0 = time.time()
 
@@ -459,6 +471,8 @@ class amplitude_solver():
 
             t20 = t2s[f0_mask][:, :, i0_full_mask]
             v20 = v2s[f0_mask][:, :, i0_full_mask]
+
+            print("abs.max. fragment amplitude:", np.max(np.abs(t20)), np.linalg.norm(t20))
             
 
             energy = 2*np.einsum("iajb,iajb", t20, v20) - np.einsum("iajb,ibja", t20, v20)
@@ -475,6 +489,27 @@ class amplitude_solver():
             d_ii_1.blocks[d_ii_1.mapping[ d_ii_1._c2i(np.array([0,0,0]))], self.fragment[0], self.fragment] = 1
 
             f0_mask = np.array((d_ii_1.cget([0,0,0])[self.fragment[0], :].ravel())[i0_mask], dtype = np.bool) #fragment 1 in refcell, only indexes in refcell
+
+            print("f0_mask", f0_mask)
+            e_ij =  2*np.einsum("iajb,iajb->j", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->j", t2s[f0_mask], v2s[f0_mask])
+            d_ij = self.d_ii.cget(ocoords)[:, self.fragment[0], :].ravel()[ii_mask]
+
+            s_ij = np.argsort(d_ij)
+
+            print(e_ij.shape)
+            print(d_ij.shape)
+            print("energy_ij:", e_ij[s_ij])
+            print("d_ij:", d_ij[s_ij])
+            
+            #print("distance_ij", d_ij)
+            e_a =  2*np.einsum("iajb,iajb->a", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->a", t2s[f0_mask], v2s[f0_mask])
+            d_a = self.d_ia.cget(vcoords)[:, self.fragment[0], :].ravel()[ia_mask]
+            a_s = np.argsort(d_a)
+
+            print(e_a[a_s])
+            print(d_a[a_s])
+
+
 
             energy = 2*np.einsum("iajb,iajb", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja", t2s[f0_mask], v2s[f0_mask])
             print("Energy (1):", time.time()-t0)
@@ -3470,7 +3505,11 @@ class fragment_amplitudes(amplitude_solver):
                                     #ddL_, mM_, ddM_ = m[4], m[5], m[6]
                                     self.g_x[:, ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)
                                     n_computed_ex += 1
-                        print("Computed RI-integrals ", dL, dM, " in %.2f seconds." % (time.time()-t0))
+                        print("Computed RI-integrals ", dL, dM, " in %.2f seconds." % (time.time()-t0), \
+                                M, \
+                                np.abs(I.cget(M)).max(), 
+                                np.abs(self.ib.XregT[dL[0], dL[1], dL[2]].blocks).max() , \
+                                np.abs(self.ib.XregT[dM[0], dM[1], dM[2]].blocks).max() )
                         #print(sq_i)
 
 
@@ -3764,6 +3803,7 @@ class fragment_amplitudes(amplitude_solver):
         n_virt = self.ib.n_virt
 
         v_map = np.ones((Nv, No, Nv), dtype = np.bool) #avoid redundant calculations
+        v_map[:self.n_virtual_cells,:self.n_occupied_cells,:self.n_virtual_cells] = False
 
 
         # Note: forking here is due to intended future implementation of block-specific initialization
@@ -3783,6 +3823,8 @@ class fragment_amplitudes(amplitude_solver):
                     g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)
                     g_x_new[:, :self.n_virtual_cells, :, :self.n_occupied_cells, : , :self.n_virtual_cells, :] = self.g_x
                     self.g_x = g_x_new
+
+                
 
 
                 #g_x_new = np.zeros((n_occ, Nv, n_virt, No, n_occ, Nv, n_virt), dtype = self.float_precision)

@@ -455,6 +455,8 @@ def compute_onebody(p,s, T = np.array([[0,0,0]]), operator = "overlap", conversi
 
 
     lint.setup_pq(atomsJ, bname, atomsK, bname)
+    if operator == "nuclear":
+        lint.set_charges(atomsK,atomsJ)
     vint = np.array(lint.get_pq(atomsJ, bname, atomsK, bname))
     return vint
 
@@ -493,7 +495,7 @@ def compute_overlap_matrix(p, T = np.array([[0,0,0]]), conversion_factor = .5291
     lint.setup_pq(atomsJ, bname, atomsK, bname)
     vint = np.array(lint.get_pq(atomsJ, bname, atomsK, bname))
     vint = vint.reshape((p.get_n_ao(), T.shape[0], p.get_n_ao())).swapaxes(0,1)
-    print(vint.shape)
+    #print(vint.shape)
     s = tp.tmat()
     s.load_nparray(vint, T)
     return s
@@ -961,7 +963,7 @@ class estimate_coordinate_domain():
                 break
         return np.max(np.abs(self.coords[self.R<cmR]), axis = 0), cmR
     
-    def compute_Jmn(self, c2, thresh = 1e-8):
+    def compute_Jmn(self, c2, thresh = 1e-10):
         
         Jmn_full = []
         N_blocks = 0
