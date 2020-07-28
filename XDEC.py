@@ -222,10 +222,7 @@ class amplitude_solver():
         ii_mask = ii_mask.ravel()<self.occupied_cutoff   # active occupied indices
         
         i0_mask = self.d_ii.cget([0,0,0])[self.fragment[0], :]<self.occupied_cutoff #active occupied indices in reference cell
-        print("i0_mask:", i0_mask)
-        print("self.d_ii:", self.d_ii.cget([0,0,0])[self.fragment[0], :])
-        print("fragmetn:", self.fragment[0])
-
+        
 
         # Unfold Fock-matrix
         Fii = self.f_mo_ii.tofull(self.f_mo_ii, ocoords, ocoords)[ii_mask][:, ii_mask]
@@ -343,6 +340,9 @@ class amplitude_solver():
 
         
         nvt = np.sum(ia_mask) #number of axtive virtuals
+        ni = t2s.shape[0]
+        nj = t2s.shape[2]
+
 
         print("Preparations (2):", time.time()-t0)
         t0 = time.time()
@@ -361,14 +361,18 @@ class amplitude_solver():
 
             # D1
 
-            t2new -= np.einsum("icjb,ac->iajb", t2s, Faa) #*0
+            #t2new -= np.einsum("icjb,ac->iajb", t2s, Faa) 
+            t2new -= np.dot(t2s.swapaxes(1,3).reshape(ni*nvt*nj, nvt), Faa).reshape(ni, nvt, nj, nvt).swapaxes(1,3)
+
+
 
             t0a += time.time()-t0_
             t0_ = time.time()
 
             # D2
+            #t2new -= np.einsum("iajc,bc->iajb", t2s, Faa)
+            t2new -= np.dot(t2s.reshape(ni*nvt*nj, nvt), Faa).reshape(ni, nvt, nj, nvt)
 
-            t2new -= np.einsum("iajc,bc->iajb", t2s, Faa)
 
             t0b += time.time()-t0_
             t0_ = time.time()
@@ -383,8 +387,10 @@ class amplitude_solver():
             t0c_2 += time.time()-t0_
             t0_ = time.time()
             
-            #t2new += np.einsum("ki,kajb->iajb", Fii[:, :t2s.shape[0]], t2s_)
-            t2new += np.einsum("ik,kajb->iajb", Fii[:t2s.shape[0], :], t2s_)
+            #t2new += np.einsum("ik,kajb->iajb", Fii[:t2s.shape[0], :], t2s_)
+            t2new += np.dot(Fii[:t2s.shape[0], :], t2s_.reshape(nj, nvt*nj*nvt)).reshape(ni, nvt, nj, nvt)
+
+
 
             t0c += time.time()-t0_
             t0_ = time.time()
@@ -394,7 +400,8 @@ class amplitude_solver():
 
             # D4
 
-            t2new += np.einsum("iakb,kj->iajb", t2s, Fii)
+            #t2new += np.einsum("iakb,kj->iajb", t2s, Fii)
+            t2new += np.dot(t2s.swapaxes(2,3).reshape(ni*nvt*nvt, nj), Fii).reshape(ni,nvt,nvt,nj).swapaxes(2,3)
             
             t2s -= damping*t2new*(fiajb**-1)
 
@@ -411,12 +418,11 @@ class amplitude_solver():
         print("Time per iteration:", t_t)
 
         print("Solving (1):", time.time()-t0)
-        print(t0a)
-        print(t0b)
-        print(t0c_2)
-        print(t0c)
-
-        print(t0d)
+        print("         D1:", t0a)
+        print("         D2:", t0b)
+        print("(unfold) D3:", t0c_2)
+        print("         D3:", t0c)
+        print("         D4:", t0d)
         t0 = time.time()
 
         
@@ -490,24 +496,24 @@ class amplitude_solver():
 
             f0_mask = np.array((d_ii_1.cget([0,0,0])[self.fragment[0], :].ravel())[i0_mask], dtype = np.bool) #fragment 1 in refcell, only indexes in refcell
 
-            print("f0_mask", f0_mask)
+            #print("f0_mask", f0_mask)
             e_ij =  2*np.einsum("iajb,iajb->j", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->j", t2s[f0_mask], v2s[f0_mask])
             d_ij = self.d_ii.cget(ocoords)[:, self.fragment[0], :].ravel()[ii_mask]
 
             s_ij = np.argsort(d_ij)
 
-            print(e_ij.shape)
-            print(d_ij.shape)
-            print("energy_ij:", e_ij[s_ij])
-            print("d_ij:", d_ij[s_ij])
+            #print(e_ij.shape)
+            #print(d_ij.shape)
+            #print("energy_ij:", e_ij[s_ij])
+            #print("d_ij:", d_ij[s_ij])
             
             #print("distance_ij", d_ij)
             e_a =  2*np.einsum("iajb,iajb->a", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->a", t2s[f0_mask], v2s[f0_mask])
             d_a = self.d_ia.cget(vcoords)[:, self.fragment[0], :].ravel()[ia_mask]
             a_s = np.argsort(d_a)
 
-            print(e_a[a_s])
-            print(d_a[a_s])
+            #print(e_a[a_s])
+            #print(d_a[a_s])
 
 
 
@@ -3505,18 +3511,20 @@ class fragment_amplitudes(amplitude_solver):
                                     #ddL_, mM_, ddM_ = m[4], m[5], m[6]
                                     self.g_x[:, ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)
                                     n_computed_ex += 1
-                        print("Computed RI-integrals ", dL, dM, " in %.2f seconds." % (time.time()-t0), \
-                                M, \
-                                np.abs(I.cget(M)).max(), 
-                                np.abs(self.ib.XregT[dL[0], dL[1], dL[2]].blocks).max() , \
-                                np.abs(self.ib.XregT[dM[0], dM[1], dM[2]].blocks).max() )
+                        print("Computed RI-integrals ", dL, dM, " in %.2f seconds." % (time.time()-t0))
+                        #, \
+                        #        M, \
+                        #        np.abs(I.cget(M)).max(), 
+                        #        np.abs(self.ib.XregT[dL[0], dL[1], dL[2]].blocks).max() , \
+                        #        np.abs(self.ib.XregT[dM[0], dM[1], dM[2]].blocks).max() )
                         #print(sq_i)
 
 
                         k = l*1
 
                 j = i*1
-        print("n_computed_di:", n_computed_di)
+        #print("n_computed_di:", n_computed_di)
+
 
     #def compute_energy_map(self, exchange = True):
 
@@ -7973,16 +7981,16 @@ if __name__ == "__main__":
 
             #print("Frag init:", time.time()-t0)
 
-            dt, it = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = 1e-10, damping = args.damping)
+            dt, it, E_prev_outer = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = 1e-10, damping = args.damping, energy = "cim")
 
 
             print(dt, it)
             print("shape:", a_frag.g_d.shape)
             # Converge to fot
             #E_prev_outer = a_frag.compute_energy(exchange = True)
-            E_prev_outer = a_frag.compute_cim_energy(exchange = True)
+            #E_prev_outer = a_frag.compute_cim_energy(exchange = True)
 
-            print("fragment_energy:", a_frag.compute_fragment_energy())
+            #print("fragment_energy:", a_frag.compute_fragment_energy())
             E_prev = E_prev_outer*1.0
             dE_outer = 10
 

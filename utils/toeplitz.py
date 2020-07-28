@@ -1782,7 +1782,60 @@ class tmat():
 
         ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
         return ret
-    def kspace_eig(self):
+
+    def kspace_eig(self, n_points = None, tolerance = 1e-10, real = False):
+        # construct self^-.5
+
+        if n_points is None:
+            n_points = np.max(np.abs(self.coords), axis = 0)
+
+        #print()
+
+        nx,ny,nz = 2*n_points + 1
+        m1x,m1y = self.blocks.shape[1], self.blocks.shape[2]
+
+        coords = np.roll(lattice_coords(n_points).reshape(nx,ny,nz, 3), -n_points, axis = (0,1,2)).reshape(nx*ny*nz, 3)
+
+        m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
+        
+        M1 = np.fft.fftn(m1r, axes = (0,1,2))
+        M3 = np.zeros((nx,ny,nz,m1x, m1y),dtype = np.complex128)
+        M4 = np.zeros((nx,ny,nz,m1x, m1y),dtype = np.complex128)
+
+
+        for c in coords:
+            evals, evecs = np.linalg.eig(M1[c[0], c[1], c[2]])
+            
+            
+
+            M3[c[0], c[1], c[2]] = np.diag(evals) #x
+            M4[c[0], c[1], c[2]] = evecs #x
+        
+
+        
+        if real:
+            ret_evals = tmat()
+            ret_evals.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m1y), axes = (0,1,2)).real.reshape(coords.shape[0], m1x,m1y), coords)
+
+
+            ret_evecs = tmat()
+            ret_evecs.load_nparray(np.fft.ifftn(M4.reshape(nx,ny,nz,m1x,m1y), axes = (0,1,2)).real.reshape(coords.shape[0], m1x,m1y), coords)
+
+            return ret_evals, ret_evecs
+        
+        else:
+            ret_evals = tmat()
+            ret_evals.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m1y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m1y), coords, safemode = False)
+
+
+            ret_evecs = tmat()
+            ret_evecs.load_nparray(np.fft.ifftn(M4.reshape(nx,ny,nz,m1x,m1y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m1y), coords, safemode = False)
+
+            return ret_evals, ret_evecs
+
+
+    
+    def kspace_eig_(self):
         n_points = n_lattice(self)
         self_k = transform(self, np.fft.fftn, n_points = n_points)
 

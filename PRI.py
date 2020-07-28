@@ -415,7 +415,7 @@ def compute_Jmn(p, s, attenuation = 0.0, auxname = "cc-pvdz", coulomb = False, n
 
     return Jmn
 
-def compute_onebody(p,s, T = np.array([[0,0,0]]), operator = "overlap", conversion_factor = .5291772109200000):
+def compute_onebody(p,s, T = np.array([[0,0,0]]), nearfield = np.array([[0,0,0]]), operator = "overlap", conversion_factor = .5291772109200000):
     """
     Computes integrals of the type
         ( 0 p | O^ | T q)
@@ -449,15 +449,28 @@ def compute_onebody(p,s, T = np.array([[0,0,0]]), operator = "overlap", conversi
         lint.set_operator_overlap()
     if operator == "kinetic":
         lint.set_operator_kinetic()
+
     if operator == "nuclear":
+        atomsK0 = "atoms_K0.xyz"
         lint.set_operator_nuclear()
+        
 
 
 
     lint.setup_pq(atomsJ, bname, atomsK, bname)
     if operator == "nuclear":
-        lint.set_charges(atomsK,atomsJ)
+        f = open(atomsK0, "w")
+        f.write(get_xyz(p, nearfield, conversion_factor=conversion_factor))
+        f.close()
+        
+        lint.set_charges(atomsJ,atomsK0)
+
     vint = np.array(lint.get_pq(atomsJ, bname, atomsK, bname))
+
+
+
+
+
     return vint
 
 def compute_overlap_matrix(p, T = np.array([[0,0,0]]), conversion_factor = .5291772109200000):

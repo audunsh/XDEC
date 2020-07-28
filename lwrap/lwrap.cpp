@@ -11,6 +11,7 @@ struct engine{
     private:
         libint2::Engine _integrator;
         libint2::Operator _opt;
+		//int _nuclear = 0;
         //std::vector<std::vector<float>> _retbuff; //return buffer
     public:
         engine(){libint2::initialize();
@@ -30,6 +31,8 @@ struct engine{
         std::vector<double> get(){return std::vector<double>(4,2.0);};
 
 		void set_charges(std::string geometry_p, std::string geometry_q){
+			//_nuclear = 1;
+			
 			ifstream input_file_p(geometry_p);
 			vector<libint2::Atom> atoms_p = libint2::read_dotxyz(input_file_p);
 			//libint2::BasisSet obs_p(basis_p, atoms_p);
@@ -38,9 +41,33 @@ struct engine{
 			vector<libint2::Atom> atoms_q = libint2::read_dotxyz(input_file_q);
 			//libint2::BasisSet obs_q(basis_q, atoms_q);
 
+			/*
+
+			std::vector<std::pair<double,std::array<double,3>>> q;
+			for(const auto& atom : atoms_q) {
+				q.push_back( {static_cast<double>(atom.atomic_number), {{atom.x*1.8897261339212517, atom.y*1.8897261339212517, atom.z*1.8897261339212517}}} );
+			} */
+
+			std::vector<std::pair<double, std::array<double, 3>>> q;
+			q.reserve(atoms_q.size());
+			for (const auto& atom : atoms_q) {
+			//cout << static_cast<double>(atom.atomic_number) << endl;
+			q.emplace_back(static_cast<double>(atom.atomic_number),
+							std::array<double, 3>{{atom.x, atom.y, atom.z}});
+							//std::array<double, 3>{{static_cast<double>(atom.atomic_number), static_cast<double>(atom.atomic_number), static_cast<double>(atom.atomic_number)}});
+			}
+			
+
+			_integrator.set_params(q);
+			//_integrator.set_q(q);
+			
+
+			//_integrator.set_params(libint2::make_point_charges(atoms_q));
+			} 
+
 
 			
-			_integrator.set_params(libint2::make_point_charges(atoms_q));}
+			//_integrator.set_params(libint2::make_point_charges(atoms_q));}
 
         
         //  Two body interaction integrals
@@ -306,6 +333,17 @@ struct engine{
                    ifstream input_file_q(geometry_q);
                    vector<libint2::Atom> atoms_q = libint2::read_dotxyz(input_file_q);
                    libint2::BasisSet obs_q(basis_q, atoms_q);
+
+				   /*if (_nuclear == 1){
+					   std::vector<std::pair<double,std::array<double,3>>> q;
+						for(const auto& atom : atoms_q) {
+							q.push_back( {static_cast<double>(atom.atomic_number), {{atom.x, atom.y, atom.z}}} );
+						}
+
+						_integrator.set_params(q);
+					   
+
+				   //}*/
 
            //std::vector<float> results; // list for results, to be returned to python
 

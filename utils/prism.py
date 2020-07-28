@@ -57,7 +57,10 @@ class mo_function():
 
 
 class prism():
-    def __init__(self, filename):
+    def __init__(self, filename, theta = None):
+        self.theta = theta
+        
+
         self.filename = filename
         if filename.split(".")[-1] == "npy":
             self.load(filename)
@@ -88,6 +91,7 @@ class prism():
             f_testgeom = open(filename_tg, "w")
             f_testgeom.write(testgeom)
             f_testgeom.close()
+            
             
             # Get periodicity
             self.cperiodicity = f.split("\n")[1]
@@ -778,6 +782,14 @@ class prism():
     def get_libint_basis(self):
         crystal_basis, basis_info, libint_basis = ci.d2c_basis(self.get_lsdalton_basis())
         return libint_basis
+
+    def rotation_matrix(self, i):
+        ti = self.theta*i
+        return np.array([[ 1, 0, 0],
+                         [0,  np.cos(ti), np.sin(ti)],
+                         [0, -np.sin(ti), np.cos(ti)]])
+
+
         
             
     def get_atoms(self, m = [[0,0,0]]):
@@ -795,7 +807,13 @@ class prism():
             
             for c in range(len(self.charges)):
                 #print(lattice, i, np.dot(lattice,i))
-                charge, pos = self.charges[c],self.atoms[c]+np.dot(i,lattice)
+                charge, pos = self.charges[c],self.atoms[c] #+np.dot(i,lattice)
+                if self.theta is not None:
+                    pos = np.dot(self.rotation_matrix(i[0]), pos) + np.dot(i,lattice)
+                else:
+
+                    pos = pos + np.dot(i,lattice)
+
                 #charge, pos = self.charges[c],self.atoms[c]-np.dot(lattice, i)
 
                 Positi.append(pos)
