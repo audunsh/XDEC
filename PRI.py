@@ -1237,7 +1237,7 @@ class coefficient_fitter_static():
             self.coords.append(c2)
             self.Jmn.append( Jmnc2 ) #New formulation without uppercase-transpose
 
-            print("Jmn_integrals:", c2, np.max(np.abs(Jmnc2.coords), axis = 0), np.linalg.norm(Jmnc2.cget([0,0,0])),np.linalg.norm(Jmnc2.cget([20,0,0])))
+            print("Jmn_integrals:", c2, np.max(np.abs(Jmnc2.coords), axis = 0), np.linalg.norm(Jmnc2.cget([0,0,0])),np.linalg.norm(Jmnc2.cget([20,0,0])), np.abs(np.max(Jmnc2.blocks)))
 
             #print("Min overall:", np.max(np.abs(Jmnc2.blocks)))
 
@@ -1284,7 +1284,7 @@ class coefficient_fitter_static():
         #else:
 
 
-        Nc = 40
+        Nc = 30
         cellcut = 35
         if p.cperiodicity == "POLYMER":
             cellcut = 180
@@ -1298,9 +1298,15 @@ class coefficient_fitter_static():
             Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,Nc,Nc]))**2, axis = 1))
             pq_region = tp.lattice_coords([Nc,Nc,Nc])[Rc<=cellcut]
 
+            
+
         
         self.pq_region = pq_region[np.argsort(np.sum(p.coor2vec(pq_region)**2, axis = 1))]
 
+        #self.pq_region = self.JK.coords[np.argsort(np.sum(p.coor2vec(self.JK.coords)**2, axis = 1))]*1
+
+        #print(self.JK.coords)
+        #print(self.pq_region)
 
         
 
@@ -1541,7 +1547,7 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
 
             # Screen out zero blocks here 
             #cs = np.max(np.abs(c_occ_blocks), axis = (1,2))>xi1
-            cs = np.any(np.greater(np.abs(c_occ_blocks), xi1), axis = (1,2))
+            cs = np.any(np.greater(np.abs(c_occ_blocks),xi1), axis = (1,2))
 
 
             #bs = np.max(np.abs(Jmn_blocks), axis = (1,2,3))>xi1

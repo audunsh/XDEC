@@ -435,8 +435,8 @@ class amplitude_solver():
             print(get_progress_bar(i,maxiter), end="\r")
         print(" ")
 
-        t_t = (time.time()-t0)/i
-        print("Time per iteration:", t_t)
+        #t_t = (time.time()-t0)/
+        #print("Time per iteration:", t_t)
 
         print("Solving (1):", time.time()-t0)
         print("         D1:", t0a)
@@ -5964,6 +5964,7 @@ if __name__ == "__main__":
     parser.add_argument("-inverse_test", action = "store_true",  default = False, help="Perform inversion and condition testing")
     parser.add_argument("-pair_domain_def", type = int, default = 0, help = "Specification of pair domain type")
     parser.add_argument("-coeff_screen", type = float, default = None, help="Screen coefficients blockwise.")
+    parser.add_argument("-error_estimate", type = bool, default = False, help = "Perform error estimate on DEC fragment energies." )
     
  
 
@@ -6547,18 +6548,25 @@ if __name__ == "__main__":
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
-                    try:
-                        p_, cov = optimize.curve_fit(fitting_function, np.array(virtu_cut_), np.array(e_mp2))
-                        if estimated_pts>=2:
-                            dE_estimate = np.abs(E_new_v - p_[0])
+                    if args.error_estimate:
 
-                        print("Estimated error in energy            : %.6e" % np.abs(E_new_v - p_[0]))
-                        estimated_pts += 1
+                        try:
+                            p_, cov = optimize.curve_fit(fitting_function, np.array(virtu_cut_), np.array(e_mp2))
+                            if estimated_pts>=2:
+                                dE_estimate = np.abs(E_new_v - p_[0])
 
-                    except:
-                        print("Unable to estimate error.")
-                        print(" ")
-                    print("estimated_pts", estimated_pts)
+                            print("Estimated error in energy            : %.6e" % np.abs(E_new_v - p_[0]))
+                            estimated_pts += 1
+
+                        except:
+                            print("Unable to estimate error.")
+                            print(" ")
+                        print("estimated_pts", estimated_pts)
+
+                    else:
+                        dE_estimate = 0
+
+                    
                     print("Current memory usage of integrals (in bytes): %.2f" % ib.nbytes())
                     print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
                     print(" ")
@@ -6858,18 +6866,22 @@ if __name__ == "__main__":
                     print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
-                    try:
-                        p_, cov = optimize.curve_fit(fitting_function, np.array(virtu_cut_), np.array(e_mp2))
-                        if estimated_pts>=2:
-                            dE_estimate = np.abs(E_new_v - p_[0])
+                    if args.error_estimate:
 
-                        print("Estimated error in energy            : %.6e" % np.abs(E_new_v - p_[0]))
-                        estimated_pts += 1
+                        try:
+                            p_, cov = optimize.curve_fit(fitting_function, np.array(virtu_cut_), np.array(e_mp2))
+                            if estimated_pts>=2:
+                                dE_estimate = np.abs(E_new_v - p_[0])
 
-                    except:
-                        print("Unable to estimate error.")
-                        print(" ")
-                    print("estimated_pts", estimated_pts)
+                            print("Estimated error in energy            : %.6e" % np.abs(E_new_v - p_[0]))
+                            estimated_pts += 1
+
+                        except:
+                            print("Unable to estimate error.")
+                            print(" ")
+                        print("estimated_pts", estimated_pts)
+
+
                     print("Current memory usage of integrals (in bytes): %.2f" % ib.nbytes())
                     print("Max.dev. residual: %.2e . Number of iterations: %i" % (dt, it))
                     print(" ")
@@ -7355,17 +7367,18 @@ if __name__ == "__main__":
                         virtu_cut_ee.append(a_frag.virtual_cutoff)
 
                         #conv_stats.append([dt, it, E_new, dE_v,a_frag.virtual_cutoff, a_frag.n_virtual_tot,a_frag.occupied_cutoff, a_frag.n_occupied_tot])
-                        try:
-                            p_, cov = optimize.curve_fit(fitting_function, np.array(virtu_cut_ee), np.array(e_mp2_ee))
-                            if estimated_pts>=2:
-                                dE_estimate = np.abs(E_new_v - p_[0])
+                        if args.error_estimate:
+                            try:
+                                p_, cov = optimize.curve_fit(fitting_function, np.array(virtu_cut_ee), np.array(e_mp2_ee))
+                                if estimated_pts>=2:
+                                    dE_estimate = np.abs(E_new_v - p_[0])
 
-                            print("Estimated error in energy            : %.6e" % np.abs(E_new_v - p_[0]))
-                            estimated_pts += 1
+                                print("Estimated error in energy            : %.6e" % np.abs(E_new_v - p_[0]))
+                                estimated_pts += 1
 
-                        except:
-                            print("Unable to estimate error.")
-                            print(" ")
+                            except:
+                                print("Unable to estimate error.")
+                                print(" ")
 
 
 
