@@ -698,6 +698,8 @@ def invert_JK(JK):
 
 
     """
+    return JK.inv()
+    """
     n_points = np.array(tp.n_lattice(JK))
     #print(n_points)
     JKk = tp.transform(JK, np.fft.fftn, n_points = n_points)
@@ -709,6 +711,7 @@ def invert_JK(JK):
     JK_inv_direct = tp.transform(JKk_inv, np.fft.ifftn, n_points = n_points, complx = False)
 
     return JK_inv_direct
+    """
 
 
 def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 10e-12, auxname = "cc-pvdz-ri"):
@@ -1049,12 +1052,12 @@ class estimate_coordinate_domain():
         
         for i in np.arange(self.Ru.shape[0]-1):
             r0 = self.Ru[i]
-            r1 = self.Ru[i+1] +0.1
+            r1 = self.Ru[i+1] # +0.1
             
             
             s = tp.tmat()
             scoords = self.get_shell(r0,r1)
-            #print(scoords)
+            #print("shell:, r0, r1", r0, r1,scoords)
             s.load_nparray(np.ones((len(scoords), 2,2), dtype = float), scoords)
             #print(s.coords)
             
@@ -1139,7 +1142,7 @@ class coefficient_fitter_static():
         #for i in np.arange(20):
         #    xi_domain.append([dM[i], 1])
 
-        N_c_max_layers = 20
+        N_c_max_layers = 30
         cm = estimate_coordinate_domain(p, auxname, N_c_max_layers, attenuation = attenuation)
 
         C2 = tp.lattice_coords(n_points_p(p, N_c_max_layers))
@@ -1148,6 +1151,8 @@ class coefficient_fitter_static():
 
         C2 = C2[np.argsort(R)]
         R = R[np.argsort(R)]
+
+        #self.printing = True
 
         #print("C2:", C2, len(C2))
 
@@ -1171,183 +1176,75 @@ class coefficient_fitter_static():
             #c2 = ddM[i]
 
 
-            if False:
+        
+
+            #Jmnc2 = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
+            Jmnc2_temp = cm.compute_Jmn(c2, thresh = xi0)
+            #print(Jmnc2_temp.coords) 
+
+
+            Jmnc2_temp.set_precision(self.float_precision)
+            #print("Number of blocks in ")
+
+            screen = np.max(np.abs(Jmnc2_temp.cget(Jmnc2_temp.coords)), axis = (1,2))>=xi0
+            screen[np.sum(Jmnc2_temp.coords**2, axis = 1)==0] = True
+            
+            
+
+            # Screened distances
+            distances = np.sqrt(np.sum(self.p.coor2vec(Jmnc2_temp.coords)**2, axis = 1))
+
+            Jmnc2_max =  np.max(distances[screen])
+
+            
+            if np.sum(screen)>=1:
+                max_outer_5pcnt = np.max(Jmnc2_temp.cget(Jmnc2_temp.coords[distances>Jmnc2_max*0.95]))
+
+                max_coord = np.max(np.abs(Jmnc2_temp.coords), axis = 0)
+                
+                if self.printing:
+                    
+                    print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
+                    print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
+                    print("         Maximum value overall                              :", np.max(np.abs(Jmnc2_temp.blocks)))
+                    print("         c2 = ", c2)
+                    print("         R  = ", R2, "(", max_coord, ")")
+
+
+
+
+                
+                
+                #r_curr, r_prev = np.sum(p.coor2vec(c2)**2), np.sum(p.coor2vec(xi_domain[i-1][0])**2)
                 """
-                Alternative screening approach, somewhat inefficient but avoids premature truncation
-                It basically computes a large chunk, presumably larger than required
-                TODO: check boundaries for significant integrals, break if present
+                if cellmax<=Jmnc2_max:
+                    #if r_curr-r-prev
+                    print("Warning: Jmnc2 fitting integrals for c = ", c2, " exceeds predefined matrix extents.")
+                    print("         Jmnc2_max = %.2e,    truncation_threshold = %.2e" % (Jmnc2_max, cellcut))
+                    #print("         Max value at boundary: ", Jmnc2_temp)
+                    #print("         Truncation threshold (cellcut) should be increased.") 
+                    print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
+                    #print("->", c2, xi_domain[i-1][0])
+                    #print("->", np.sum(p.coor2vec(c2)**2), np.sum(p.coor2vec(xi_domain[i-1][0])**2))
+                cellcut =  Jmnc2_max*1.2#update truncation threshold
                 """
 
-                
+            Jmnc2 = tp.tmat()
 
+            Jmnc2.load_nparray(Jmnc2_temp.cget(Jmnc2_temp.coords[screen]), Jmnc2_temp.coords[screen])
 
-
-
-                Nc = self.N_c
-                if i == 0:
-                    cellcut = 65 # bohr
-                    c_x = np.sum(p.coor2vec([Nc,0,0])**2)
-                    c_y = np.sum(p.coor2vec([0,Nc,0])**2)
-                    c_z = np.sum(p.coor2vec([0,0,Nc])**2)
-                    #print()
-
-                    
-                if p.cperiodicity == "POLYMER":
-                    #cellcut = 165 # bohr
-                    if i== 0:
-                        cellcut = 2*np.sqrt(c_x)
-                        #cellcut = 165
-                    Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([2*Nc,0,0]))**2, axis = 1))
-                    bc = tp.lattice_coords([2*Nc,0,0])[Rc<=cellcut]
-                    
-                elif p.cperiodicity == "SLAB":
-                    if i == 0:
-                        cellcut = np.sqrt(np.max([c_x,c_y]))
-                    Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,Nc,0]))**2, axis = 1))
-                    bc = tp.lattice_coords([Nc,Nc,0])[Rc<=cellcut]
-                else:
-                    if i == 0:
-                        cellcut = np.sqrt(np.max([c_x,c_y, c_z]))
-                        print(" Cellcut0:", cellcut)
-                    Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,Nc,Nc]))**2, axis = 1))
-                    bc = tp.lattice_coords([Nc,Nc,Nc])[Rc<=cellcut] #Huge domain, will consume some memory
-                # if i == 0:
-                # print(bc)
-                cellmax = np.max(np.sqrt(np.sum(self.p.coor2vec(bc)**2, axis = 1)))
-
-                #print(c2)
-                """
-                Nc, cellmax = cm.estimate_attenuation_domain(thresh = xi0, c2 = c2)
-                bcoords = tp.lattice_coords(Nc)
-                bR = np.sqrt(np.sum(p.coor2vec(bcoords)**2, axis = 1))
-                bc = bcoords[bR<cellmax]
-                """
-                
-                print("fitting:", c2, bc.shape)
-                
-
-
-
-                big_tmat = tp.tmat()
-                big_tmat.load_nparray(np.ones((bc.shape[0], 2,2), dtype = float), bc)
-
-                # print(" Cellmax.", cellmax)
-                # print(bc.shape)
-
-
-
-                Jmnc2_temp = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2]))
-
-                
-
-
-
-
-
-                Jmnc2_temp.set_precision(self.float_precision)
-
-                screen = np.max(np.abs(Jmnc2_temp.cget(Jmnc2_temp.coords)), axis = (1,2))>=xi0
-                screen[np.sum(Jmnc2_temp.coords**2, axis = 1)==0] = True
-                
-                
-
-                # Screened distances
-                distances = np.sqrt(np.sum(self.p.coor2vec(Jmnc2_temp.coords)**2, axis = 1))
-
-                Jmnc2_max =  np.max(distances[screen])
-
-                
-                if np.sum(screen)>1:
-                    max_outer_5pcnt = np.max(Jmnc2_temp.cget(Jmnc2_temp.coords[distances>Jmnc2_max*0.95]))
-                    
-                    if self.printing:
-                        print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
-                        print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
-                        
-
-
-
-
-                    
-                    
-                    #r_curr, r_prev = np.sum(p.coor2vec(c2)**2), np.sum(p.coor2vec(xi_domain[i-1][0])**2)
-                    if cellmax<=Jmnc2_max:
-                        #if r_curr-r-prev
-                        print("Warning: Jmnc2 fitting integrals for c = ", c2, " exceeds predefined matrix extents.")
-                        print("         Jmnc2_max = %.2e,    truncation_threshold = %.2e" % (Jmnc2_max, cellcut))
-                        #print("         Max value at boundary: ", Jmnc2_temp)
-                        #print("         Truncation threshold (cellcut) should be increased.") 
-                        print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
-                        #print("->", c2, xi_domain[i-1][0])
-                        #print("->", np.sum(p.coor2vec(c2)**2), np.sum(p.coor2vec(xi_domain[i-1][0])**2))
-                    cellcut =  Jmnc2_max*1.2#update truncation threshold
-
-                Jmnc2 = tp.tmat()
-
-                Jmnc2.load_nparray(Jmnc2_temp.cget(Jmnc2_temp.coords[screen]), Jmnc2_temp.coords[screen])
-
-
-            else:
-
-                #Jmnc2 = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
-                Jmnc2_temp = cm.compute_Jmn(c2, thresh = xi0)
-                Jmnc2_temp.set_precision(self.float_precision)
-                #print("Number of blocks in ")
-
-                screen = np.max(np.abs(Jmnc2_temp.cget(Jmnc2_temp.coords)), axis = (1,2))>=xi0
-                screen[np.sum(Jmnc2_temp.coords**2, axis = 1)==0] = True
-                
-                
-
-                # Screened distances
-                distances = np.sqrt(np.sum(self.p.coor2vec(Jmnc2_temp.coords)**2, axis = 1))
-
-                Jmnc2_max =  np.max(distances[screen])
-
-                
-                if np.sum(screen)>1:
-                    max_outer_5pcnt = np.max(Jmnc2_temp.cget(Jmnc2_temp.coords[distances>Jmnc2_max*0.95]))
-                    
-                    if True: #self.printing:
-                        
-                        print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
-                        print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
-                        print("         Maximum value overall                              :", np.max(np.abs(Jmnc2_temp.blocks)))
-                        print("         c2 = ", c2)
-                        print("         R  = ", R2)
-
-
-
-
-                    
-                    
-                    #r_curr, r_prev = np.sum(p.coor2vec(c2)**2), np.sum(p.coor2vec(xi_domain[i-1][0])**2)
-                    """
-                    if cellmax<=Jmnc2_max:
-                        #if r_curr-r-prev
-                        print("Warning: Jmnc2 fitting integrals for c = ", c2, " exceeds predefined matrix extents.")
-                        print("         Jmnc2_max = %.2e,    truncation_threshold = %.2e" % (Jmnc2_max, cellcut))
-                        #print("         Max value at boundary: ", Jmnc2_temp)
-                        #print("         Truncation threshold (cellcut) should be increased.") 
-                        print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
-                        #print("->", c2, xi_domain[i-1][0])
-                        #print("->", np.sum(p.coor2vec(c2)**2), np.sum(p.coor2vec(xi_domain[i-1][0])**2))
-                    cellcut =  Jmnc2_max*1.2#update truncation threshold
-                    """
-
-                Jmnc2 = tp.tmat()
-
-                Jmnc2.load_nparray(Jmnc2_temp.cget(Jmnc2_temp.coords[screen]), Jmnc2_temp.coords[screen])
-
-
+            #if np.linalg.norm(Jmnc2.cget([0,0,0]))>1e-15:
             self.coords.append(c2)
             self.Jmn.append( Jmnc2 ) #New formulation without uppercase-transpose
+
+            print("Jmn_integrals:", c2, np.max(np.abs(Jmnc2.coords), axis = 0), np.linalg.norm(Jmnc2.cget([0,0,0])),np.linalg.norm(Jmnc2.cget([20,0,0])))
 
             #print("Min overall:", np.max(np.abs(Jmnc2.blocks)))
 
 
             if self.printing:
                 print("Intermediate overlaps (LJ|0mNn) with N =", c2, " included with %i blocks and maximum absolute %.2e" % (Jmnc2.blocks.shape[0],np.max(np.abs(Jmnc2.blocks)) ))
+                print("Max interm.:", np.abs(Jmnc2.blocks).max())
             if np.max(np.abs(Jmnc2.blocks))<xi0 and np.abs(R[ci]-R[ci+1])>1e-10:
                 #print("Min overall:", np.max(np.abs(Jmnc2.blocks)))
                 break
@@ -1376,7 +1273,18 @@ class coefficient_fitter_static():
 
         
 
-        Nc = 20
+        
+        
+        #pq_region = self.JK.coords
+
+        #self.pq_region = pq_region[np.argsort(np.sum(p.coor2vec(pq_region)**2, axis = 1))]
+
+        #if self.N_c>0:
+        #    pq_region = tp.lattice_coords(n_points_p(self.p, self.N_c))
+        #else:
+
+
+        Nc = 40
         cellcut = 35
         if p.cperiodicity == "POLYMER":
             cellcut = 180
@@ -1389,11 +1297,18 @@ class coefficient_fitter_static():
         else:
             Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,Nc,Nc]))**2, axis = 1))
             pq_region = tp.lattice_coords([Nc,Nc,Nc])[Rc<=cellcut]
+
         
         self.pq_region = pq_region[np.argsort(np.sum(p.coor2vec(pq_region)**2, axis = 1))]
 
+
+        
+
         # Contracting occupieds
         self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.NJ, self.Np = contract_occupieds(self.p, self.Jmn, self.coords, self.pq_region, self.c_occ, self.xi1)
+
+
+
         
         # Can delete self.Jmn now, no longer required and takes up a lot of memory
         del(self.Jmn)
@@ -1423,15 +1338,27 @@ class coefficient_fitter_static():
         for dM in np.arange(coords_q.shape[0]):
             if robust:
                 J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
+
+                
                 
                 n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
                 
                 pq_c.append([self.JK.kspace_svd_solve(J_pq_c, n_points = n_points), J_pq_c ])
             else:
                 J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
+
+                print("J_pq_c.coords:", np.max(np.abs(J_pq_c.coords), axis = 0))
+
+
+                
                 
                 n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
-                #n_points = n_points_p(self.p, self.N_c)
+                n_points = n_points_p(self.p, np.max(np.abs(self.JK.coords)))
+                #n_points = np.max()
+                if self.N_c>0:
+                    print("Userdefined coulomb extent:", self.N_c)
+                    #print(self.JK.coords)
+                    n_points = n_points_p(self.p, self.N_c)
                 #print("coefficient fitter statig, n_points:", n_points)
                 #print("C                      J_pq_c.shape:", J_pq_c.blocks.shape)
 
@@ -1441,6 +1368,9 @@ class coefficient_fitter_static():
                     self.JK.kspace_svd_solve(
                         J_pq_c, 
                         n_points = n_points))
+                    
+                    #self.JK.kspace_svd_solve(
+                    #    J_pq_c))
 
 
                 #print("                   pq_c.blocks.shape:", pq_c[-1].blocks.shape)
@@ -1496,7 +1426,7 @@ def contract_virtuals(OC_L_np, c_virt_coords_L, c_virt_screen, c_virt, NJ, Np, p
     
 
     Jpq = tp.tmat()
-    Jpq.load_nparray(Jpq_blocks[:-1], -pq_region[:NL-1])    
+    Jpq.load_nparray(Jpq_blocks[:-1], -1*pq_region[:NL-1])    
     #for coord in pq_region[:NL]:
     #    
     #    print("Normcheck: (jpq):", coord, np.linalg.norm(Jpq.cget([coord])))
@@ -1506,12 +1436,14 @@ def contract_virtuals(OC_L_np, c_virt_coords_L, c_virt_screen, c_virt, NJ, Np, p
 
 
 
-def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
+def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
     """
     Intermediate contraction of the occupieds.
     See section 3.2, algorithm 1 and 2 in the notes for details
     Author: Audun
     """
+
+    #print("pq_region:", pq_region)
 
 
 
@@ -1532,15 +1464,13 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
     # Set max possible extent
 
     #n_points = np.max(np.abs(dM_region), axis = 0) + np.max(np.abs(Jmn_dm[0].coords), axis = 0)
-    s = tp.get_zero_tmat(n_points_p(p, 10), [2,2])
+    #s = tp.get_zero_tmat(n_points_p(p, 10), [2,2])
     #s = tp.get_zero_tmat(n_points, [2,2])
-    NN = s.coords.shape[0]      # number of 
+    #NN = s.coords.shape[0]      # number of 
     #print("domain setup in contract_occupieds may not be optimal")
-    #print(np.max(s.coords, axis = 0))
-    #print("xi2:", xi2)
+
     
 
-    #xi2 = 1e-7
 
     c_virt_coords_L = []
     c_virt_screen = []
@@ -1577,6 +1507,7 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
         # O = N + dM = -(J) - L 
         # 
         # N_coords = tp.lattice_coords([np.max(np.abs(Jmnc.coords), axis = 0) + np.abs()])
+        norm_prev = 0.0
         
 
         for dMi in np.arange(dM_region.shape[0]):
@@ -1606,20 +1537,21 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
             #t0 = time.time()
             
 
-
+            #scale = 0.0001
 
             # Screen out zero blocks here 
-            #cs = np.max(np.abs(c_occ_blocks), axis = (1,2))>xi2
-            cs = np.any(np.greater(np.abs(c_occ_blocks), xi2), axis = (1,2))
+            #cs = np.max(np.abs(c_occ_blocks), axis = (1,2))>xi1
+            cs = np.any(np.greater(np.abs(c_occ_blocks), xi1), axis = (1,2))
 
 
-            #bs = np.max(np.abs(Jmn_blocks), axis = (1,2,3))>xi2
-            bs = np.any(np.greater(np.abs(Jmn_blocks), xi2), axis = (1,2,3))
+            #bs = np.max(np.abs(Jmn_blocks), axis = (1,2,3))>xi1
+            bs = np.any(np.greater(np.abs(Jmn_blocks), xi1), axis = (1,2,3))
 
 
 
             #print(np.argmax(np.abs(Jmn_blocks), axis = (1,2,3)))
             sc = np.logical_and(cs, bs)
+            
 
             #print("screening:", time.time()-t0)
             #print("")
@@ -1639,9 +1571,33 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
                 #print("")
                 #t0 = time.time()
 
-                if np.abs(dO_LN_np).max()<xi2:
-                    break
+                
+                
+
+
+
+
+                
+
+                #if np.abs(dO_LN_np).max()<scale*xi1:
+                #    print("Break at dM=", dM)
+                #    break
+
                 O_LN_np[sc] += dO_LN_np
+
+                norm_new = np.linalg.norm(O_LN_np)
+
+                ndiff = np.abs(norm_prev-norm_new)
+
+                if ndiff/norm_new<xi1:
+                    print("Break at ", dM)
+                    break
+                
+
+                
+                print("O_LN_np_norm:", ndiff, ndiff/norm_new)
+                norm_prev = norm_new*1
+
 
             #print("if np.sumsc:", time.time()-t0)
             #print("")
@@ -1666,7 +1622,8 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
         #print("")
         #t0 = time.time()
         
-        sc = np.max(np.abs(O_LN_np), axis = 0)>xi2
+        sc = np.max(np.abs(O_LN_np), axis = 0)>xi1
+        #sc[:] = True
         #print(sc.shape)
         c_virt_screen.append(sc)
         
@@ -1682,8 +1639,10 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
         #print("")
         #t0 = time.time()
         #screen_L.append(np.max(np.abs(O_LN_np.reshape(NN*NJ,Nn*Np)), axis = 1)) #->NJnp-Jp,Nn
+
         
-        if np.abs(O_LN_np).max()<xi2:
+        
+        if np.abs(O_LN_np).max()<xi1:
             dR = np.abs(np.sum(p.coor2vec(pq_region[Li-1])**2) - np.sum(p.coor2vec(pq_region[Li])**2))
 
             if dR > 1e-12:
@@ -1692,7 +1651,7 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi2 = 1e-10):
                 print("                              (%i out of %i elements retained)" % (elms_retained, elms_total))
                 print("         Max value : %.2e" % np.abs(O_LN_np).max())
                 break
-
+        
 
         # Screen out negligible 
     return OC_L_np, c_virt_coords_L, c_virt_screen, NJ, Np
@@ -1778,8 +1737,20 @@ class integral_builder_static():
 
         N_c_max_layers = 20
         cm = estimate_coordinate_domain(p, auxname, N_c_max_layers, attenuation = attenuation)
-        self.JKa = cm.compute_JK(thresh = xi0)
-        self.JKa.set_precision(self.float_precision)
+        #self.JKa = cm.compute_JK(thresh = xi0)
+        #self.JKa.set_precision(self.float_precision)
+        
+        #self.JKa = compute_JK(p, tp.get_random_tmat(np.max(np.abs(self.JKa.coords), axis = 0), [2,2]), attenuation = attenuation, auxname = auxname)
+        #print(tp.lattice_coords(n_points_p(p, self.N_c)))
+        if self.N_c >0:
+            self.JKa = compute_JK(p, tp.get_random_tmat(n_points_p(p, self.N_c), [2,2]), attenuation = attenuation, auxname = auxname)
+        else:
+            N_c_max_layers = 20
+            cm = estimate_coordinate_domain(p, auxname, N_c_max_layers, attenuation = attenuation)
+            self.JKa = cm.compute_JK(thresh = xi1)
+            self.JKa.set_precision(self.float_precision)
+
+        
 
 
 
@@ -1805,10 +1776,12 @@ class integral_builder_static():
             #print("JKa block shape:", self.JKa.blocks[:-1].shape)
             print("")
 
-        self.JKinv = invert_JK(self.JKa)
-        self.JKinv.set_precision(self.float_precision)
+        self.JKinv = 0 #invert_JK(self.JKa)
+        #self.JKinv.set_precision(self.float_precision)
         #inverse_test = True
         if inverse_test:
+            self.JKinv = invert_JK(self.JKa)
+            self.JKinv.set_precision(self.float_precision)
             if printing:
                 print("JKa inverse computed, checking max deviation from 0 = JKa^-1 JKa - I within extent")
 
@@ -1870,6 +1843,8 @@ class integral_builder_static():
         #print("Coeff fitter static tresh set to 1e-8")
         t0 = time.time()
         self.cfit = coefficient_fitter_static(self.c_occ, self.c_virt, p, attenuation, auxname, self.JKa, self.JKinv, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision, printing = printing, N_c = self.N_c)
+        
+        
         t1 = time.time()
         if printing:
             print("Spent %.1f s preparing fitting (three index) integrals." % (t1-t0))
@@ -1890,7 +1865,7 @@ class integral_builder_static():
                     self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i][0].tT()
 
                 else:
-                    print("domain info:", coord_q[i], np.max(np.abs(Xreg[i].coords), axis = 0))
+                    #print("domain info:", coord_q[i], np.max(np.abs(Xreg[i].coords), axis = 0))
                     self.XregT[coord_q[i][0], coord_q[i][1],coord_q[i][2]] = Xreg[i].tT()
         #if robust:
         #    for i in np.arange(coord_q.shape[0]):
@@ -1907,17 +1882,36 @@ class integral_builder_static():
 
             #coulomb_extent = (10,10,10)
             #print("Extent of Coulomb matrix:", coulomb_extent)
+        #coulomb_extent = (3,0,0)
+        #if self.N_c>0:
+        #    coulomb_extent = n_points_p(p, 2*self.N_c)
         print("Extent of Xreg          :", coulomb_extent)
+        
+        #coulomb_extent = [3,0,0]
+        #print("Extent of Xreg          :", coulomb_extent)
 
-        s = tp.tmat()
-        scoords = tp.lattice_coords(coulomb_extent)
-        s.load_nparray(np.ones((scoords.shape[0],2,2), dtype = float), scoords)
+        #s = tp.tmat()
+        #scoords = tp.lattice_coords(coulomb_extent)
+        #s.load_nparray(np.ones((scoords.shape[0],2,2), dtype = float), scoords)
 
         #self.JK = compute_JK(p,self.JKa, coulomb=True, auxname = self.auxname)
         #self.JK = compute_JK(p,big_tmat, coulomb=True, auxname = self.auxname)
-        self.JK = compute_JK(p,s, coulomb=True, auxname = self.auxname)
+        self.JK = compute_JK(p,self.JKa, coulomb=True, auxname = self.auxname)
         self.JK.set_precision(self.float_precision)
 
+        print("JKa domain:", np.max(np.abs(self.JKa.coords), axis = 0), self.JKa.coords.shape[0])
+
+        print("JK  domain:", np.max(np.abs(self.JK.coords), axis = 0), self.JK.coords.shape[0])
+
+       # dm, de = self.JKa.absmax_decay(self.p)
+       # print("absmax decay", dm, de)
+
+
+
+
+        #self.cfit.JKa = compute_JK(p,s, attenuation = attenuation, auxname = self.auxname)
+        
+        
         if printing:
 
             print("Coulomb matrix (JK) computed.")
@@ -2000,6 +1994,7 @@ class integral_builder_static():
                         #self.JpqXreg[d[0], d[1], d[2]] = Jpq[0]
                         if self.circulant:
                             self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0])
+                            #self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
                         else:
                             self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
 

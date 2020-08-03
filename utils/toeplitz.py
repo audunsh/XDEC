@@ -1598,10 +1598,14 @@ class tmat():
             n_points = np.max([m1n,m2n], axis = 0)  
 
         nx,ny,nz = 2*n_points + 1
+
+        #print("kspace_svd_solve: ", nx,ny,nz)
         m1x,m1y = self.blocks.shape[1], self.blocks.shape[2]
         m2x,m2y = other.blocks.shape[1], other.blocks.shape[2]
         
         coords = np.roll(lattice_coords(n_points).reshape(nx,ny,nz, 3), -n_points, axis = (0,1,2)).reshape(nx*ny*nz, 3)
+
+        #print(coords)
 
         
         m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)

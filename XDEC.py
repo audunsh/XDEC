@@ -29,6 +29,20 @@ import time
 #from pympler import muppy, summary
 #import gc
 
+"""
+Cosmetics
+"""
+
+def get_progress_bar(progress, total, length = 60):
+    """
+    returns a string indicating the progress
+    """
+    s = """|"""
+    s += ">"*np.int(length*progress/total)
+    s += " "*np.int(length*((total - progress)/total))
+    s += "|"
+    return s
+
 
 """
 Functions that aids mapping of blocks in tensors
@@ -158,7 +172,7 @@ class amplitude_solver():
         print("%i virtual orbitals included in fragment." % self.n_virtual_tot)
         print("%i occupied orbitals included in fragment." % self.n_occupied_tot)
 
-    def solve(self, norm_thresh = 1e-10, eqtype = "mp2", s_virt = None, damping = 1.0, ndiis = 8, energy = None):
+    def solve(self, norm_thresh = 1e-10, eqtype = "mp2", s_virt = None, damping = 1.0, ndiis = 8, energy = None, pairwise = False):
         #print("NDIIS = ", ndiis)
         if eqtype == "mp2_nonorth":
             #return self.solve_MP2PAO(norm_thresh, s_virt = s_virt, damping = damping)
@@ -175,7 +189,7 @@ class amplitude_solver():
             #print("ENERGU:", energy)
             #self.t2 *= 0
             #print("NORM_THRESH = ", norm_thresh)
-            return self.solve_unfolded(norm_thresh = norm_thresh, maxiter = 100, damping = damping, energy = energy, compute_missing_exchange = False)
+            return self.solve_unfolded(norm_thresh = norm_thresh, maxiter = 100, damping = damping, energy = energy, compute_missing_exchange = False, pairwise = pairwise)
             
             #return self.solve_unfolded_pao(norm_thresh = norm_thresh, maxiter = 100, damping = damping, energy = energy, compute_missing_exchange = False, s_virt = tp.get_identity_tmat(ib.n_virt))
             
@@ -192,7 +206,7 @@ class amplitude_solver():
                     return dt, it, self.compute_pair_fragment_energy()
 
 
-    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = True):
+    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = True, pairwise = False):
         # Standard solver for orthogonal virtual space
         #self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i([0,0,0]) ] ] *= 0
 
@@ -297,6 +311,9 @@ class amplitude_solver():
                             except:
                                 pass
                             """
+            #print(dL, "of", Nv, " complete.")
+            print(get_progress_bar(dL,Nv), end="\r")
+        print(" ")
 
                         
         print("Unfolding (1):", time.time()-t0)
@@ -352,6 +369,7 @@ class amplitude_solver():
         t0c = 0
         t0c_2 = 0
         t0d = 0
+        print("MP2 iterations")
 
 
         for i in np.arange(maxiter):
@@ -413,6 +431,9 @@ class amplitude_solver():
             if abs_dev<norm_thresh: #np.abs(norm_prev - norm_new)<norm_thresh:
                 #print("Converged at", i, "iterations.")
                 break
+            #print("Iteration:", i, "of", maxiter, ".", abs_dev)
+            print(get_progress_bar(i,maxiter), end="\r")
+        print(" ")
 
         t_t = (time.time()-t0)/i
         print("Time per iteration:", t_t)
@@ -508,20 +529,30 @@ class amplitude_solver():
             #print("d_ij:", d_ij[s_ij])
             
             #print("distance_ij", d_ij)
-            e_a =  2*np.einsum("iajb,iajb->a", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->a", t2s[f0_mask], v2s[f0_mask])
-            d_a = self.d_ia.cget(vcoords)[:, self.fragment[0], :].ravel()[ia_mask]
-            a_s = np.argsort(d_a)
+            if True:
+                e_a =  2*np.einsum("iajb,iajb->a", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->a", t2s[f0_mask], v2s[f0_mask])
+                d_a = self.d_ia.cget(vcoords)[:, self.fragment[0], :].ravel()[ia_mask]
+                a_s = np.argsort(d_a)
 
-            #print(e_a[a_s])
-            #print(d_a[a_s])
+                #print("Energy (1):", time.time()-t0)
+
+                #print(np.max(np.abs(t2new)), i, energy, np.array([e_a[a_s],d_a[a_s]]))
+
+                energy = np.sum(e_a)
+                print("Energy (1):", time.time()-t0)
+                t0 = time.time()
+
+                return np.max(np.abs(t2new)), i, energy, np.array([e_a[a_s],d_a[a_s]])
+                #print()
 
 
+            else:
 
-            energy = 2*np.einsum("iajb,iajb", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja", t2s[f0_mask], v2s[f0_mask])
-            print("Energy (1):", time.time()-t0)
-            t0 = time.time()
+                energy = 2*np.einsum("iajb,iajb", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja", t2s[f0_mask], v2s[f0_mask])
+                print("Energy (1):", time.time()-t0)
+                t0 = time.time()
 
-            return np.max(np.abs(t2new)), i, energy
+                return np.max(np.abs(t2new)), i, energy
 
 
         if energy == "pair":
@@ -973,6 +1004,7 @@ class amplitude_solver():
             f0_mask = np.array((d_ii_1.cget([0,0,0])[self.fragment[0], :].ravel())[i0_mask], dtype = np.bool) #fragment 1 in refcell, only indexes in refcell
 
             energy = 2*np.einsum("iajb,iajb", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja", t2s[f0_mask], v2s[f0_mask])
+            print(energy)
             print("Energy (1):", time.time()-t0)
             t0 = time.time()
 
@@ -5908,7 +5940,7 @@ if __name__ == "__main__":
     #parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
     parser.add_argument("-virtual_space", type = str, default = None, help = "Alternative representation of virtual space, provided as tmat file." )
     parser.add_argument("-solver", type = str, default = "mp2", help = "Solver model." )
-    parser.add_argument("-N_c", type = int, default = 8, help = "Number of layers in Coulomb BvK-cell." )
+    parser.add_argument("-N_c", type = int, default = 0, help = "Force number of layers in Coulomb BvK-cell." )
     parser.add_argument("-pairs", type = bool, default = False, help = "Compute pair fragments" )
     parser.add_argument("-pair_setup", type = str, default = "standard", help = "Setup of pair calculations. Choose between standard, alternative and auto." )
     parser.add_argument("-print_level", type = int, default = 0, help = "Print level" )
@@ -6017,6 +6049,11 @@ if __name__ == "__main__":
     c = tp.tmat()
     c.load(args.coefficients)
     c.set_precision(args.float_precision)
+
+    #cnew = tp.get_zero_tmat([20,0,0], [c.blocks.shape[1], c.blocks.shape[2]])
+    #cnew.blocks[ cnew.mapping[ cnew._c2i(c.coords)]] = c.cget(c.coords)
+    #c = cnew*1
+    #print(c.coords)
 
 
     #c = of.orthogonalize_tmat(c, p, coords = tp.lattice_coords([30,0,0]))
@@ -6184,6 +6221,8 @@ if __name__ == "__main__":
 
         print("Spaces after screening:")
         print(c_occ.blocks.shape, c_virt.blocks.shape, wcenters.shape)
+
+    
 
 
 
@@ -7957,6 +7996,7 @@ if __name__ == "__main__":
         occ_cut = args.occupied_cutoff
 
         refcell_fragments = []
+        energies = []
         fragment_energy_total = 0
 
         #complete fragmentation of the occupied space
@@ -7981,7 +8021,7 @@ if __name__ == "__main__":
 
             #print("Frag init:", time.time()-t0)
 
-            dt, it, E_prev_outer = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = 1e-10, damping = args.damping, energy = "cim")
+            dt, it, E_prev_outer, E_pairwise = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = 1e-10, damping = args.damping, energy = "cim", pairwise = True)
 
 
             print(dt, it)
@@ -8012,7 +8052,16 @@ if __name__ == "__main__":
 
             refcell_fragments.append(a_frag)
             fragment_energy_total += E_prev_outer
-        print("Total fragment energy:", fragment_energy_total)
+            energies.append(E_prev_outer)
+            np.save("pair_info_%i.npy" % fragment[0], E_pairwise)
+        for i in np.arange(len(energies)):
+            print("     E_{Fragment %i} :" %i, energies[i], " Hartree")
+        print("_________________________________________________________")
+        print("Total cluster energy :", fragment_energy_total, " Hartree")
+        #print("Total cluster energy : %.4e" % fragment_energy_total, " Hartree")
+        
+        print("=========================================================")
+        print("Pairwise energycontributions stored to disk.")
 
 
     if args.fragmentation == "cim-sweep":
