@@ -725,8 +725,38 @@ class tmat():
             for i in np.arange(self.blocks.shape[0]-1):
                 #both
                 self.blocks[i] = self.blocks[i,:,perm_pattern][:,perm_pattern,:]
+
+
+
     
     # Block access, interfacing 
+
+    def redefine_supercell(self, n_layers, n_s_layers):
+        '''
+        Unfold/recast/repartition cells onto larger supercells
+        for the gamma-point fitting
+        better explanation will follow
+        '''
+        c0 = lattice_coords(n_layers) 
+
+        cm = lattice_coords(n_s_layers)
+
+        newblocks = np.zeros((cm.shape[0], c0.shape[0]*self.blocks.shape[1],c0.shape[0]*self.blocks.shape[1]), dtype = type(self.blocks))
+
+        for c in np.arange(cm.shape[0]):
+            ct = np.array(2*n_layers+1) * cm[c]
+
+            newblocks[c] = self.tofull(self, c0 + cm, c0 + cm) #.reshape()
+        
+        ret = tmat()
+        ret.load_nparray(newblocks, cm)
+        return ret
+
+
+
+
+
+
     def tofull(self, m, coords_L, coords_M):
         '''
         Unfold the periodic symmetry 
@@ -913,6 +943,25 @@ class tmat():
             other.expand(new_domain)
             
         assert(np.all(self.delim == other.delim)), "domain mismatch"
+
+    def fft(self, n_layers = None):
+        if n_layers is None:
+            n_layers = np.max(np.abs(self.coords), axis = 0)
+            
+
+        nx,ny,nz = 2*n_layers + 1
+        m1x,m1y = self.blocks.shape[1], self.blocks.shape[2]
+        
+        coords = np.roll(lattice_coords(n_layers).reshape(nx,ny,nz, 3), -n_layers, axis = (0,1,2)).reshape(nx*ny*nz, 3)
+
+        
+        m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
+        M1 = np.fft.fftn(m1r, axes = (0,1,2))
+
+        
+        ret_fft = tmat()
+        ret_fft.load_nparray(M1.reshape(coords.shape[0], m1x,m1y), coords, safemode = False)
+        return ret_inv
 
     def inv(self, n_layers = None):
         if n_layers is None:
@@ -1427,6 +1476,27 @@ class tmat():
     #def fft(self):
 
     #def kspace_svd_inv()
+    def gamma_inv(self, n_points = None):
+        if n_points is None:
+            n_points = np.max(np.abs(self.coords), axis = 0)
+
+        #print()
+
+        nx,ny,nz = 2*n_points + 1
+        m1x,m1y = self.blocks.shape[1], self.blocks.shape[2]
+
+        coords = np.roll(lattice_coords(n_points).reshape(nx,ny,nz, 3), -n_points, axis = (0,1,2)).reshape(nx*ny*nz, 3)
+
+        #m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
+        
+       
+        M3 = np.zeros((nx,ny,nz,m1x, m1y),dtype = np.complex128)
+        M3[0,0,0] = np.linalg.pinv(np.sum(self.cget(self.coords)/(nx*ny*nz), axis = 0))
+
+    
+        ret = tmat()
+        ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m1y), axes = (0,1,2)).real.reshape(coords.shape[0], m1x,m1y), coords)
+        return ret
 
     
 
@@ -1586,7 +1656,7 @@ class tmat():
         
 
 
-    def kspace_svd_solve(self, other, tolerance = 1e-14, complex_precision = np.complex128, n_points = None, complx = False):
+    def kspace_svd_solve(self, other, rcond = 1e-14, complex_precision = np.complex128, n_points = None, complx = False):
         """
         IBT (Infinite Block-Circulant) svd solver
         """
@@ -1613,6 +1683,8 @@ class tmat():
         M1 = np.fft.fftn(m1r, axes = (0,1,2))
         M2 = np.fft.fftn(m2r, axes = (0,1,2))
         M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = np.complex128)
+
+
         for c in coords:
             #M1[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
 
@@ -1620,12 +1692,23 @@ class tmat():
             u_,s_,vh_ = np.linalg.svd(M1[c[0], c[1], c[2]])
             b = M2[c[0], c[1], c[2]]
 
-            t = s_>tolerance #screening
-            if np.any(t == False):
-                print("Warning (SVD): poorly conditioned JK matrix (singular values).") #, s_)
+            t = s_>(rcond*np.max(s_)) #screening
+
+            #if s_.max()/s_.min()>10e6:
+            #    print("poor condition in singular values:", c, s_, t)
+            
+            
+
+
 
             pinv = np.dot(vh_[t,:].conj().T, np.dot(np.diag(s_[t]**-1), u_[:,t].conj().T))
             x = np.dot(pinv, b)
+
+            if np.any(t == False):
+                print("Warning (SVD): poorly conditioned JK matrix (singular values).") #, s_)
+                print("Eq. :", np.max(np.abs(np.dot(M1[c[0], c[1], c[2]], x)-b)))
+
+
 
             #rhs = np.dot(np.dot(np.diag(s_[t]**-1), u_[:,t].conj().T), b)
             #x = np.linalg.solve(vh_[t,:], rhs)
@@ -1660,74 +1743,66 @@ class tmat():
             ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).real.reshape(coords.shape[0], m1x,m2y), coords)
         return ret
 
-
-    def kspace_svd_solve_(self, other, tolerance = 1e-14, complex_precision = np.complex128, n_points = None):
+    def kspace_cholesky_solve(self, other, complx = False, n_points = None):
         """
-        transforms to reciprocal space and solves 
-            self \cdot x = other
-        using svd decomposition
-            u s vh = self
-        returns x
+        # Solve linear system in reciprocal space
+        #
+        #     self \cdot x = other
+        # First let self = M M^T, so that
+        #    M M^T \cdot x = other
+        # Then solve for y and x
+        #    (1)   M \cdot y = other 
+        #    (2) M^T \cdot x = y
+        # return x
         """
-        #print(self.blocks.shape, other.blocks.shape)
         if n_points is None:
+            
+            m1n = np.max(np.abs(self.coords), axis = 0)
+            m2n = np.max(np.abs(other.coords), axis = 0)
+            
+            n_points = np.max([m1n,m2n], axis = 0)  
 
-            n_points = np.max(np.array([n_lattice(self), n_lattice(other)]), axis = 0)
-        print(n_points)
-        #print(other.coords)
-        self_k = transform(self, np.fft.fftn, n_points = n_points)
-        other_k = transform(other, np.fft.fftn, n_points = n_points)
+        nx,ny,nz = 2*n_points + 1
+
+        #print("kspace_svd_solve: ", nx,ny,nz)
+        m1x,m1y = self.blocks.shape[1], self.blocks.shape[2]
+        m2x,m2y = other.blocks.shape[1], other.blocks.shape[2]
+        
+        coords = np.roll(lattice_coords(n_points).reshape(nx,ny,nz, 3), -n_points, axis = (0,1,2)).reshape(nx*ny*nz, 3)
+
+        #print(coords)
+
+        
+        m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
+        m2r = other.cget(coords).reshape(nx,ny,nz,m2x,m2y)
+        M1 = np.fft.fftn(m1r, axes = (0,1,2))
+        M2 = np.fft.fftn(m2r, axes = (0,1,2))
+        M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = np.complex128)
+
+        for c in coords:
+            
+            Mk = np.linalg.cholesky(M1[c[0], c[1], c[2]])
+            yk = np.linalg.solve(Mk, M2[c[0], c[1], c[2]])
+
+
+
+            
+
+            M3[c[0], c[1], c[2]] = np.linalg.solve(Mk.conj().T, yk)
+
+
 
         
 
-        #et = tmat()
-        #ret.load_nparray(np.ones((self_k.coords.shape[0],self_k.blockshape[0], other_k.blockshape[1]), dtype = complex_precision), self_k.coords, safemode = False)
-        #ret.blocks*=0.0
-        
-
-        rb = np.ones((self_k.coords.shape[0],self_k.blockshape[0], other_k.blockshape[1]), dtype = complex_precision)
-
-        
-        for i in np.arange(self_k.coords.shape[0]):
-            ci = self_k.coords[i]
-            u_,s_,vh_ = np.linalg.svd(self_k.cget(ci))
-            b = other_k.cget(ci)
-
-            t = s_>tolerance #screening
-            if np.any(t == False):
-                print("SVD solver unstable:", t)
-
-            pinv = np.dot(vh_[t,:].conj().T, np.dot(np.diag(s_[t]**-1), u_[:,t].conj().T))
-            x = np.dot(pinv, b)
-
-            #rhs = np.dot(np.dot(np.diag(s_[t]**-1), u_[:,t].conj().T), b)
-            #x = np.linalg.solve(vh_[t,:], rhs)
-            
-            
-            
-            #svhx = np.linalg.solve(u_[:,t], b)
-
-            #x = np.linalg.solve(np.dot(np.diag(s_[t]),vh_[t,:]), svhx )
-
-            
-            """
-            
-            U = u_[:,t]
-            S = np.diag(s_[t])
-            VH = vh_[t,:]
-
-            SVH = np.dot(S, VH)
-            Ub  = np.dot(U.conj().T, other_k.blocks[i])
-            """
-
-            rb[i] = x #np.linalg.solve(SVH, Ub)
-        
         ret = tmat()
-        ret.load_nparray(rb, self_k.coords, safemode = False)
-
-        ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
-        ret.set_precision(self.blocks.dtype)
+        if complx:
+            ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m2y), coords)
+        else:
+            ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).real.reshape(coords.shape[0], m1x,m2y), coords)
         return ret
+
+
+    
 
     def kspace_cholesky(self):
         """
@@ -1750,7 +1825,7 @@ class tmat():
         ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
         return ret
 
-    def kspace_cholesky_solve(self, other):
+    def kspace_cholesky_solve_(self, other):
         """
         # Solve linear system in reciprocal space
         #
@@ -1786,8 +1861,43 @@ class tmat():
 
         ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
         return ret
+    
+    def get_kspace_eigenvalues(self, n_points = None, tolerance = 1e-10, real = False, sort = True):
+        # calculate band structure of matrix
 
-    def kspace_eig(self, n_points = None, tolerance = 1e-10, real = False):
+        if n_points is None:
+            n_points = np.max(np.abs(self.coords), axis = 0)
+
+        #print()
+
+        nx,ny,nz = 2*n_points + 1
+        m1x,m1y = self.blocks.shape[1], self.blocks.shape[2]
+
+        coords = np.roll(lattice_coords(n_points).reshape(nx,ny,nz, 3), -n_points, axis = (0,1,2)).reshape(nx*ny*nz, 3)
+
+        m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
+        
+        M1 = np.fft.fftn(m1r, axes = (0,1,2))
+        M3 = np.zeros((nx,ny,nz,m1x),dtype = np.complex128)
+        #M4 = np.zeros((nx,ny,nz,m1x, m1y),dtype = np.complex128)
+
+
+        for c in coords:
+            evals, evecs = np.linalg.eig(M1[c[0], c[1], c[2]])
+            
+            
+            
+            if sort:
+                evals = np.sort(evals)
+
+            M3[c[0], c[1], c[2]] = evals #x
+            #M4[c[0], c[1], c[2]] = evecs #x
+
+        
+        return M3
+
+
+    def kspace_eig(self, n_points = None, tolerance = 1e-10, real = False, sort = True):
         # construct self^-.5
 
         if n_points is None:
@@ -1809,11 +1919,21 @@ class tmat():
 
         for c in coords:
             evals, evecs = np.linalg.eig(M1[c[0], c[1], c[2]])
+
+            
+            if sort:
+
+
+                ni = np.argsort(evals)
             
             
 
-            M3[c[0], c[1], c[2]] = np.diag(evals) #x
-            M4[c[0], c[1], c[2]] = evecs #x
+                M3[c[0], c[1], c[2]] = np.diag(evals[ni]) #x
+                M4[c[0], c[1], c[2]] = evecs[ni] #x
+            else:
+                M3[c[0], c[1], c[2]] = np.diag(evals) #x
+                M4[c[0], c[1], c[2]] = evecs
+
         
 
         
@@ -1923,6 +2043,24 @@ class tmat():
         m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
 
         return tmat(coords, np.fft.fftn(m1r, axes = (0,1,2)))
+
+    
+    def get_prepared_circulant_prod(self, n_layers = None, inv = False):
+        """
+        Create an object primed for ciruclant matrix-matrix multiplication
+        for efficient repeated multiplication with same object
+        """
+        
+        return primed_for_dot(self,n_layers, inv)
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2150,8 +2288,49 @@ class tmat():
                   '{:f}'.format(memory_used))
         print('', flush=True)
 
+
+class primed_for_dot():
+    def __init__(self, m, n_layers, inv = False):
+        self.n_layers = n_layers
+        if n_layers is None:
+            self.n_layers = np.max(np.abs(m.coords), axis = 0)
         
 
+        self.nx,self.ny,self.nz = 2*self.n_layers + 1
+        
+        self.m1x,self.m1y = m.blocks.shape[1], m.blocks.shape[2]
+
+        self.coords = np.roll(lattice_coords(self.n_layers).reshape(self.nx,self.ny,self.nz, 3), -self.n_layers, axis = (0,1,2)).reshape(self.nx*self.ny*self.nz, 3)
+
+        
+
+        
+        self.M1 = np.fft.fftn(m.cget(self.coords).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y), axes = (0,1,2))
+        if inv:
+            self.M1 = np.linalg.pinv(self.M1.reshape(self.nx*self.ny*self.nz, self.m1x, self.m1y)).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y)
+    
+    def circulantdot(self, other, complx = True):
+        m1x,m1y =  self.m1x, self.m1y
+        m2x,m2y =  other.blocks.shape[1], other.blocks.shape[2]
+        nx,ny,nz = self.nx,self.ny,self.nz
+        coords = self.coords
+        M1 = self.M1
+        n_layers = self.n_layers
+        m2r = other.cget(coords).reshape(nx,ny,nz,m2x,m2y)
+        M2 = np.fft.fftn(m2r, axes = (0,1,2))
+        M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = np.complex128)
+
+        for c in coords:
+            M3[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
+        
+        
+        ret = tmat()
+        if complx:
+            ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m2y), coords)
+        else:
+            ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).real.reshape(coords.shape[0], m1x,m2y), coords)
+        return ret
+        
 def all_columns(tmatrix, column):
     '''
     Get an array consisting of all column arrays for the
