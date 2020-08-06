@@ -234,6 +234,7 @@ class prism():
             #return np.array([2,0,1]) #z,x,y <- goes for ethylene for some reason, inconsistent with manuals
         if l==2:
             return np.array([4, 2, 0, 1, 3])
+            #return np.array([3, 1, 0, 2, 4])
         if l==3:
             return np.array([6, 4,2,0,1,3,5])            
         if l==4:

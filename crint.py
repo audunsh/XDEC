@@ -94,7 +94,7 @@ END""" % (newk, cyctol, cyctol, cyctol)
 
     # Alternative input
 
-    properties_input = """NEWK
+    properties_input_ = """NEWK
 %i %i %i
 1 0
 LOCALWF
@@ -172,7 +172,7 @@ END
 CRYAPI_OUT
 END""" % (newk, core[0]+1, core[1]+1, cyctol, cyctol, cyctol)
 
-    properties_core_input = """NEWK
+    properties_core_input_ = """NEWK
 %i %i %i
 1 0
 LOCALWF
@@ -206,7 +206,7 @@ END
 CRYAPI_OUT
 END""" % (newk, virt[0]+1, virt[-1] , cyctol, cyctol, cyctol)
 
-    properties_virtual_input = """NEWK
+    properties_virtual_input_ = """NEWK
 %i %i %i
 1 0
 LOCALWF
