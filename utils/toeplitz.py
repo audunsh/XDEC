@@ -762,8 +762,8 @@ class tmat():
         Unfold the periodic symmetry 
         '''
         ret = np.zeros((m.blockshape[0]*coords_L.shape[0], m.blockshape[1]*coords_M.shape[0]), dtype = float)
-        for L in np.arange(coords_L.shape[0]):
-            for M in np.arange(coords_M.shape[0]):
+        for L in range(coords_L.shape[0]):
+            for M in range(coords_M.shape[0]):
                 ret[L*m.blockshape[0]:(L+1)*m.blockshape[0], M*m.blockshape[1]:(M+1)*m.blockshape[1]] = m.cget(coords_M[M] - coords_L[L])
         return ret
     
@@ -961,7 +961,7 @@ class tmat():
         
         ret_fft = tmat()
         ret_fft.load_nparray(M1.reshape(coords.shape[0], m1x,m1y), coords, safemode = False)
-        return ret_inv
+        return ret_fft
 
     def inv(self, n_layers = None):
         if n_layers is None:
@@ -1267,7 +1267,7 @@ class tmat():
         
         
         
-        for si in np.arange(self.coords.shape[0]):
+        for si in range(self.coords.shape[0]):
             scoords = self.coords[si]
             sblock  = self.blocks[si]
             # determine new 
@@ -1861,6 +1861,40 @@ class tmat():
 
         ret = transform(ret, np.fft.ifftn, n_points = n_points, complx = False)
         return ret
+
+    def get_kspace_singular_values(self, n_points = None, tolerance = 1e-10, real = False, sort = True):
+        # calculate band structure of matrix
+
+        if n_points is None:
+            n_points = np.max(np.abs(self.coords), axis = 0)
+
+        #print()
+
+        nx,ny,nz = 2*n_points + 1
+        m1x,m1y = self.blocks.shape[1], self.blocks.shape[2]
+
+        coords = np.roll(lattice_coords(n_points).reshape(nx,ny,nz, 3), -n_points, axis = (0,1,2)).reshape(nx*ny*nz, 3)
+
+        m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
+        
+        M1 = np.fft.fftn(m1r, axes = (0,1,2))
+        M3 = np.zeros((nx,ny,nz,m1x),dtype = np.complex128)
+        #M4 = np.zeros((nx,ny,nz,m1x, m1y),dtype = np.complex128)
+
+
+        for c in coords:
+            u, svals, rh = np.linalg.svd(M1[c[0], c[1], c[2]])
+            
+            
+            
+            if sort:
+                svals = np.sort(svals)
+
+            M3[c[0], c[1], c[2]] = svals #x
+            #M4[c[0], c[1], c[2]] = evecs #x
+
+        
+        return M3
     
     def get_kspace_eigenvalues(self, n_points = None, tolerance = 1e-10, real = False, sort = True):
         # calculate band structure of matrix
@@ -2306,6 +2340,7 @@ class primed_for_dot():
 
         
         self.M1 = np.fft.fftn(m.cget(self.coords).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y), axes = (0,1,2))
+        #self.M1[0,0,0] = np.sum(m.blocks[:-1], axis = 0)
         if inv:
             self.M1 = np.linalg.pinv(self.M1.reshape(self.nx*self.ny*self.nz, self.m1x, self.m1y)).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y)
     

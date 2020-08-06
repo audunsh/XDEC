@@ -27,7 +27,9 @@ import time
 #os.environ["LIBINT_DATA_PATH"] = os.getcwd() #"/usr/local/libint/2.5.0-beta.2/share/libint/2.5.0-beta.2/basis/"
 #os.environ["CRYSTAL_EXE_PATH"] = "/Users/audunhansen/PeriodicDEC/utils/crystal_bin/"
 
-def basis_trimmer(p, auxbasis, alphacut = 0.1):
+# Auxiliary basis set manipulations
+
+def basis_trimmer(p, auxbasis, alphacut = 0.1, trimlist = None):
     """
     # Trim basis by removal of primitives with exponent < 0.1
     # Based on "rule-of-thumb" proposed in Crystal-manual
@@ -51,14 +53,273 @@ def basis_trimmer(p, auxbasis, alphacut = 0.1):
     f.close()
 
     trimmed_basis = ""
-    for l in trimmed_basis_list:
-        trimmed_basis += l
+    for li in range(len(trimmed_basis_list)):
+        l = trimmed_basis_list[li]
+        if trimlist is None:
+            trimmed_basis += l
+        else:
+            if trimlist[li]:
+                trimmed_basis += l
 
     return trimmed_basis
 
 
 
+def extract_atom_from_basis( atom, bname = "ri-fitbasis.g94", header = True):
 
+    f = open("ri-fitbasis.g94", "r")
+    atom_ = atom + f.read().split(atom)[1].split("****")[0]
+    header = atom_.split("\n")[0]
+    body   = atom_.split("\n")[1:]
+    #body   = f.read().split(atom)[1].split("\n")[1].split("****")[0]
+    #print(body)
+    #print(header)
+    if header:
+        return atom_
+    else:
+        return body
+
+
+    
+def get_basis(atoms, bname = "ri-fitbasis.g94"):
+    basis = ""
+    for a in atoms:
+        basis += extract_atom_from_basis(a, bname)
+    return basis
+
+def get_basis_list(atoms, bname ="ri-fitbasis.g94", prescreen = None):
+    angmom = {"S":0, "P":1, "D":2, "F":3, "G":4, "H":5}
+    basis = []
+    
+    bstring = "****"
+    
+    c = 0
+    for a in atoms:
+        
+        bstring += "\n"
+        bset = extract_atom_from_basis(a, bname, header = False).split("\n")[1:]
+        
+        bset_string = extract_atom_from_basis(a, bname, header = False).split("\n")[0] + "\n"
+        #print(bset_string)
+        
+        for i in range(int(len(bset)/2)):
+            #print("func:", bset[2*i].split()[0])
+            #print(bset[2*i +1])
+            
+            basis.append([angmom[bset[2*i].split()[0]], literal_eval(bset[2*i +1].split()[0]) ])
+            
+            
+            if prescreen is not None:
+                if prescreen[c]:
+                    # remove function in question
+                    basis = basis[:-1]
+                else:
+                    # add function to string
+                    bset_string += bset[2*i] + "\n" + bset[2*i + 1] + "\n"
+                    
+            else:
+                bset_string += bset[2*i] + "\n" + bset[2*i + 1] + "\n"
+                
+            c += 1
+        bstring += bset_string + "****"
+        
+    #print(bstring)
+    basis = np.array(basis)
+    
+    # generate a map from basis index to input file order
+    
+    #mp = np.zeros(int(np.sum(2*basis[:,0]+1)), dtype = int)
+    mc = []
+    for i in np.arange(len(basis)):
+        l = 2*basis[i,0] + 1
+        for j in range(int(l)):
+            mc.append(i)
+        #mp[nc:l+1] = i
+    
+    return np.array(mc), bstring, basis.shape[0], basis
+
+
+
+def remove_redundancies(p, N_c, basis_input, plotting = False, analysis = True):
+    """
+    Removes redundancies in auxiliary basis sets by systematic reduction of the condition by means of a SVD
+    """
+    
+    atoms_table = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne"]
+    
+    atoms = [atoms_table[i-1] for i in p.charges]
+    
+    ### Fitting basis
+    auxbasis = basis_trimmer(p, basis_input, alphacut = 0.0)
+    #auxbasis = s
+    f = open("ri-fitbasis.g94", "w")
+    f.write(auxbasis)
+    f.close()
+
+
+    prescreen = None
+    
+    n_points = n_points_p(p, N_c)
+
+    while True:
+
+        mc, bs, bl, basis_list = get_basis_list(atoms, "ri-fitbasis.g94", prescreen = prescreen)
+
+
+
+
+
+        f = open("ri-fitbasis.g94", "w")
+        f.write(bs)
+        f.close()
+
+        #f = open("ri-fitbasis.g94", "r")
+        #print(f.read())
+        #f.close()
+        newk = 1
+        Nb = N_c*1
+
+
+
+        sc = tp.get_random_tmat(n_points, [2,2])
+
+        JKa  =  compute_JK(p, sc, attenuation = 0.1, auxname = "ri-fitbasis")
+        JKs = JKa.fft(n_layers = n_points)
+
+        if analysis:
+            newk = 1
+            bands = JKa.get_kspace_eigenvalues(n_points = n_points, sort = True)
+            bands = np.roll(bands, -np.int(Nb*newk)-1, axis = 0)
+
+            bands = bands.reshape(2*newk*Nb+1, JKa.blocks.shape[1]).real
+
+            kp = np.arange(-Nb*newk, newk*Nb+1)
+            if plotting:
+                plt.figure(1, figsize = (10,4))
+                for i in range(-Nb, Nb+1):
+                    plt.axvline(i, linewidth = 0.5, color = (0,0,0))
+                plt.plot(kp/newk, bands, "-", alpha = 1, linewidth = 1)
+                plt.yscale("symlog")
+                plt.xlabel("$|| \mathbf{m} ||^{-1}$ (reciprocal coordinate)")
+                #plt.ylim(1e-12,1000)
+                #plt.xscale("symlog")
+                plt.axhline(0)
+
+
+                plt.show()
+
+            """
+            plt.figure(3, figsize = (14,3))
+            for i in np.arange(-Nb, Nb+1):
+                plt.axvline(i, linewidth = 0.5, color = (0,0,0), alpha = .3)
+            plt.plot(kp/newk, bands, alpha = .9)
+            plt.yscale("symlog")
+            plt.ylim(-1e-2,1e-2)
+            plt.axhline(0)
+
+
+
+            plt.show()"""
+
+
+            #print(bands[:,0,0][:,0 ].real.min())
+            #print(bands[:,0,0][:,0 ].real.max())
+
+            cond = np.max(bands,axis  = 0)/np.min(bands, axis = 0)
+            cond2 = np.max(np.abs(bands),axis  = 0)/np.min(np.abs(bands), axis = 0)
+
+            cond3 = np.max(bands,axis  = 1)/np.min(bands, axis = 1)
+            cond4 = np.max(np.abs(bands),axis  = 1)/np.min(np.abs(bands), axis = 1)
+
+
+            # check close eigenvalues / degeneracy at every kpoints
+
+
+            #print(cond.real)
+            #plt.plot(cond.real, ".")
+            #plt.yscale("log")
+            #plt.show()
+            
+            if plotting:
+
+
+                if np.any(cond<0):
+                    plt.figure(1, figsize = (10,4))
+                    for i in np.arange(-Nb, Nb+1):
+                        plt.axvline(i, linewidth = 0.5, color = (0,0,0), alpha = .3)
+                    plt.plot(kp/newk, bands.real[:,cond<0], alpha = .9)
+                    plt.yscale("symlog")
+                    #plt.ylim(-0.0001,0.0001)
+                    plt.axhline(0)
+
+
+                    plt.show()
+
+            print("BASIS EIGENVALUE SPECTRUM ANALYSIS")
+            print("sign change occurs within band:", np.any(cond<0)) # imminent catastrophy
+            print("    max and min within band   : %.3e %.3e" % (np.max(cond2), np.min(cond2)))
+            print("abs max and min within band   : %.3e %.3e" % (np.max(cond2), np.min(cond2)))
+            print("    max and min overall       : %.3e %.3e" % (np.max(bands), np.min(bands)))
+            print("abs max and min overall       : %.3e %.3e" % (np.max(np.abs(bands)), np.min(np.abs(bands))))
+            print("    max condition at kpoint   : %.3e" % np.max(cond3))
+            print("abs max condition at kpoint   : %.3e" % np.abs(np.max(cond4)))
+            JKainv = JKa.inv()
+
+            # inversion test
+            I = JKainv.circulantdot(JKa)-tp.get_identity_tmat(JKa.blocks.shape[1])
+            #print(np.mean(JKa_2inv.blocks.real), np.abs(JKa_2inv.blocks.real).max())
+            print("Dev. from unity in inverse    : %.3e" % np.abs(I.blocks).max())
+
+
+
+
+        done = True
+
+        vf = 0
+        for coord in JKs.coords:
+            u,d,vh = np.linalg.svd(JKs.cget(coord))
+            
+
+            # remove relatively small eigenvals
+            vi = d<d.max()*1e-6
+
+
+
+
+            #print(d.max())
+            if np.any(vi==True):
+                dm = d**-1
+                dm[vi==False] = 0
+                #vf += vh.T.dot(np.diag(dm).dot(u.T)).real
+                vf += u.dot(np.diag(dm).dot(vh)).real
+                done = False
+
+
+        if not done:
+            vfx = np.sum(np.abs(vf), axis = 0)
+            vfy = np.sum(np.abs(vf), axis = 1)
+            
+            bs_to_remove = np.argsort(vfx)[::-1][0]
+
+            prescreen = np.zeros(bl, dtype = np.bool)
+            prescreen[mc[bs_to_remove]] = True
+
+            print("Removing shell from aux.basis:", mc[bs_to_remove])
+            print("                              ", basis_list[mc[bs_to_remove]])
+
+        else:
+            print("===================================================================================")
+            print("Basis is determined to be sufficiently independent for fitting at given resolution.")
+            print("")
+            print(bs)
+            print("")
+            print("Stored to file: ri-fitbasis.g94")
+            print("===================================================================================")
+            break
+    return bs
+
+
+## Toeplitz related
 
 
 def occ_virt_split(c,p, n = None):
@@ -1288,7 +1549,7 @@ class coefficient_fitter_static():
         #else:
 
 
-        Nc = 30
+        Nc = 50
         cellcut = 35
         if p.cperiodicity == "POLYMER":
             cellcut = 180
@@ -1311,6 +1572,7 @@ class coefficient_fitter_static():
 
         #print(self.JK.coords)
         #print(self.pq_region)
+        #print(self.c_occ.coords)
 
         
 
@@ -1357,8 +1619,20 @@ class coefficient_fitter_static():
                 
                 
                 n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
+                if self.N_c>0:
+                    print("Userdefined coulomb extent:", self.N_c)
+                    #print(self.JK.coords)
+                    n_points = n_points_p(self.p, self.N_c)
                 
-                pq_c.append([self.JK.kspace_svd_solve(J_pq_c, n_points = n_points), J_pq_c ])
+                #
+                if self.primed:
+                    pq_c.append([
+                            self.JKa.circulantdot(
+                                J_pq_c, complx = False), J_pq_c])
+                        # test solution
+                    print(" Solution satisfied:", np.abs((self.JK.circulantdot(pq_c[-1][0]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
+                else:
+                    pq_c.append([self.JK.kspace_svd_solve(J_pq_c, n_points = n_points), J_pq_c ])
             else:
                 J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
 
@@ -1381,6 +1655,11 @@ class coefficient_fitter_static():
                     pq_c.append(
                         self.JKa.circulantdot(
                             J_pq_c, complx = False))
+                    # test solution
+                    print(" Solution satisfied:", np.abs((self.JK.circulantdot(pq_c[-1]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
+                    #print("J_pq_c.blocks active:", np.max(np.abs(J_pq_c.cget(tp.lattice_coords(n_points))), axis = (1,2)))
+
+
 
 
                 else:
@@ -1441,7 +1720,7 @@ def contract_virtuals(OC_L_np, c_virt_coords_L, c_virt_screen, c_virt, NJ, Np, p
     NL = len(c_virt_coords_L)
 
     Jpq_blocks = np.zeros((NL,NJ,Np*Nq), dtype = float)
-    for i in np.arange(len(c_virt_coords_L)):
+    for i in range(len(c_virt_coords_L)):
         NN = len(c_virt_coords_L[i])
         sc = c_virt_screen[i]
         
@@ -1524,9 +1803,9 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
 
         print("Shape of N_coords:", N_coords.shape)
 
-    for Li in np.arange(pq_region.shape[0]):
+    for Li in range(pq_region.shape[0]):
         L = pq_region[Li]
-        print("Contracting occupieds for :", L)
+        #print("Contracting occupieds for :", L)
         O_LN_np = np.zeros((NN, NJ,Nn, Np), dtype = float)
 
         #N_coords = -Jmn_dm[0].coords 
@@ -1540,7 +1819,7 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
         norm_prev = 0.0
         
 
-        for dMi in np.arange(dM_region.shape[0]):
+        for dMi in range(dM_region.shape[0]):
             dM = dM_region[dMi]
             
 
@@ -1594,7 +1873,7 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
 
                 Jsc, csc = Jmn_blocks[sc], c_occ_blocks[sc]
                 dO_LN_np = np.zeros((np.sum(sc), NJ, Nn, Np), dtype = float)
-                for k in np.arange(np.sum(sc)):
+                for k in range(np.sum(sc)):
                     dO_LN_np[k] =  np.dot(Jsc[k].reshape(NJ,Nm,Nn).swapaxes(1,2).reshape(NJ*Nn,Nm), csc[k]).reshape(NJ, Nn, Np)
                 
                 #print("for k in sc:", time.time()-t0)
@@ -1620,12 +1899,12 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
                 ndiff = np.abs(norm_prev-norm_new)
 
                 if ndiff/norm_new<xi1:
-                    print("Break at ", dM)
+                    #print("Break at ", dM)
                     break
                 
 
                 
-                print("O_LN_np_norm:", ndiff, ndiff/norm_new)
+                #print("O_LN_np_norm:", ndiff, ndiff/norm_new)
                 norm_prev = norm_new*1
 
 
@@ -2623,8 +2902,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     p = pr.prism(args.project_file)
+    
 
     auxbasis = basis_trimmer(p, args.auxbasis, alphacut = args.basis_truncation)
+
+
+
     f = open("ri-fitbasis.g94", "w")
     f.write(auxbasis)
     f.close()

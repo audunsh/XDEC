@@ -271,9 +271,9 @@ class amplitude_solver():
         t0 = time.time()
 
 
-        for dL in np.arange(Nv):
-            for M in np.arange(No):
-                for dM in np.arange(Nv):
+        for dL in range(Nv):
+            for M in range(No):
+                for dM in range(Nv):
                     dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM] - self.d_ii.coords[M]) # \tilde{t} -> t, B = M + dM
 
 
@@ -291,7 +291,7 @@ class amplitude_solver():
                             g_unfolded[:, dL, :, M, :, dM, :] = I.cget(self.d_ii.coords[M]).reshape(Is)
 
                         
-                    for N in np.arange(No):
+                    for N in range(No):
 
                         
                         M_i = get_index_where(self.d_ii.coords[:self.n_occupied_cells], self.d_ii.coords[M]    - self.d_ii.coords[N])
@@ -372,7 +372,7 @@ class amplitude_solver():
         print("MP2 iterations")
 
 
-        for i in np.arange(maxiter):
+        for i in range(maxiter):
             t0_ = time.time()
 
             t2new = -1*v2s
@@ -457,9 +457,9 @@ class amplitude_solver():
 
         miss = 0
 
-        for dL in np.arange(Nv):
-            for M in np.arange(No):
-                for dM in np.arange(Nv):
+        for dL in range(Nv):
+            for M in range(No):
+                for dM in range(Nv):
                     dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM] - self.d_ii.coords[M]) 
 
 
@@ -6041,10 +6041,16 @@ if __name__ == "__main__":
 
 
     # Fitting basis
-    auxbasis = PRI.basis_trimmer(p, args.auxbasis, alphacut = args.basis_truncation)
-    f = open("ri-fitbasis.g94", "w")
-    f.write(auxbasis)
-    f.close()
+    if args.basis_truncation < 0:
+        auxbasis = PRI.remove_redundancies(p, 2*args.N_c, args.auxbasis, analysis = True)
+        f = open("ri-fitbasis.g94", "w")
+        f.write(auxbasis)
+        f.close()
+    else:
+        auxbasis = PRI.basis_trimmer(p, args.auxbasis, alphacut = args.basis_truncation)
+        f = open("ri-fitbasis.g94", "w")
+        f.write(auxbasis)
+        f.close()
 
     # Load wannier coefficients
     c = tp.tmat()
