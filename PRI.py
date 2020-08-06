@@ -190,8 +190,9 @@ def remove_redundancies(p, N_c, basis_input, plotting = False, analysis = True):
             newk = 1
             bands = JKa.get_kspace_eigenvalues(n_points = n_points, sort = True)
             bands = np.roll(bands, -np.int(Nb*newk)-1, axis = 0)
+            print(bands.shape)
 
-            bands = bands.reshape(2*newk*Nb+1, JKa.blocks.shape[1]).real
+            bands = bands.reshape(np.prod(bands.shape[:3]), JKa.blocks.shape[1]).real
 
             kp = np.arange(-Nb*newk, newk*Nb+1)
             if plotting:
