@@ -140,7 +140,7 @@ def get_basis_list(atoms, bname ="ri-fitbasis.g94", prescreen = None):
 
 
 
-def remove_redundancies(p, N_c, basis_input, plotting = False, analysis = True):
+def remove_redundancies(p, N_c, basis_input, plotting = False, analysis = True, tolerance = 1e-6, attenuation = 0.1):
     """
     Removes redundancies in auxiliary basis sets by systematic reduction of the condition by means of a SVD
     """
@@ -183,7 +183,7 @@ def remove_redundancies(p, N_c, basis_input, plotting = False, analysis = True):
 
         sc = tp.get_random_tmat(n_points, [2,2])
 
-        JKa  =  compute_JK(p, sc, attenuation = 0.1, auxname = "ri-fitbasis")
+        JKa  =  compute_JK(p, sc, attenuation = attenuation, auxname = "ri-fitbasis")
         JKs = JKa.fft(n_layers = n_points)
 
         if analysis:
@@ -282,7 +282,7 @@ def remove_redundancies(p, N_c, basis_input, plotting = False, analysis = True):
             
 
             # remove relatively small eigenvals
-            vi = d<d.max()*1e-6
+            vi = d<d.max()*tolerance
 
 
 
@@ -290,9 +290,10 @@ def remove_redundancies(p, N_c, basis_input, plotting = False, analysis = True):
             #print(d.max())
             if np.any(vi==True):
                 dm = d**-1
-                dm[vi==False] = 0
+                #dm[vi==False] = 0
                 #vf += vh.T.dot(np.diag(dm).dot(u.T)).real
                 vf += u.dot(np.diag(dm).dot(vh)).real
+                vf += u[:, vi].dot(np.diag(dm[vi]).dot(vh[vi, :])).real
                 done = False
 
 
@@ -1463,15 +1464,32 @@ class coefficient_fitter_static():
             Jmnc2_max =  np.max(distances[screen])
 
             
-            if np.sum(screen)>=1:
-                max_outer_5pcnt = np.max(Jmnc2_temp.cget(Jmnc2_temp.coords[distances>Jmnc2_max*0.95]))
+            if np.sum(screen)>1:
+                fc = 0.95
+                outer_coords = []
+                #print(Jmnc2_temp.coords)
+                """
+                while len(outer_coords) == 0:
+                    fc *= 0.95
+                    outer_coords = Jmnc2_temp.coords[distances>Jmnc2_max*fc]
+                    
+                    #if len(outer_coords)>0:
+                    #    break
+                    #else:
+                    #    fc *= 0.8
+                """
+                outer_coords = Jmnc2_temp.coords[distances>Jmnc2_max*fc]
+
+
+                
+                max_outer_5pcnt = np.max(Jmnc2_temp.cget(outer_coords))
 
                 max_coord = np.max(np.abs(Jmnc2_temp.coords), axis = 0)
                 
                 if self.printing:
                     
                     print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
-                    print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
+                    print("         Maximum value in outer %.2f percentage of block (rim) :" % (100*fc,  max_outer_5pcnt))
                     print("         Maximum value overall                              :", np.max(np.abs(Jmnc2_temp.blocks)))
                     print("         c2 = ", c2)
                     print("         R  = ", R2, "(", max_coord, ")")

@@ -6042,7 +6042,7 @@ if __name__ == "__main__":
 
     # Fitting basis
     if args.basis_truncation < 0:
-        auxbasis = PRI.remove_redundancies(p, 2*args.N_c, args.auxbasis, analysis = True)
+        auxbasis = PRI.remove_redundancies(p, args.N_c, args.auxbasis, analysis = True, tolerance = 10**args.basis_truncation)
         f = open("ri-fitbasis.g94", "w")
         f.write(auxbasis)
         f.close()

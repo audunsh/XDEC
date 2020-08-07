@@ -1692,7 +1692,7 @@ class tmat():
             u_,s_,vh_ = np.linalg.svd(M1[c[0], c[1], c[2]])
             b = M2[c[0], c[1], c[2]]
 
-            t = s_>(rcond*np.max(s_)) #screening
+            t = np.abs(s_)>(rcond*np.max(np.abs(s_))) #screening
 
             #if s_.max()/s_.min()>10e6:
             #    print("poor condition in singular values:", c, s_, t)
