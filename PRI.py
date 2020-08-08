@@ -1618,8 +1618,8 @@ class coefficient_fitter_static():
             #print("Screening-induced sparsity is at %.2e percent." % (100.0*compr/total))
         
 
-    def set_n_layers(self, n_layers):
-        self.JKa = self.JK.get_prepared_circulant_prod(n_layers = n_layers, inv = True)
+    def set_n_layers(self, n_layers, rcond):
+        self.JKa = self.JK.get_prepared_circulant_prod(n_layers = n_layers, inv = True, rcond = rcond)
         self.primed = True
 
     def get(self, coords_q, robust = False):
@@ -1639,7 +1639,7 @@ class coefficient_fitter_static():
                 
                 n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
                 if self.N_c>0:
-                    print("Userdefined coulomb extent:", self.N_c)
+                    #print("Userdefined coulomb extent:", self.N_c)
                     #print(self.JK.coords)
                     n_points = n_points_p(self.p, self.N_c)
                 
@@ -1649,13 +1649,14 @@ class coefficient_fitter_static():
                             self.JKa.circulantdot(
                                 J_pq_c, complx = False), J_pq_c])
                         # test solution
-                    print(" Solution satisfied:", np.abs((self.JK.circulantdot(pq_c[-1][0]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
+                    #print(" Solution satisfied:", np.abs((self.JK.circulantdot(pq_c[-1][0]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
+                    #print(" ", pq_c[-1].blocks.max(), np.abs(self.JKa.M1).max())
                 else:
                     pq_c.append([self.JK.kspace_svd_solve(J_pq_c, n_points = n_points), J_pq_c ])
             else:
                 J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
 
-                print("J_pq_c.coords:", np.max(np.abs(J_pq_c.coords), axis = 0))
+                #print("J_pq_c.coords:", np.max(np.abs(J_pq_c.coords), axis = 0))
 
 
                 
@@ -1664,7 +1665,7 @@ class coefficient_fitter_static():
                 n_points = n_points_p(self.p, np.max(np.abs(self.JK.coords)))
                 #n_points = np.max()
                 if self.N_c>0:
-                    print("Userdefined coulomb extent:", self.N_c)
+                    #print("Userdefined coulomb extent:", self.N_c)
                     #print(self.JK.coords)
                     n_points = n_points_p(self.p, self.N_c)
                 #print("coefficient fitter statig, n_points:", n_points)
@@ -1675,7 +1676,8 @@ class coefficient_fitter_static():
                         self.JKa.circulantdot(
                             J_pq_c, complx = False))
                     # test solution
-                    print(" Solution satisfied:", np.abs((self.JK.circulantdot(pq_c[-1]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
+                    #print(" Solution satisfied:", np.abs((self.JK.circulantdot(pq_c[-1]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
+                    #print(" ", pq_c[-1].blocks.max(), np.abs(self.JKa.M1).max())
                     #print("J_pq_c.blocks active:", np.max(np.abs(J_pq_c.cget(tp.lattice_coords(n_points))), axis = (1,2)))
 
 
@@ -2222,7 +2224,7 @@ class integral_builder_static():
     For high performance (but high memory demand)
     """
 
-    def __init__(self, c_occ, c_virt,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, robust  = False,  inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = True, N_c = 10):
+    def __init__(self, c_occ, c_virt,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, robust  = False,  inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = True, N_c = 10, rcond = 1e-10):
         self.c_occ = c_occ
         self.c_virt = c_virt
         self.p = p
@@ -2390,9 +2392,9 @@ class integral_builder_static():
         t0 = time.time()
         self.cfit = coefficient_fitter_static(self.c_occ, self.c_virt, p, attenuation, auxname, self.JKa, self.JKinv, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision, printing = printing, N_c = self.N_c)
         if self.N_c >0:
-            self.cfit.set_n_layers(n_points_p(p, self.N_c))
+            self.cfit.set_n_layers(n_points_p(p, self.N_c), rcond = rcond)
         else:
-            self.cfit.set_n_layers(np.max(np.abs(self.JKa.coords), axis = 0))
+            self.cfit.set_n_layers(np.max(np.abs(self.JKa.coords), axis = 0), rcond = rcond)
         
         t1 = time.time()
         if printing:

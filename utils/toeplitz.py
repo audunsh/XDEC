@@ -2079,13 +2079,13 @@ class tmat():
         return tmat(coords, np.fft.fftn(m1r, axes = (0,1,2)))
 
     
-    def get_prepared_circulant_prod(self, n_layers = None, inv = False):
+    def get_prepared_circulant_prod(self, n_layers = None, inv = False, rcond = 1e-10):
         """
         Create an object primed for ciruclant matrix-matrix multiplication
         for efficient repeated multiplication with same object
         """
         
-        return primed_for_dot(self,n_layers, inv)
+        return primed_for_dot(self,n_layers, inv, rcond = rcond)
 
 
 
@@ -2324,7 +2324,7 @@ class tmat():
 
 
 class primed_for_dot():
-    def __init__(self, m, n_layers, inv = False):
+    def __init__(self, m, n_layers, inv = False, rcond = 1e-6):
         self.n_layers = n_layers
         if n_layers is None:
             self.n_layers = np.max(np.abs(m.coords), axis = 0)
@@ -2342,7 +2342,7 @@ class primed_for_dot():
         self.M1 = np.fft.fftn(m.cget(self.coords).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y), axes = (0,1,2))
         #self.M1[0,0,0] = np.sum(m.blocks[:-1], axis = 0)
         if inv:
-            self.M1 = np.linalg.pinv(self.M1.reshape(self.nx*self.ny*self.nz, self.m1x, self.m1y)).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y)
+            self.M1 = np.linalg.pinv(self.M1.reshape(self.nx*self.ny*self.nz, self.m1x, self.m1y), rcond = rcond).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y)
     
     def circulantdot(self, other, complx = True):
         m1x,m1y =  self.m1x, self.m1y

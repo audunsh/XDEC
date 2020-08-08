@@ -5965,6 +5965,7 @@ if __name__ == "__main__":
     parser.add_argument("-pair_domain_def", type = int, default = 0, help = "Specification of pair domain type")
     parser.add_argument("-coeff_screen", type = float, default = None, help="Screen coefficients blockwise.")
     parser.add_argument("-error_estimate", type = bool, default = False, help = "Perform error estimate on DEC fragment energies." )
+    parser.add_argument("-rcond", type = float, default = 1e-6, help = "Default singular value screening threshold for inversion." )
     
  
 
@@ -6276,7 +6277,7 @@ if __name__ == "__main__":
 
     # Initialize integrals
     if args.ibuild is None:
-        ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, robust = args.robust, xi0=args.xi0, xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level, inverse_test = args.inverse_test)
+        ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, robust = args.robust, xi0=args.xi0, xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level, inverse_test = args.inverse_test, rcond = args.rcond)
         #ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=None, circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level)
 
         np.save("integral_build.npy", np.array([ib]), allow_pickle = True)
