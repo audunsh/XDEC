@@ -3543,7 +3543,7 @@ class fragment_amplitudes(amplitude_solver):
                                     #ddL_, mM_, ddM_ = m[4], m[5], m[6]
                                     self.g_x[:, ddL, :, mM, :, ddM, :] = I.cget(M).T.reshape(Ishape)
                                     n_computed_ex += 1
-                        print("Computed RI-integrals ", dL, dM, " in %.2f seconds." % (time.time()-t0))
+                        print("Computed RI-integrals ", dL, dM, " in %.2e seconds." % (time.time()-t0))
                         #, \
                         #        M, \
                         #        np.abs(I.cget(M)).max(), 
@@ -6287,6 +6287,7 @@ if __name__ == "__main__":
         print("Integral build read from file:", args.ibuild)
         args.attenuation = ib.attenuation
         print("Attenuation parameter set to %.4e" % args.attenuation)
+        ib.cfit.set_n_layers(PRI.n_points_p(p, args.N_c), args.rcond)
 
 
     """
