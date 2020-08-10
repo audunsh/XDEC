@@ -2324,7 +2324,7 @@ class tmat():
 
 
 class primed_for_dot():
-    def __init__(self, m, n_layers, inv = False, rcond = 1e-6):
+    def __init__(self, m, n_layers, inv = False, rcond = 1e-12):
         
         
         self.n_layers = n_layers
@@ -2366,7 +2366,8 @@ class primed_for_dot():
             s = np.abs(m.get_kspace_singular_values().ravel())
             #print("singular values:", s.max(), s.min())
             #print(s)
-            smin, smax = s.max(), s.min()
+            #smin, smax = s.max(), s.min()
+            smax, smin = s.max(), s.min()
 
         
 

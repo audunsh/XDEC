@@ -1641,12 +1641,9 @@ class coefficient_fitter_static():
 
                 
                 
-                n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
-                if self.N_c>0:
-                    #print("Userdefined coulomb extent:", self.N_c)
-                    #print(self.JK.coords)
-                    n_points = n_points_p(self.p, self.N_c)
+                #n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
                 
+                #
                 #
                 if self.primed:
                     pq_c.append([
@@ -1656,6 +1653,10 @@ class coefficient_fitter_static():
                     #print(" Solution satisfied:", np.abs((self.JK.circulantdot(pq_c[-1][0]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
                     #print(" ", pq_c[-1].blocks.max(), np.abs(self.JKa.M1).max())
                 else:
+                    if self.N_c>0:
+                        #print("Userdefined coulomb extent:", self.N_c)
+                        #print(self.JK.coords)
+                        n_points = n_points_p(self.p, self.N_c)
                     pq_c.append([self.JK.kspace_svd_solve(J_pq_c, n_points = n_points), J_pq_c ])
             else:
                 J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
@@ -2296,7 +2297,7 @@ class integral_builder_static():
         #self.JKa.set_precision(self.float_precision)
 
 
-
+        
         N_c_max_layers = 20
         cm = estimate_coordinate_domain(p, auxname, N_c_max_layers, attenuation = attenuation)
         #self.JKa = cm.compute_JK(thresh = xi0)
@@ -2408,7 +2409,11 @@ class integral_builder_static():
         if self.N_c >0:
             self.cfit.set_n_layers(n_points_p(p, self.N_c), rcond = rcond)
         else:
-            self.cfit.set_n_layers(np.max(np.abs(self.JKa.coords), axis = 0), rcond = rcond)
+            #J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
+            #print(np.max(np.abs(self.JKa.coords), axis = 0))
+            self.n_layers = np.max(np.abs(-1*self.cfit.pq_region[:len(self.cfit.c_virt_coords_L)]), axis = 0)
+            #self.cfit.set_n_layers(np.max(np.abs(self.JKa.coords), axis = 0), rcond = rcond)
+            self.cfit.set_n_layers(self.n_layers, rcond = rcond)
         
         t1 = time.time()
         if printing:
@@ -2456,15 +2461,15 @@ class integral_builder_static():
         #print("Extent of Xreg          :", coulomb_extent)
 
         s_ = tp.tmat()
-        s_coords = tp.lattice_coords( n_points_p(p, 2*self.N_c))
-        s_.load_nparray(np.ones((scoords.shape[0],2,2), dtype = float), scoords)
+        s_coords = tp.lattice_coords(self.n_layers*2)
+        s_.load_nparray(np.ones((s_coords.shape[0],2,2), dtype = float), s_coords)
 
         #self.JK = compute_JK(p,self.JKa, coulomb=True, auxname = self.auxname)
         #self.JK = compute_JK(p,big_tmat, coulomb=True, auxname = self.auxname)
-        self.JK = compute_JK(p,self.JKa, coulomb=True, auxname = self.auxname)
+        #self.JK = compute_JK(p,self.JKa, coulomb=True, auxname = self.auxname)
         self.JK = compute_JK(p,s_, coulomb=True, auxname = self.auxname)
         self.JK.set_precision(self.float_precision)
-        prinit("COULOMB SET TO DOUBLE SIZE!")
+        print("COULOMB SET TO DOUBLE SIZE!")
 
         print("JKa domain:", np.max(np.abs(self.JKa.coords), axis = 0), self.JKa.coords.shape[0])
 
