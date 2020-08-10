@@ -189,7 +189,7 @@ class amplitude_solver():
             #print("ENERGU:", energy)
             #self.t2 *= 0
             #print("NORM_THRESH = ", norm_thresh)
-            return self.solve_unfolded(norm_thresh = norm_thresh, maxiter = 100, damping = damping, energy = energy, compute_missing_exchange = False, pairwise = pairwise)
+            return self.solve_unfolded(norm_thresh = norm_thresh, maxiter = 100, damping = damping, energy = energy, compute_missing_exchange = True, pairwise = pairwise)
             
             #return self.solve_unfolded_pao(norm_thresh = norm_thresh, maxiter = 100, damping = damping, energy = energy, compute_missing_exchange = False, s_virt = tp.get_identity_tmat(ib.n_virt))
             

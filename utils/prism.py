@@ -821,7 +821,7 @@ class prism():
                 
                 Charges.append(charge)
                 
-                
+
         return np.array(Positi), np.array(Charges)
     
     def get_charges(self):

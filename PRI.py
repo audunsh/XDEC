@@ -140,7 +140,7 @@ def get_basis_list(atoms, bname ="ri-fitbasis.g94", prescreen = None):
 
 
 
-def remove_redundancies(p, N_c, basis_input, plotting = False, analysis = True, tolerance = 1e-6, attenuation = 0.1):
+def remove_redundancies(p, N_c, basis_input, plotting = False, analysis = True, tolerance = 1e-6, attenuation = 0.0):
     """
     Removes redundancies in auxiliary basis sets by systematic reduction of the condition by means of a SVD
     """
@@ -356,6 +356,7 @@ def get_xyz(p, t = np.array([[0,0,0]]), conversion_factor = 0.5291772109200000):
     0.52917721067
     0.52917721092 <- this one, confirmed in Libint source
     """
+    
 
     pos, charge = p.get_atoms(t)
     ptable = [None, "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne"]
@@ -363,6 +364,7 @@ def get_xyz(p, t = np.array([[0,0,0]]), conversion_factor = 0.5291772109200000):
 
     for i in range(len(charge)):
         sret += "%s %.15f %.15f %.15f\n" % (ptable[int(charge[i])],conversion_factor*pos[i][0], conversion_factor*pos[i][1], conversion_factor*pos[i][2])
+        
     sret = sret[:-2]
     return sret
 
@@ -776,7 +778,7 @@ def compute_overlap_matrix(p, T = np.array([[0,0,0]]), conversion_factor = .5291
     s.load_nparray(vint, T)
     return s
 
-def compute_JK(p, s, attenuation = 1, auxname = "cc-pvdz", coulomb = False):
+def compute_JK(p, s, attenuation = 0, auxname = "cc-pvdz", coulomb = False):
     """
     Computes integrals of the type ( 0 J | T K )
     for all coordinates T provided in t
@@ -840,7 +842,7 @@ def compute_JK(p, s, attenuation = 1, auxname = "cc-pvdz", coulomb = False):
 
     return JK
 
-def compute_JK_auto(p, s, attenuation = 1, auxname = "cc-pvdz", coulomb = False):
+def compute_JK_auto(p, s, attenuation = 0, auxname = "cc-pvdz", coulomb = False):
     """
     Computes integrals of the type ( 0 J | T K )
     for all coordinates T provided in t
@@ -977,7 +979,7 @@ def invert_JK(JK):
     """
 
 
-def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 10e-12, auxname = "cc-pvdz-ri"):
+def estimate_attenuation_distance(p, attenuation = 0.0, c2 = [0,0,0], thresh = 10e-12, auxname = "cc-pvdz-ri"):
     """
     For a given attenuation parameter, basis and lattice geometry, estimate
     which blocks contain elements above the provided treshold.
@@ -1027,7 +1029,7 @@ def estimate_attenuation_distance(p, attenuation = 0.1, c2 = [0,0,0], thresh = 1
     big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
     return big_tmat #return expansion region in form of toeplitz matrix
 
-def estimate_attenuation_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc-pvdz-ri"):
+def estimate_attenuation_domain(p, attenuation = 0.0, xi0 = 1e-8,  auxname = "cc-pvdz-ri"):
     """
     Estimate the attenuation domains as described in algorithm 3 in PRI-notes
 
@@ -1107,7 +1109,7 @@ def estimate_attenuation_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc
     """
     return xi_domains
 
-def estimate_center_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc-pvdz-ri"):
+def estimate_center_domain(p, attenuation = 0.0, xi0 = 1e-8,  auxname = "cc-pvdz-ri"):
     """
     Estimate the attenuation domains as described in algorithm 3 in PRI-notes
 
@@ -1155,7 +1157,7 @@ def estimate_center_domain(p, attenuation = 0.1, xi0 = 1e-8,  auxname = "cc-pvdz
     return xi_domains
 
 
-def estimate_attenuation_distance_(p, attenuation = 0.1, c2 = [0,0,0], thresh = 10e-12, auxname = "cc-pvdz-ri"):
+def estimate_attenuation_distance_(p, attenuation = 0.0, c2 = [0,0,0], thresh = 10e-12, auxname = "cc-pvdz-ri"):
     """
     For a given attenuation parameter, basis and lattice geometry, estimate
     which blocks contain elements above the provided treshold.
@@ -1426,7 +1428,7 @@ class coefficient_fitter_static():
         
         #for i in np.arange(len(xi_domain)):
 
-        for ci in np.arange(len(C2)):
+        for ci in range(len(C2)):
             c2, R2 = C2[ci], R[ci] 
             # Compute JMN with nsep =  c2
             #print("ci, c2, R2:", ci, c2, R2)
@@ -1536,6 +1538,7 @@ class coefficient_fitter_static():
         self.coords = np.array(self.coords)
         self.c0 = np.argwhere(np.all(self.coords==np.array([0,0,0]), axis = 1))[0][0]
 
+        
         self.Jmnc_tensors = []
         self.Jmnc_screening = []
 
@@ -1620,6 +1623,7 @@ class coefficient_fitter_static():
 
     def set_n_layers(self, n_layers, rcond):
         self.JKa = self.JK.get_prepared_circulant_prod(n_layers = n_layers, inv = True, rcond = rcond)
+        #self.JKa = self.JK.get_prepared_circulant_prod(n_layers = n_layers, inv = False, rcond = rcond)
         self.primed = True
 
     def get(self, coords_q, robust = False):
@@ -1661,7 +1665,7 @@ class coefficient_fitter_static():
 
                 
                 
-                n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
+                #n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
                 n_points = n_points_p(self.p, np.max(np.abs(self.JK.coords)))
                 #n_points = np.max()
                 if self.N_c>0:
@@ -1675,10 +1679,20 @@ class coefficient_fitter_static():
                     pq_c.append(
                         self.JKa.circulantdot(
                             J_pq_c, complx = False))
+
+                    #pq_c.append(
+                    #    self.JKa.linear_solve(
+                    #        J_pq_c, complx = False))
                     # test solution
-                    #print(" Solution satisfied:", np.abs((self.JK.circulantdot(pq_c[-1]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
-                    #print(" ", pq_c[-1].blocks.max(), np.abs(self.JKa.M1).max())
-                    #print("J_pq_c.blocks active:", np.max(np.abs(J_pq_c.cget(tp.lattice_coords(n_points))), axis = (1,2)))
+
+                    d = pq_c[-1]
+                    ssat = np.abs((self.JK.circulantdot(d) - J_pq_c).blocks).max()
+                    #ssat= np.abs(self.JK.cget(self.JK.coords) - d.tT().circulantdot(self.JK.circulantdot(d)).cget(self.JK.coords)).max()
+                    print("   Solution satisfied:", ssat ) #np.abs((self.JK.circulantdot(pq_c[-1]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
+                    print("   Inversion ok      :", np.max(np.abs((self.JKa.circulantdot(self.JK).cget(self.JK.coords) - tp.get_identity_tmat(self.JK.blocks.shape[1]).cget(self.JK.coords))), axis = (0,1,2)))
+                    
+                    print("   Max DF-coefficient:", np.abs(pq_c[-1].blocks).max()) #, np.abs(self.JKa.M1).max())
+                    #print("J_pq_c.blocks active:", np.max(np.abs(J_pq_c.cget(self.JK.coords)), axis = (1,2)))
 
 
 
@@ -2224,7 +2238,7 @@ class integral_builder_static():
     For high performance (but high memory demand)
     """
 
-    def __init__(self, c_occ, c_virt,p, attenuation = 0.1, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, robust  = False,  inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = True, N_c = 10, rcond = 1e-10):
+    def __init__(self, c_occ, c_virt,p, attenuation = 0.0, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, robust  = False,  inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = True, N_c = 10, rcond = 1e-10):
         self.c_occ = c_occ
         self.c_virt = c_virt
         self.p = p
@@ -2441,18 +2455,21 @@ class integral_builder_static():
         #coulomb_extent = [3,0,0]
         #print("Extent of Xreg          :", coulomb_extent)
 
-        #s = tp.tmat()
-        #scoords = tp.lattice_coords(coulomb_extent)
-        #s.load_nparray(np.ones((scoords.shape[0],2,2), dtype = float), scoords)
+        s_ = tp.tmat()
+        s_coords = tp.lattice_coords( n_points_p(p, 2*self.N_c))
+        s_.load_nparray(np.ones((scoords.shape[0],2,2), dtype = float), scoords)
 
         #self.JK = compute_JK(p,self.JKa, coulomb=True, auxname = self.auxname)
         #self.JK = compute_JK(p,big_tmat, coulomb=True, auxname = self.auxname)
         self.JK = compute_JK(p,self.JKa, coulomb=True, auxname = self.auxname)
+        self.JK = compute_JK(p,s_, coulomb=True, auxname = self.auxname)
         self.JK.set_precision(self.float_precision)
+        prinit("COULOMB SET TO DOUBLE SIZE!")
 
         print("JKa domain:", np.max(np.abs(self.JKa.coords), axis = 0), self.JKa.coords.shape[0])
 
         print("JK  domain:", np.max(np.abs(self.JK.coords), axis = 0), self.JK.coords.shape[0])
+        print("Number of AUX-functions:", self.JK.blocks.shape[1])
 
        # dm, de = self.JKa.absmax_decay(self.p)
        # print("absmax decay", dm, de)

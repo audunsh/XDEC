@@ -476,7 +476,7 @@ class tmat():
 
         
         
-    def load_nparray(self, blocks, coords, safemode = True,
+    def load_nparray(self, blocks, coords, safemode = False,
                      screening = True):
         '''
         Init matrix from numpy arrays
@@ -612,7 +612,7 @@ class tmat():
         
         self.map_blocks()      
         
-    def load(self, infile, safemode = True):
+    def load(self, infile, safemode = False):
         # Load toeplitz matrix from infile
         
         coords, blocks, domain = np.load(infile, allow_pickle=True)
@@ -2325,6 +2325,8 @@ class tmat():
 
 class primed_for_dot():
     def __init__(self, m, n_layers, inv = False, rcond = 1e-6):
+        
+        
         self.n_layers = n_layers
         if n_layers is None:
             self.n_layers = np.max(np.abs(m.coords), axis = 0)
@@ -2336,15 +2338,82 @@ class primed_for_dot():
 
         self.coords = np.roll(lattice_coords(self.n_layers).reshape(self.nx,self.ny,self.nz, 3), -self.n_layers, axis = (0,1,2)).reshape(self.nx*self.ny*self.nz, 3)
 
+        #print("primed coords:", self.coords)
+        #print("rcond", rcond)
         
 
         
         self.M1 = np.fft.fftn(m.cget(self.coords).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y), axes = (0,1,2))
+
         #self.M1[0,0,0] = np.sum(m.blocks[:-1], axis = 0)
         if inv:
-            self.M1 = np.linalg.pinv(self.M1.reshape(self.nx*self.ny*self.nz, self.m1x, self.m1y), rcond = rcond).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y)
+            from scipy.linalg import pinv2, pinv, svd
+            #
+            #self.M1 = np.linalg.pinv(self.M1.reshape(self.nx*self.ny*self.nz, self.m1x, self.m1y), rcond = rcond).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y)
+            #self.M1 = pinv2(self.M1.reshape(self.nx*self.ny*self.nz, self.m1x, self.m1y), rcond = rcond).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y)
+            
+            """
+            for c in self.coords:
+                if c[0] >=0: #using T-symmetry here
+                    p_inv = pinv(self.M1[c[0], c[1], c[2]]) #, rcond = rcond)
+
+                    print(c, "Inverse:", np.allclose(self.M1[c[0], c[1], c[2]], np.dot(self.M1[c[0], c[1], c[2]], np.dot(p_inv, self.M1[c[0], c[1], c[2]]))))
+                    self.M1[c[0], c[1], c[2]] = p_inv
+                    self.M1[-c[0],-c[1],-c[2]] = p_inv.conj()
+            """
+
+            # 1 get singular values of matrix
+            s = np.abs(m.get_kspace_singular_values().ravel())
+            #print("singular values:", s.max(), s.min())
+            #print(s)
+            smin, smax = s.max(), s.min()
+
+        
+
+            
+
+
+
+
+            if True:
+                for c in self.coords:
+                    
+                    #u_,s_,vh_ = np.linalg.svd(self.M1[c[0], c[1], c[2]])
+                    u_,s_,vh_ = svd(self.M1[c[0], c[1], c[2]])
+                    t = s_>rcond*smax
+
+                    #print(s_)
+
+                    s_i = s_*1
+                    s_i[t == False] = 0
+                    s_i[t] = s_i[t]**-1
+
+                    #print("inverse:", s_i)
+                    
+
+
+                    p_inv = np.dot(vh_.conj().T.dot(np.diag(s_i)), u_.conj().T)
+                    
+                    
+                    #p_inv = pinv(self.M1[c[0], c[1], c[2]], rcond = rcond)
+
+
+
+                    inv_dev = np.abs(np.eye(p_inv.shape[0], dtype = float) - p_inv.dot(self.M1[c[0], c[1], c[2]])).max()
+
+                    #print(c, "deviation in inverse:", np.abs(self.M1[c[0], c[1], c[2]]- np.dot(self.M1[c[0], c[1], c[2]], np.dot(p_inv, self.M1[c[0], c[1], c[2]]))).max())
+
+                    
+                        
+
+
+                    self.M1[c[0], c[1], c[2]] = p_inv #pseudo inverse
+
+                    #self.M1[c[0], c[1], c[2]] = np.linalg.pinv(self.M1[c[0], c[1], c[2]], rcond = rcond)
+
+
     
-    def circulantdot(self, other, complx = True):
+    def circulantdot(self, other, complx = False):
         m1x,m1y =  self.m1x, self.m1y
         m2x,m2y =  other.blocks.shape[1], other.blocks.shape[2]
         nx,ny,nz = self.nx,self.ny,self.nz
@@ -2352,11 +2421,60 @@ class primed_for_dot():
         M1 = self.M1
         n_layers = self.n_layers
         m2r = other.cget(coords).reshape(nx,ny,nz,m2x,m2y)
+
+        
+
+
+
+
         M2 = np.fft.fftn(m2r, axes = (0,1,2))
+        #for c in coords:
+            #if c[0]>=0:
+            #    print(M2[-c[0], -c[1], -c[2]] == M2[c[0], c[1], c[2]].T)
+
+
+
         M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = np.complex128)
 
         for c in coords:
+            #if c[0]>=0:
             M3[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
+            #    M3[-c[0], -c[1], -c[2]] = M3[c[0], c[1], c[2]].T.conj()
+        
+        
+        ret = tmat()
+        if complx:
+            ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m2y), coords)
+        else:
+            ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).real.reshape(coords.shape[0], m1x,m2y), coords)
+        return ret
+    def linear_solve(self, other, complx = False):
+        m1x,m1y =  self.m1x, self.m1y
+        m2x,m2y =  other.blocks.shape[1], other.blocks.shape[2]
+        nx,ny,nz = self.nx,self.ny,self.nz
+        coords = self.coords
+        M1 = self.M1
+        n_layers = self.n_layers
+        m2r = other.cget(coords).reshape(nx,ny,nz,m2x,m2y)
+
+        
+
+
+
+
+        M2 = np.fft.fftn(m2r, axes = (0,1,2))
+        #for c in coords:
+            #if c[0]>=0:
+            #    print(M2[-c[0], -c[1], -c[2]] == M2[c[0], c[1], c[2]].T)
+
+
+
+        M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = np.complex128)
+
+        for c in coords:
+            #if c[0]>=0:
+            M3[c[0], c[1], c[2]] = np.linalg.solve(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
+            #    M3[-c[0], -c[1], -c[2]] = M3[c[0], c[1], c[2]].T.conj()
         
         
         ret = tmat()
