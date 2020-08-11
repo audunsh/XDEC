@@ -3478,7 +3478,7 @@ class fragment_amplitudes(amplitude_solver):
 
     def initialize_blocks(self, sequence):
         sequence = np.array(sequence)
-        print("sequuence shape:", sequence.shape)
+        #print("sequuence shape:", sequence.shape)
 
         n_computed_di = 0
         n_computed_ex = 0
@@ -5965,7 +5965,7 @@ if __name__ == "__main__":
     parser.add_argument("-pair_domain_def", type = int, default = 0, help = "Specification of pair domain type")
     parser.add_argument("-coeff_screen", type = float, default = None, help="Screen coefficients blockwise.")
     parser.add_argument("-error_estimate", type = bool, default = False, help = "Perform error estimate on DEC fragment energies." )
-    parser.add_argument("-rcond", type = float, default = 1e-10, help = "Default singular value screening threshold for inversion." )
+    parser.add_argument("-rcond", type = float, default = 1e-12, help = "Default singular value screening threshold for inversion." )
     
  
 
