@@ -2376,9 +2376,10 @@ class primed_for_dot():
 
 
 
-            if True:
-                for c in self.coords:
-                    
+            #if True:
+            for c in self.coords:
+                if c[0] >=0: #time reversal symmetry
+                
                     #u_,s_,vh_ = np.linalg.svd(self.M1[c[0], c[1], c[2]])
                     u_,s_,vh_ = svd(self.M1[c[0], c[1], c[2]])
                     t = s_>rcond*smax
@@ -2400,7 +2401,7 @@ class primed_for_dot():
 
 
 
-                    inv_dev = np.abs(np.eye(p_inv.shape[0], dtype = float) - p_inv.dot(self.M1[c[0], c[1], c[2]])).max()
+                    #inv_dev = np.abs(np.eye(p_inv.shape[0], dtype = float) - p_inv.dot(self.M1[c[0], c[1], c[2]])).max()
 
                     #print(c, "deviation in inverse:", np.abs(self.M1[c[0], c[1], c[2]]- np.dot(self.M1[c[0], c[1], c[2]], np.dot(p_inv, self.M1[c[0], c[1], c[2]]))).max())
 
@@ -2409,6 +2410,7 @@ class primed_for_dot():
 
 
                     self.M1[c[0], c[1], c[2]] = p_inv #pseudo inverse
+                    self.M1[-c[0], -c[1], -c[2]] = p_inv.conj() 
 
                     #self.M1[c[0], c[1], c[2]] = np.linalg.pinv(self.M1[c[0], c[1], c[2]], rcond = rcond)
 
