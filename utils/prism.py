@@ -814,6 +814,7 @@ class prism():
                 else:
 
                     pos = pos + np.dot(i,lattice)
+                    #pos = pos + np.dot(lattice, i)
 
                 #charge, pos = self.charges[c],self.atoms[c]-np.dot(lattice, i)
 
@@ -821,7 +822,7 @@ class prism():
                 
                 Charges.append(charge)
                 
-
+        
         return np.array(Positi), np.array(Charges)
     
     def get_charges(self):

@@ -63,6 +63,39 @@ def basis_trimmer(p, auxbasis, alphacut = 0.1, trimlist = None):
 
     return trimmed_basis
 
+def basis_scaler(p, auxbasis, alphascale = 1.0, trimlist = None):
+    """
+    # SCALE basis 
+    """
+    f = open(auxbasis, "r")
+    basis = f.readlines()
+    trimmed_basis_list = []
+    for line in basis:
+        try:
+            # We only retain basis functions with exponent > alphacut
+            exponent = literal_eval(line.split()[0])
+            weight   = literal_eval(line.split()[1])
+            
+            trimmed_basis_list.append("    %.8f   %.8f \n" % (np.log(alphascale*np.exp(exponent)), weight))
+            #trimmed_basis_list.append("    %.8f   %.8f" (np.log(alphascale*np.exp(exponent)), weight))
+
+
+
+        except:
+            trimmed_basis_list.append(line)
+    f.close()
+
+    trimmed_basis = ""
+    for li in range(len(trimmed_basis_list)):
+        l = trimmed_basis_list[li]
+        if trimlist is None:
+            trimmed_basis += l
+        else:
+            if trimlist[li]:
+                trimmed_basis += l
+
+    return trimmed_basis
+
 
 
 def extract_atom_from_basis( atom, bname = "ri-fitbasis.g94", header = True):
@@ -357,7 +390,6 @@ def get_xyz(p, t = np.array([[0,0,0]]), conversion_factor = 0.5291772109200000):
     0.52917721092 <- this one, confirmed in Libint source
     """
     
-
     pos, charge = p.get_atoms(t)
     ptable = [None, "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne"]
     sret = "%i\n\n" % len(charge)
@@ -366,6 +398,9 @@ def get_xyz(p, t = np.array([[0,0,0]]), conversion_factor = 0.5291772109200000):
         sret += "%s %.15f %.15f %.15f\n" % (ptable[int(charge[i])],conversion_factor*pos[i][0], conversion_factor*pos[i][1], conversion_factor*pos[i][2])
         
     sret = sret[:-2]
+    #print(sret)
+    #
+    #print(" ----- ")
     return sret
 
 """
@@ -992,6 +1027,8 @@ def estimate_attenuation_distance(p, attenuation = 0.0, c2 = [0,0,0], thresh = 1
     big_tmat = tp.tmat()
     big_tmat.load_nparray(np.ones((cube.shape[0], 2,2),dtype = float),  cube)
 
+
+
     Jmnc = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = [c2])
 
     if np.max(np.abs(Jmnc.blocks[:-1]))<thresh:
@@ -1381,6 +1418,7 @@ class coefficient_fitter_static():
         self.Jmn = []
         self.attenuation = attenuation
         #self.screening_thresh = screening_thresh
+        print("att:", attenuation)
         self.p = p
         #self.c = c
         self.N_c = N_c
@@ -1443,6 +1481,7 @@ class coefficient_fitter_static():
         
             #for i in np.arange(ddM.shape[0]):
             #c2 = ddM[i]
+            #print(cm.attenuation)
 
 
         
@@ -1621,8 +1660,8 @@ class coefficient_fitter_static():
             #print("Screening-induced sparsity is at %.2e percent." % (100.0*compr/total))
         
 
-    def set_n_layers(self, n_layers, rcond):
-        self.JKa = self.JK.get_prepared_circulant_prod(n_layers = n_layers, inv = True, rcond = rcond)
+    def set_n_layers(self, n_layers, rcond, inv = "lpinv"):
+        self.JKa = self.JK.get_prepared_circulant_prod(n_layers = n_layers, inv = True, rcond = rcond, inv_mod = inv)
         #self.JKa = self.JK.get_prepared_circulant_prod(n_layers = n_layers, inv = False, rcond = rcond)
         self.primed = True
 
@@ -2239,7 +2278,7 @@ class integral_builder_static():
     For high performance (but high memory demand)
     """
 
-    def __init__(self, c_occ, c_virt,p, attenuation = 0.0, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, robust  = False,  inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = True, N_c = 10, rcond = 1e-10):
+    def __init__(self, c_occ, c_virt,p, attenuation = 0.0, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, robust  = False,  inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = True, N_c = 10, rcond = 1e-10, inv = "lpinv"):
         self.c_occ = c_occ
         self.c_virt = c_virt
         self.p = p
@@ -2253,6 +2292,8 @@ class integral_builder_static():
         self.screening_thresh = 1e-10
         self.screen_trigger = 0
         self.activation_count = 60 # activate global screening when this many cells has been screened
+
+        self.inv = inv
 
         self.n_occ = c_occ.blocks.shape[2]
         self.n_virt = c_virt.blocks.shape[2]
@@ -2407,13 +2448,13 @@ class integral_builder_static():
         t0 = time.time()
         self.cfit = coefficient_fitter_static(self.c_occ, self.c_virt, p, attenuation, auxname, self.JKa, self.JKinv, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision, printing = printing, N_c = self.N_c)
         if self.N_c >0:
-            self.cfit.set_n_layers(n_points_p(p, self.N_c), rcond = rcond)
+            self.cfit.set_n_layers(n_points_p(p, self.N_c), rcond = rcond, inv = self.inv)
         else:
             #J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
             #print(np.max(np.abs(self.JKa.coords), axis = 0))
             self.n_layers = np.max(np.abs(-1*self.cfit.pq_region[:len(self.cfit.c_virt_coords_L)]), axis = 0)
             #self.cfit.set_n_layers(np.max(np.abs(self.JKa.coords), axis = 0), rcond = rcond)
-            self.cfit.set_n_layers(self.n_layers, rcond = rcond)
+            self.cfit.set_n_layers(self.n_layers, rcond = rcond, inv = self.inv)
         
         t1 = time.time()
         if printing:

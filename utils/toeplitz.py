@@ -11,6 +11,7 @@ from copy import deepcopy
 
 
 from scipy.linalg import expm
+from scipy.linalg import pinv2, pinv, svd
 #from numba import jit
 
 '''
@@ -2079,13 +2080,13 @@ class tmat():
         return tmat(coords, np.fft.fftn(m1r, axes = (0,1,2)))
 
     
-    def get_prepared_circulant_prod(self, n_layers = None, inv = False, rcond = 1e-10):
+    def get_prepared_circulant_prod(self, n_layers = None, inv = False, rcond = 1e-10, inv_mod = "lpinv"):
         """
         Create an object primed for ciruclant matrix-matrix multiplication
         for efficient repeated multiplication with same object
         """
         
-        return primed_for_dot(self,n_layers, inv, rcond = rcond)
+        return primed_for_dot(self,n_layers, inv, rcond = rcond, inv_mod = inv_mod)
 
 
 
@@ -2324,7 +2325,7 @@ class tmat():
 
 
 class primed_for_dot():
-    def __init__(self, m, n_layers, inv = False, rcond = 1e-12):
+    def __init__(self, m, n_layers, inv = False, rcond = 1e-12, inv_mod = "lpinv"):
         
         
         self.n_layers = n_layers
@@ -2340,16 +2341,22 @@ class primed_for_dot():
 
         #print("primed coords:", self.coords)
         #print("rcond", rcond)
+        self.inv_mod = inv_mod
         
 
         
         self.M1 = np.fft.fftn(m.cget(self.coords).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y), axes = (0,1,2))
 
+        #for nx in range(self.nx):
+        #    for ny in range(self.ny):
+        #        for nz in range(self.nz):
+        #            print(nx,ny,nz,np.min(np.sum(np.linalg.qr(self.M1[nx,ny,nz])[1]**2, axis = 1)))
+
         #self.M1[0,0,0] = np.sum(m.blocks[:-1], axis = 0)
         if inv:
-            from scipy.linalg import pinv2, pinv, svd
+            
+            inv_mod = self.inv_mod
             #
-            #self.M1 = np.linalg.pinv(self.M1.reshape(self.nx*self.ny*self.nz, self.m1x, self.m1y), rcond = rcond).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y)
             #self.M1 = pinv2(self.M1.reshape(self.nx*self.ny*self.nz, self.m1x, self.m1y), rcond = rcond).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y)
             
             """
@@ -2363,11 +2370,34 @@ class primed_for_dot():
             """
 
             # 1 get singular values of matrix
-            s = np.abs(m.get_kspace_singular_values().ravel())
+            s = np.abs(m.get_kspace_singular_values(n_points = n_layers)).reshape(self.nx*self.ny*self.nz, self.m1x) #.ravel())
             #print("singular values:", s.max(), s.min())
             #print(s)
             #smin, smax = s.max(), s.min()
+            print(s.shape)
             smax, smin = s.max(), s.min()
+            print("Overall condition of Coulomb matrix:", smax/smin, smax, smin)
+            print("Conditions at separate K-points     :", np.max(s, axis = 1)/np.min(s, axis = 1))
+
+            
+            if inv_mod == "lpinv":
+
+                self.M1 = np.linalg.pinv(self.M1.reshape(self.nx*self.ny*self.nz, self.m1x, self.m1y), rcond = rcond).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y)
+            else:
+                for c in self.coords:
+                    #if c[0] >=0: #time reversal symmetry does not apply here ?
+                    if inv_mod == "spinv":
+                        p_inv = pinv(self.M1[c[0], c[1], c[2]], rcond = rcond)
+                    if inv_mod == "spinv2":
+                        p_inv = pinv2(self.M1[c[0], c[1], c[2]], rcond = rcond)
+                    self.M1[c[0], c[1], c[2]] = p_inv #pseudo inverse
+                    self.M1[-c[0], -c[1], -c[2]] = p_inv.conj().T
+
+
+
+            
+
+
 
         
 
@@ -2376,43 +2406,47 @@ class primed_for_dot():
 
 
 
-            #if True:
-            for c in self.coords:
-                if c[0] >=0: #time reversal symmetry
-                
-                    #u_,s_,vh_ = np.linalg.svd(self.M1[c[0], c[1], c[2]])
-                    u_,s_,vh_ = svd(self.M1[c[0], c[1], c[2]])
-                    t = s_>rcond*smax
-
-                    #print(s_)
-
-                    s_i = s_*1
-                    s_i[t == False] = 0
-                    s_i[t] = s_i[t]**-1
-
-                    #print("inverse:", s_i)
+            if False:
+                for c in self.coords:
+                    if c[0] >=0: #time reversal symmetry
                     
+                        #u_,s_,vh_ = np.linalg.svd(self.M1[c[0], c[1], c[2]])
+                        u_,s_,vh_ = np.linalg.svd(self.M1[c[0], c[1], c[2]], full_matrices = True)
+                        #smax = s_.max()
+                        print(c,s_.max()/s_.min() , s_.max(), s_.min(), smax*rcond, s_.max()*rcond)
+                        #print(np.sum(u_**2, axis = 1))
+                        #print(np.sum(u_**2, axis = 0))
+                        t = s_>rcond*smax
 
+                        #print(c, np.linalg.norm(np.dot(u_, np.dot(np.diag(s_), vh_))-self.M1[c[0], c[1], c[2]]))
 
-                    p_inv = np.dot(vh_.conj().T.dot(np.diag(s_i)), u_.conj().T)
-                    
-                    
-                    #p_inv = pinv(self.M1[c[0], c[1], c[2]], rcond = rcond)
+                        s_i = s_*1
+                        s_i[t == False] = 0
+                        s_i[t] = s_i[t]**-1
 
-
-
-                    #inv_dev = np.abs(np.eye(p_inv.shape[0], dtype = float) - p_inv.dot(self.M1[c[0], c[1], c[2]])).max()
-
-                    #print(c, "deviation in inverse:", np.abs(self.M1[c[0], c[1], c[2]]- np.dot(self.M1[c[0], c[1], c[2]], np.dot(p_inv, self.M1[c[0], c[1], c[2]]))).max())
-
-                    
+                        #print("inverse:", s_i)
                         
 
 
-                    self.M1[c[0], c[1], c[2]] = p_inv #pseudo inverse
-                    self.M1[-c[0], -c[1], -c[2]] = p_inv.conj() 
+                        p_inv = np.dot(vh_.conj().T.dot(np.diag(s_i)), u_.conj().T)
+                        
+                        
+                        #p_inv = pinv(self.M1[c[0], c[1], c[2]], rcond = rcond)
 
-                    #self.M1[c[0], c[1], c[2]] = np.linalg.pinv(self.M1[c[0], c[1], c[2]], rcond = rcond)
+
+
+                        #inv_dev = np.abs(np.eye(p_inv.shape[0], dtype = float) - p_inv.dot(self.M1[c[0], c[1], c[2]])).max()
+
+                        #print(c, "deviation in inverse:", np.abs(self.M1[c[0], c[1], c[2]]- np.dot(self.M1[c[0], c[1], c[2]], np.dot(p_inv, self.M1[c[0], c[1], c[2]]))).max())
+
+                        
+                            
+
+
+                        self.M1[c[0], c[1], c[2]] = p_inv #pseudo inverse
+                        self.M1[-c[0], -c[1], -c[2]] = p_inv.conj() 
+
+                        #self.M1[c[0], c[1], c[2]] = np.linalg.pinv(self.M1[c[0], c[1], c[2]], rcond = rcond)
 
 
     
@@ -2440,9 +2474,9 @@ class primed_for_dot():
         M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = np.complex128)
 
         for c in coords:
-            #if c[0]>=0:
-            M3[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
-            #    M3[-c[0], -c[1], -c[2]] = M3[c[0], c[1], c[2]].T.conj()
+            if c[0]>=0:
+                M3[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
+                M3[-c[0], -c[1], -c[2]] = M3[c[0], c[1], c[2]].conj()
         
         
         ret = tmat()
