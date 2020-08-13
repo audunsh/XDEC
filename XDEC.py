@@ -1003,6 +1003,53 @@ class amplitude_solver():
 
             f0_mask = np.array((d_ii_1.cget([0,0,0])[self.fragment[0], :].ravel())[i0_mask], dtype = np.bool) #fragment 1 in refcell, only indexes in refcell
 
+            #print("f0_mask", f0_mask)
+            e_ij =  2*np.einsum("iajb,iajb->j", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->j", t2s[f0_mask], v2s[f0_mask])
+            d_ij = self.d_ii.cget(ocoords)[:, self.fragment[0], :].ravel()[ii_mask]
+
+            s_ij = np.argsort(d_ij)
+
+            #print(e_ij.shape)
+            #print(d_ij.shape)
+            #print("energy_ij:", e_ij[s_ij])
+            #print("d_ij:", d_ij[s_ij])
+            
+            #print("distance_ij", d_ij)
+            if True:
+                e_a =  2*np.einsum("iajb,iajb->a", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->a", t2s[f0_mask], v2s[f0_mask])
+                d_a = self.d_ia.cget(vcoords)[:, self.fragment[0], :].ravel()[ia_mask]
+                a_s = np.argsort(d_a)
+
+                #print("Energy (1):", time.time()-t0)
+
+                #print(np.max(np.abs(t2new)), i, energy, np.array([e_a[a_s],d_a[a_s]]))
+
+                energy = np.sum(e_a)
+                print("Energy (1):", time.time()-t0)
+                t0 = time.time()
+
+                return np.max(np.abs(t2new)), i, energy, np.array([e_a[a_s],d_a[a_s]])
+                #print()
+
+
+            else:
+
+                energy = 2*np.einsum("iajb,iajb", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja", t2s[f0_mask], v2s[f0_mask])
+                print("Energy (1):", time.time()-t0)
+                t0 = time.time()
+
+                return np.max(np.abs(t2new)), i, energy
+
+
+        if energy == "cim_": 
+            # Cluster-in-molecule energy
+            d_ii_1 = self.d_ii*1
+            d_ii_1.blocks *= 0
+
+            d_ii_1.blocks[d_ii_1.mapping[ d_ii_1._c2i(np.array([0,0,0]))], self.fragment[0], self.fragment] = 1
+
+            f0_mask = np.array((d_ii_1.cget([0,0,0])[self.fragment[0], :].ravel())[i0_mask], dtype = np.bool) #fragment 1 in refcell, only indexes in refcell
+
             energy = 2*np.einsum("iajb,iajb", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja", t2s[f0_mask], v2s[f0_mask])
             print(energy)
             print("Energy (1):", time.time()-t0)
@@ -5967,6 +6014,7 @@ if __name__ == "__main__":
     parser.add_argument("-error_estimate", type = bool, default = False, help = "Perform error estimate on DEC fragment energies." )
     parser.add_argument("-rcond", type = float, default = 1e-12, help = "Default singular value screening threshold for inversion." )
     parser.add_argument("-inv", type = str, default = "lpinv", help = "Pseudo-inverse rotine, options: lpinv, spinv, spinv2, svd" )
+    parser.add_argument("-store_ibuild", type = bool, default = True, help = "Store intermediate contraction object." )
     
  
 
@@ -6282,8 +6330,8 @@ if __name__ == "__main__":
     if args.ibuild is None:
         ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, robust = args.robust, xi0=args.xi0, xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level, inverse_test = args.inverse_test, rcond = args.rcond, inv = args.inv)
         #ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=None, circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level)
-
-        np.save("integral_build.npy", np.array([ib]), allow_pickle = True)
+        if args.store_ibuild:
+            np.save("integral_build.npy", np.array([ib]), allow_pickle = True)
     else:
         ib = np.load(args.ibuild, allow_pickle = True)[0]
         #print(ib.getorientation([0,0,0],[0,0,0]))
