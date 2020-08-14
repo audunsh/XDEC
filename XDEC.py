@@ -206,7 +206,7 @@ class amplitude_solver():
                     return dt, it, self.compute_pair_fragment_energy()
 
 
-    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = True, pairwise = False):
+    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = False, pairwise = False):
         # Standard solver for orthogonal virtual space
         #self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i([0,0,0]) ] ] *= 0
 
