@@ -189,7 +189,7 @@ class amplitude_solver():
             #print("ENERGU:", energy)
             #self.t2 *= 0
             #print("NORM_THRESH = ", norm_thresh)
-            return self.solve_unfolded(norm_thresh = norm_thresh, maxiter = 100, damping = damping, energy = energy, compute_missing_exchange = True, pairwise = pairwise)
+            return self.solve_unfolded(norm_thresh = norm_thresh, maxiter = 100, damping = damping, energy = energy, compute_missing_exchange = False, pairwise = pairwise)
             
             #return self.solve_unfolded_pao(norm_thresh = norm_thresh, maxiter = 100, damping = damping, energy = energy, compute_missing_exchange = False, s_virt = tp.get_identity_tmat(ib.n_virt))
             
@@ -675,7 +675,7 @@ class amplitude_solver():
 
         return np.max(np.abs(t2new)), i
 
-    def solve_unfolded_pao(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = True, s_virt = None):
+    def solve_unfolded_pao(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = False, s_virt = None):
         # Standard solver for non-orthogonal virtual space
 
         self.s_pao = s_virt
@@ -1180,7 +1180,7 @@ class amplitude_solver():
 
     
 
-    def solve_completely_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = True):
+    def solve_completely_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = False):
         # debug solver where tensors are completely unfolded (8 indices)
         t2 = self.t2               # amplitudes
         no = self.ib.n_occ         # number of occupieds per cell
