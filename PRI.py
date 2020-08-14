@@ -1562,7 +1562,7 @@ class coefficient_fitter_static():
             self.coords.append(c2)
             self.Jmn.append( Jmnc2 ) #New formulation without uppercase-transpose
 
-            print("Jmn_integrals:", c2, np.max(np.abs(Jmnc2.coords), axis = 0), np.linalg.norm(Jmnc2.cget([0,0,0])),np.linalg.norm(Jmnc2.cget([20,0,0])), np.abs(np.max(Jmnc2.blocks)))
+            print("max | (LJ | 0 m [%i %i %i] n) |  = " % tuple(c2), "%.4e" % np.abs(np.max(Jmnc2.blocks)), " max (L) <=",  np.max(np.abs(Jmnc2.coords), axis = 0))
 
             #print("Min overall:", np.max(np.abs(Jmnc2.blocks)))
 

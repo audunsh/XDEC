@@ -6338,7 +6338,7 @@ if __name__ == "__main__":
         print("Integral build read from file:", args.ibuild)
         args.attenuation = ib.attenuation
         print("Attenuation parameter set to %.4e" % args.attenuation)
-        ib.cfit.set_n_layers(PRI.n_points_p(p, args.N_c), args.rcond)
+        #ib.cfit.set_n_layers(PRI.n_points_p(p, args.N_c), args.rcond)
 
 
     """
