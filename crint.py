@@ -112,7 +112,7 @@ END""" % (newk, newk, newk)
 
     
     C = tp.get_zero_tmat(P.ndim_layer(newk),blockshape =(P.get_n_ao(), P.get_n_ao()))
-    print(C.coords)
+    #print(C.coords)
     
     
     if run:
@@ -266,7 +266,7 @@ END""" % (newk, newk, newk, virt[0]+1, virt[-1])
         
         #remove zero blocks
         C = tp.screen_tmat(C, tolerance = 1e-16)
-        print(C.coords)
+        #print(C.coords)
 
         return S, F, D, C
     else:
