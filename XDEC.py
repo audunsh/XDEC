@@ -518,10 +518,10 @@ class amplitude_solver():
             f0_mask = np.array((d_ii_1.cget([0,0,0])[self.fragment[0], :].ravel())[i0_mask], dtype = np.bool) #fragment 1 in refcell, only indexes in refcell
 
             #print("f0_mask", f0_mask)
-            e_ij =  2*np.einsum("iajb,iajb->j", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->j", t2s[f0_mask], v2s[f0_mask])
-            d_ij = self.d_ii.cget(ocoords)[:, self.fragment[0], :].ravel()[ii_mask]
+            e_j =  2*np.einsum("iajb,iajb->j", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->j", t2s[f0_mask], v2s[f0_mask])
+            d_j = self.d_ii.cget(ocoords)[:, self.fragment[0], :].ravel()[ii_mask]
 
-            s_ij = np.argsort(d_ij)
+            s_j = np.argsort(d_j)
 
             #print(e_ij.shape)
             #print(d_ij.shape)
@@ -530,7 +530,16 @@ class amplitude_solver():
             
             #print("distance_ij", d_ij)
             if True:
-                e_a =  2*np.einsum("iajb,iajb->a", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->a", t2s[f0_mask], v2s[f0_mask])
+                energy = 2*np.einsum("iajb,iajb", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja", t2s[f0_mask], v2s[f0_mask])
+                print("Energy (1):", time.time()-t0)
+                t0 = time.time()
+
+                return np.max(np.abs(t2new)), i, energy, np.array([e_j[s_j], d_j[s_j]])
+
+
+
+            if False:
+                e_ij =  2*np.einsum("iajb,iajb-j", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->j", t2s[f0_mask], v2s[f0_mask])
                 d_a = self.d_ia.cget(vcoords)[:, self.fragment[0], :].ravel()[ia_mask]
                 a_s = np.argsort(d_a)
 
@@ -546,7 +555,7 @@ class amplitude_solver():
                 #print()
 
 
-            else:
+            if False:
 
                 energy = 2*np.einsum("iajb,iajb", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja", t2s[f0_mask], v2s[f0_mask])
                 print("Energy (1):", time.time()-t0)
@@ -7899,8 +7908,8 @@ if __name__ == "__main__":
         cluster-in-molecule like scheme
         """
 
-        virt_cut = 6.0
-        occ_cut = 2.0
+        virt_cut = args.virtual_cutoff
+        occ_cut = args.occupied_cutoff
 
         refcell_fragments = []
         energies = []
@@ -7923,7 +7932,7 @@ if __name__ == "__main__":
 
             #print("Frag init:", time.time()-t0)
 
-            dt, it, E_prev_outer = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.1, damping = args.damping, energy = "cim")
+            dt, it, E_prev_outer, E_pairwise = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.001, damping = args.damping, energy = "cim")
 
             #print("t2 (max/min/absmin):", np.max(a_frag.t2), np.min(a_frag.t2), np.abs(a_frag.t2).min())
             #print("g_d (max/min/absmin):", np.max(a_frag.g_d), np.min(a_frag.g_d), np.abs(a_frag.g_d).min())
@@ -7976,7 +7985,7 @@ if __name__ == "__main__":
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
                     t_1 = time.time()
-                    dt, it, E_new = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.001, damping = args.damping, energy = "cim")
+                    dt, it, E_new,E_pairwise = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.001, damping = args.damping, energy = "cim")
                     t_2 = time.time()
                     #E_new = a_frag.compute_energy(exchange = False)
                     t_3 = time.time()
@@ -8014,7 +8023,7 @@ if __name__ == "__main__":
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
 
                     t_1 = time.time()
-                    dt, it, E_new = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.001, damping = args.damping, energy = "cim")
+                    dt, it, E_new, E_pairwise = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.001, damping = args.damping, energy = "cim")
                     t_2 = time.time()
                     #E_new = a_frag.compute_energy(exchange = False)
                     t_3 = time.time()

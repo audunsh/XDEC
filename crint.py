@@ -172,6 +172,8 @@ END
 CRYAPI_OUT
 END""" % (newk, core[0]+1, core[1]+1, cyctol, cyctol, cyctol)
 
+   
+
     properties_core_input_ = """NEWK
 %i %i %i
 1 0
