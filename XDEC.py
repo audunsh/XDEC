@@ -8144,6 +8144,83 @@ if __name__ == "__main__":
         print("=========================================================")
         print("Pairwise energycontributions stored to disk.")
 
+    if args.fragmentation == "cim-vsweep":
+        """
+        cluster-in-molecule scheme
+        """
+
+        
+        dV = 9
+
+        N = 100
+
+        v_range = np.linspace(args.virtual_cutoff, args.virtual_cutoff + dV, N)
+        
+
+        energies = np.zeros((len(center_fragments),N,N), dtype = np.float)
+
+
+        energies = []
+
+        domain_max = tp.lattice_coords(PRI.n_points_p(p, 20))
+
+        for f in range(len(center_fragments)):
+            fragment = center_fragments[f]
+            a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = v_range[i], occupied_cutoff = args.occupied_cutoff, float_precision = args.float_precision, store_exchange = True)
+            nv = a_frag.n_virtual_tot
+            no = a_frag.n_occupied_tot
+            #eng = a_frag.compute_cim_energy(exchange = False)
+            eng = []
+            for i in np.arange(len(v_range)):
+                a_frag.set_extent(v_range[i], args.occupied_cutoff)
+
+
+
+
+                if nv == a_frag.n_virtual_tot and no == a_frag.n_occupied_tot:
+                    pass
+                else:
+
+                    dt, it, E_new, E_pairwise = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.001, damping = args.damping, energy = "cim")
+                
+                    #dt, it = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = 1e-10, damping = args.damping)
+
+
+                    #print("Convegence (dt, it):", dt, it)
+                    #print("shape:", a_frag.g_d.shape)
+                    # Converge to fot
+                    #eng =  a_frag.compute_cim_energy(exchange = False)
+                    eng.append([nv,v_range[i], E_pairwise])
+
+                    nv = a_frag.n_virtual_tot*1
+                    no = a_frag.n_occupied_tot*1
+
+                    
+                    
+                    
+
+
+
+                    print("_________________________________________________________")
+                    print("Fragment:", fragment)
+                    print("Sweep   :", i)
+                    print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+                    print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+                    print("E(CIM): %.8f      DE(fragment): %.8e" % (E_new, 0.0))
+                    print("dt , it:", dt, it)
+                    print("_________________________________________________________")
+            energies.append(eng)
+
+                
+
+
+                
+            #print("Total fragment energy:", fragment_energy_total)
+        np.save("sweep_energies.npy", energies)
+        #np.save("cim_occ_cuts.npy", o_range)
+        #np.save("cim_vrt_cuts.npy", v_range)
+
+
 
     if args.fragmentation == "cim-sweep":
         """
