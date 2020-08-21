@@ -8157,10 +8157,12 @@ if __name__ == "__main__":
         v_range = np.linspace(args.virtual_cutoff, args.virtual_cutoff + dV, N)
         
 
-        energies = np.zeros((len(center_fragments),N,N), dtype = np.float)
+        #energies = np.zeros((len(center_fragments),N,N), dtype = np.float)
 
 
         energies = []
+
+        final_energies = []
 
         domain_max = tp.lattice_coords(PRI.n_points_p(p, 20))
 
@@ -8210,15 +8212,25 @@ if __name__ == "__main__":
                     print("dt , it:", dt, it)
                     print("_________________________________________________________")
             energies.append(eng)
+            final_energies.append(E_new)
 
                 
 
 
                 
             #print("Total fragment energy:", fragment_energy_total)
+
         np.save("sweep_energies.npy", energies)
         #np.save("cim_occ_cuts.npy", o_range)
         #np.save("cim_vrt_cuts.npy", v_range)
+        for i in np.arange(len(final_energies)):
+            print("     E_{Fragment %i} :" %i, final_energies[i], " Hartree")
+        print("_________________________________________________________")
+        print("Total cluster energy :", np.sum(np.array(final_energies)), " Hartree")
+        #print("Total cluster energy : %.4e" % fragment_energy_total, " Hartree")
+        
+        print("=========================================================")
+        print("Pairwise energycontributions stored to disk.")
 
 
 
