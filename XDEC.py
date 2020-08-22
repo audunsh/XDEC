@@ -3361,6 +3361,9 @@ class fragment_amplitudes(amplitude_solver):
 
         self.init_amplitudes()
 
+    def nbytes(self):
+        return self.g_d.nbytes + self.t2.nbytes #+ self.g_x.nbytes
+
     def init_amplitudes_experimental(self):
         #experimental
         print("SAFE/CONVENTIONAL (slow) AMPLITUDE SETUP")
@@ -8132,6 +8135,8 @@ if __name__ == "__main__":
             print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
             print("E(CIM): %.8f      DE(fragment): %.8e" % (E_prev, dE_outer))
             print("dt , it:", dt, it)
+            print("Integrator memory usage (estimate):", ib.nbytes()*1e-6, " Mb.")
+            print("Fragment memory usage   (estimate):", a_frag.nbytes()*1e-6, " Mb.")
             print("_________________________________________________________")
 
 
@@ -8217,6 +8222,7 @@ if __name__ == "__main__":
                     print("E(CIM): %.8f      DE(fragment): %.8e" % (E_new, 0.0))
                     print("dt , it:", dt, it)
                     print("Integrator memory usage (estimate):", ib.nbytes()*1e-6, " Mb.")
+                    print("Fragment memory usage   (estimate):", a_frag.nbytes()*1e-6, " Mb.")
                     print("_________________________________________________________")
             energies.append(eng)
             final_energies.append(E_new)
