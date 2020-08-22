@@ -371,6 +371,7 @@ class amplitude_solver():
         t0c_2 = 0
         t0d = 0
         print("MP2 iterations")
+        print("idx_f.shape:", idx_f.shape)
 
 
         for i in range(maxiter):
@@ -872,6 +873,9 @@ class amplitude_solver():
         #t2new = -1*v2s
 
         DIIS = diis(8)
+
+
+
 
 
         for i in np.arange(maxiter):
@@ -8170,7 +8174,7 @@ if __name__ == "__main__":
 
         for f in range(len(center_fragments)):
             fragment = center_fragments[f]
-            a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = v_range[i], occupied_cutoff = args.occupied_cutoff, float_precision = args.float_precision, store_exchange = True)
+            a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = v_range[i], occupied_cutoff = args.occupied_cutoff, float_precision = args.float_precision)
             nv = a_frag.n_virtual_tot
             no = a_frag.n_occupied_tot
             #eng = a_frag.compute_cim_energy(exchange = False)
@@ -8256,7 +8260,7 @@ if __name__ == "__main__":
 
         for f in np.arange(len(center_fragments)):
             fragment = center_fragments[f]
-            a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = v_range[i], occupied_cutoff = o_range[0], float_precision = args.float_precision, store_exchange = True)
+            a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = v_range[i], occupied_cutoff = o_range[0], float_precision = args.float_precision)
             nv = a_frag.n_virtual_tot
             no = a_frag.n_occupied_tot
             eng = a_frag.compute_cim_energy(exchange = True)
