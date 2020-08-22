@@ -206,7 +206,7 @@ class amplitude_solver():
                     return dt, it, self.compute_pair_fragment_energy()
 
 
-    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = False, pairwise = False):
+    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = False, pairwise = False, print_progress = False):
         # Standard solver for orthogonal virtual space
         #self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i([0,0,0]) ] ] *= 0
 
@@ -312,7 +312,8 @@ class amplitude_solver():
                                 pass
                             """
             #print(dL, "of", Nv, " complete.")
-            print(get_progress_bar(dL,Nv), end="\r")
+            if print_progress:
+                print(get_progress_bar(dL,Nv), end="\r")
         print(" ")
 
                         
@@ -432,7 +433,8 @@ class amplitude_solver():
                 #print("Converged at", i, "iterations.")
                 break
             #print("Iteration:", i, "of", maxiter, ".", abs_dev)
-            print(get_progress_bar(i,maxiter), end="\r")
+            if print_progress:
+                print(get_progress_bar(i,maxiter), end="\r")
         print(" ")
 
         #t_t = (time.time()-t0)/
@@ -8210,6 +8212,7 @@ if __name__ == "__main__":
                     print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                     print("E(CIM): %.8f      DE(fragment): %.8e" % (E_new, 0.0))
                     print("dt , it:", dt, it)
+                    print("Integrator memory usage (estimate):", ib.nbytes()*1e-6, " Mb.")
                     print("_________________________________________________________")
             energies.append(eng)
             final_energies.append(E_new)
@@ -8292,6 +8295,7 @@ if __name__ == "__main__":
                         print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
                         print("E(CIM): %.8f      DE(fragment): %.8e" % ( energies[f,i,j], 0.0))
                         print("dt , it:", dt, it)
+                        
                         print("_________________________________________________________")
 
                     
