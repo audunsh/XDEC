@@ -1723,13 +1723,13 @@ class coefficient_fitter_static():
                     #pq_c.append(
                     #    self.JKa.linear_solve(
                     #        J_pq_c, complx = False))
-                    # test solution
-
-                    d = pq_c[-1]
-                    ssat = np.abs((self.JK.circulantdot(d) - J_pq_c).blocks).max()
-                    #ssat= np.abs(self.JK.cget(self.JK.coords) - d.tT().circulantdot(self.JK.circulantdot(d)).cget(self.JK.coords)).max()
-                    print("   Solution satisfied:", ssat ) #np.abs((self.JK.circulantdot(pq_c[-1]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
-                    print("   Inversion ok      :", np.max(np.abs((self.JKa.circulantdot(self.JK).cget(self.JK.coords) - tp.get_identity_tmat(self.JK.blocks.shape[1]).cget(self.JK.coords))), axis = (0,1,2)))
+                    if True:
+                        # test solution - remove if stability problems are solved
+                        d = pq_c[-1]
+                        ssat = np.abs((self.JK.circulantdot(d) - J_pq_c).blocks).max()
+                        #ssat= np.abs(self.JK.cget(self.JK.coords) - d.tT().circulantdot(self.JK.circulantdot(d)).cget(self.JK.coords)).max()
+                        print("   Solution satisfied:", ssat ) #np.abs((self.JK.circulantdot(pq_c[-1]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
+                        print("   Inversion ok      :", np.max(np.abs((self.JKa.circulantdot(self.JK).cget(self.JK.coords) - tp.get_identity_tmat(self.JK.blocks.shape[1]).cget(self.JK.coords))), axis = (0,1,2)))
                     
                     print("   Max DF-coefficient:", np.abs(pq_c[-1].blocks).max()) #, np.abs(self.JKa.M1).max())
                     #print("J_pq_c.blocks active:", np.max(np.abs(J_pq_c.cget(self.JK.coords)), axis = (1,2)))
@@ -2606,6 +2606,7 @@ class integral_builder_static():
                         Xreg = self.cfit.get(np.array([d]))
                         self.XregT[d[0], d[1], d[2]] = Xreg[0].tT()
                         #self.JpqXreg[d[0], d[1], d[2]] = Jpq[0]
+                        
                         if self.circulant:
                             self.VXreg[d[0], d[1], d[2]] =  self.JK.circulantdot(Xreg[0])
                             #self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
@@ -2613,6 +2614,9 @@ class integral_builder_static():
                             self.VXreg[d[0], d[1], d[2]] =  self.JK.cdot(Xreg[0])
 
                         print("        On-demand calculation:", d)
+                        #import sys
+                        #sys.exit()
+                        
 
                     #D.append(d)
                     self.d_forget.append(d)

@@ -198,6 +198,13 @@ def setup_zero_tmat(coords, blockshape):
     ret.load_nparray(blocks, coords, screening = False)
     return ret
 
+
+def screen1(coords, blocks, norm, tolerance):
+
+    si = np.max(np.abs(blocks), axis = (1,2))>tolerance
+    si[np.sum(coords**2, axis = 1)==0] = True
+    return coords[si], blocks[si]
+
 def screen(coords, blocks, norm, tolerance):
     '''
     Blocks with a norm larger than 'tolerance', except for the
@@ -486,8 +493,9 @@ class tmat():
         # Screen out blocks with negligibly small
         # coefficients
         # NOTE: Screening on this level assumes coincidental coords and blocks
+        #print("Size of blocks (tmat):", blocks.shape, blocks.nbytes*1e-6, "Mb")
         if screening:
-           coords, blocks = screen(coords, blocks,
+           coords, blocks = screen1(coords, blocks,
                                    self.norm, self.tolerance)
             
         self.blocks = blocks
@@ -711,7 +719,7 @@ class tmat():
         self.mapping = np.ones(mapsize, dtype = int) * \
                        self.zero_block
                        
-        self.mapping[self.indices] = np.arange(len(self.coords))
+        self.mapping[self.indices] = range(len(self.coords))
         
     # Various
     
@@ -2129,6 +2137,8 @@ class tmat():
         M1 = np.fft.fftn(m1r, axes = (0,1,2))
         M2 = np.fft.fftn(m2r, axes = (0,1,2))
         M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = np.complex128)
+
+        print("Circulant usage:", (M1.nbytes + M2.nbytes + M3.nbytes)*1e-6, "Mb.")
         for c in coords:
             M3[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
         
@@ -2473,18 +2483,27 @@ class primed_for_dot():
 
         M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = np.complex128)
 
+
+        print("Memory bottleneck in primed circulantdot:", (M3.nbytes + M2.nbytes + M1.nbytes +m2r.nbytes)*1e-6, " Mb." )
+
         for c in coords:
             if c[0]>=0:
                 M3[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
                 M3[-c[0], -c[1], -c[2]] = M3[c[0], c[1], c[2]].conj()
+        #import sys
+        #sys.exit()
+
+        #return tmat(blocks = np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).real.reshape(coords.shape[0], m1x,m2y), coords = coords, screening = False)
         
         
         ret = tmat()
+        
         if complx:
             ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).reshape(coords.shape[0], m1x,m2y), coords)
         else:
             ret.load_nparray(np.fft.ifftn(M3.reshape(nx,ny,nz,m1x,m2y), axes = (0,1,2)).real.reshape(coords.shape[0], m1x,m2y), coords)
         return ret
+        
     def linear_solve(self, other, complx = False):
         m1x,m1y =  self.m1x, self.m1y
         m2x,m2y =  other.blocks.shape[1], other.blocks.shape[2]
