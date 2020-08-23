@@ -6033,6 +6033,7 @@ if __name__ == "__main__":
     parser.add_argument("-rcond", type = float, default = 1e-12, help = "Default singular value screening threshold for inversion." )
     parser.add_argument("-inv", type = str, default = "lpinv", help = "Pseudo-inverse rotine, options: lpinv, spinv, spinv2, svd" )
     parser.add_argument("-store_ibuild", type = bool, default = True, help = "Store intermediate contraction object." )
+    parser.add_argument("-rprecision", type = bool, default = False, help = "Reduce precision in final circulant product d.T V d in RI to complex64" )
     
  
 
@@ -6357,6 +6358,10 @@ if __name__ == "__main__":
         args.attenuation = ib.attenuation
         print("Attenuation parameter set to %.4e" % args.attenuation)
         #ib.cfit.set_n_layers(PRI.n_points_p(p, args.N_c), args.rcond)
+
+    if args.rprecision:
+        # Use reduced precision in d.T V d product
+        ib.tprecision = np.complex64
 
 
     """

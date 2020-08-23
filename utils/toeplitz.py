@@ -2114,7 +2114,7 @@ class tmat():
 
 
 
-    def circulantdot(self, other, n_layers = None, complx = False):
+    def circulantdot(self, other, n_layers = None, complx = False, precision = np.complex128):
         """
         IBT (Infinite Block-Circulant) matrix-matrix product
         """
@@ -2132,13 +2132,14 @@ class tmat():
         coords = np.roll(lattice_coords(n_layers).reshape(nx,ny,nz, 3), -n_layers, axis = (0,1,2)).reshape(nx*ny*nz, 3)
 
         
-        m1r = self.cget(coords).reshape(nx,ny,nz,m1x,m1y)
-        m2r = other.cget(coords).reshape(nx,ny,nz,m2x,m2y)
-        M1 = np.fft.fftn(m1r, axes = (0,1,2))
-        M2 = np.fft.fftn(m2r, axes = (0,1,2))
-        M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = np.complex128)
+        #m1r = 
+        #m2r = 
+        M1 = np.fft.fftn(np.array(self.cget(coords).reshape(nx,ny,nz,m1x,m1y), dtype = precision), axes = (0,1,2))
+        M2 = np.fft.fftn(np.array(other.cget(coords).reshape(nx,ny,nz,m2x,m2y), dtype = precision), axes = (0,1,2))
+        M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = precision)
 
         print("Circulant usage:", (M1.nbytes + M2.nbytes + M3.nbytes)*1e-6, "Mb.")
+        print(M1.dtype, M2.dtype, M3.dtype)
         for c in coords:
             M3[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
         

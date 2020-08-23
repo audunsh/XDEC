@@ -2289,6 +2289,8 @@ class integral_builder_static():
         self.float_precision = float_precision
         self.N_c = N_c # (2*N_c + 1)  = k-space resolution
 
+        self.tprecision = np.complex128 #precision in final d.T V d matrix product, set to complex64 for reduced memory usage
+
         self.screening_thresh = 1e-10
         self.screen_trigger = 0
         self.activation_count = 60 # activate global screening when this many cells has been screened
@@ -2662,7 +2664,7 @@ class integral_builder_static():
 
                 
                 if self.Xscreen[dL[0], dL[1], dL[2]] >= self.screening_thresh and self.Xscreen[dM[0], dM[1], dM[2]] >= self.screening_thresh:
-                    ret = self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])
+                    ret = self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]], precision = self.tprecision)
 
                     if np.sum((dL-dM)**2)==0 and self.Xdist[dL[0], dL[1], dL[2]] <=0.1:
                         self.Xscreen[dL[0], dL[1], dL[2]] = np.abs(ret.cget([0,0,0])).max()
