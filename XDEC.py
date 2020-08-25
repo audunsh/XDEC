@@ -6032,7 +6032,7 @@ if __name__ == "__main__":
     parser.add_argument("-error_estimate", type = bool, default = False, help = "Perform error estimate on DEC fragment energies." )
     parser.add_argument("-rcond", type = float, default = 1e-12, help = "Default singular value screening threshold for inversion." )
     parser.add_argument("-inv", type = str, default = "lpinv", help = "Pseudo-inverse rotine, options: lpinv, spinv, spinv2, svd" )
-    parser.add_argument("-store_ibuild", type = bool, default = True, help = "Store intermediate contraction object." )
+    parser.add_argument("-store_ibuild",action = "store_true",  default = False,  help = "Store intermediate contraction object." )
     parser.add_argument("-rprecision", type = bool, default = False, help = "Reduce precision in final circulant product d.T V d in RI to complex64" )
     
  
@@ -6350,6 +6350,7 @@ if __name__ == "__main__":
         ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, robust = args.robust, xi0=args.xi0, xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level, inverse_test = args.inverse_test, rcond = args.rcond, inv = args.inv)
         #ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=None, circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level)
         if args.store_ibuild:
+            print("args.store_ibuild", args.store_ibuild)
             np.save("integral_build.npy", np.array([ib]), allow_pickle = True)
     else:
         ib = np.load(args.ibuild, allow_pickle = True)[0]

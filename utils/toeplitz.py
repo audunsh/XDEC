@@ -2468,14 +2468,14 @@ class primed_for_dot():
         coords = self.coords
         M1 = self.M1
         n_layers = self.n_layers
-        m2r = other.cget(coords).reshape(nx,ny,nz,m2x,m2y)
+        #m2r = 
 
         
 
 
 
 
-        M2 = np.fft.fftn(m2r, axes = (0,1,2))
+        M2 = np.fft.fftn(other.cget(coords).reshape(nx,ny,nz,m2x,m2y), axes = (0,1,2))
         #for c in coords:
             #if c[0]>=0:
             #    print(M2[-c[0], -c[1], -c[2]] == M2[c[0], c[1], c[2]].T)
@@ -2485,7 +2485,7 @@ class primed_for_dot():
         M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = np.complex128)
 
 
-        print("Memory bottleneck in primed circulantdot:", (M3.nbytes + M2.nbytes + M1.nbytes +m2r.nbytes)*1e-6, " Mb." )
+        print("Memory bottleneck in primed circulantdot:", (M3.nbytes + M2.nbytes + M1.nbytes)*1e-6, " Mb." )
 
         for c in coords:
             if c[0]>=0:
