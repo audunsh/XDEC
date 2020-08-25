@@ -2451,6 +2451,7 @@ class integral_builder_static():
         self.cfit = coefficient_fitter_static(self.c_occ, self.c_virt, p, attenuation, auxname, self.JKa, self.JKinv, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision, printing = printing, N_c = self.N_c)
         if self.N_c >0:
             self.cfit.set_n_layers(n_points_p(p, self.N_c), rcond = rcond, inv = self.inv)
+            self.n_layers = self.N_c
         else:
             #J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
             #print(np.max(np.abs(self.JKa.coords), axis = 0))

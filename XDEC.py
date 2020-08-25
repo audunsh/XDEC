@@ -6359,7 +6359,7 @@ if __name__ == "__main__":
         print("Attenuation parameter set to %.4e" % args.attenuation)
         #ib.cfit.set_n_layers(PRI.n_points_p(p, args.N_c), args.rcond)
 
-    if args.rprecision:
+    if args.rprecision or args.float_precision == np.float32:
         # Use reduced precision in d.T V d product
         ib.tprecision = np.complex64
 
