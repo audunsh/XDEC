@@ -6034,6 +6034,7 @@ if __name__ == "__main__":
     parser.add_argument("-inv", type = str, default = "lpinv", help = "Pseudo-inverse rotine, options: lpinv, spinv, spinv2, svd" )
     parser.add_argument("-store_ibuild",action = "store_true",  default = False,  help = "Store intermediate contraction object." )
     parser.add_argument("-rprecision", type = bool, default = False, help = "Reduce precision in final circulant product d.T V d in RI to complex64" )
+    parser.add_argument("-set_omp_threads", type = int, default = 0)
     
  
 
@@ -6044,6 +6045,8 @@ if __name__ == "__main__":
     args.float_precision = eval(args.float_precision)
     import sys
 
+    if args.set_omp_threads > 0:
+        os.environ['OMP_NUM_THREADS'] = "%i" %args.set_omp_threads 
     
 
 
@@ -6092,7 +6095,10 @@ if __name__ == "__main__":
     print("Atomic fragmentation   :", args.afrag)
     #print("Dot-product            :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
     #print("RI fitting             :", ["Non-robust", "Robust"][int(args.robust)])
+    print("$OMP_NUM_THREADS seen by python:", os.environ.get("OMP_NUM_THREADS"))
     print("_________________________________________________________",flush=True)
+
+
 
 
 

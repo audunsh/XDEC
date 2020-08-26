@@ -20,6 +20,8 @@ import utils.prism as pr
 
 import time
 
+import gc
+
 #from pympler import muppy, summary
 
 
@@ -1415,7 +1417,7 @@ class coefficient_fitter_static():
     def __init__(self, c_occ,c_virt, p, attenuation, auxname, JK, JKInv, robust = False, circulant = True, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = False, N_c = 7):
         self.robust = robust
         self.coords = []
-        self.Jmn = []
+        Jmn = []
         self.attenuation = attenuation
         #self.screening_thresh = screening_thresh
         print("att:", attenuation)
@@ -1438,6 +1440,8 @@ class coefficient_fitter_static():
         self.xi1 = xi1
         if self.robust:
             self.Jmnc = []
+
+        
 
 
         xi_domain = estimate_attenuation_domain(p, attenuation = attenuation, xi0 = xi0,  auxname = auxname)
@@ -1462,6 +1466,8 @@ class coefficient_fitter_static():
         #self.printing = True
 
         #print("C2:", C2, len(C2))
+
+        
 
         
         #for i in np.arange(len(xi_domain)):
@@ -1560,7 +1566,7 @@ class coefficient_fitter_static():
 
             #if np.linalg.norm(Jmnc2.cget([0,0,0]))>1e-15:
             self.coords.append(c2)
-            self.Jmn.append( Jmnc2 ) #New formulation without uppercase-transpose
+            Jmn.append( Jmnc2 ) #New formulation without uppercase-transpose
 
             print("max | (LJ | 0 m [%i %i %i] n) |  = " % tuple(c2), "%.4e" % np.abs(np.max(Jmnc2.blocks)), " max (L) <=",  np.max(np.abs(Jmnc2.coords), axis = 0))
 
@@ -1609,6 +1615,8 @@ class coefficient_fitter_static():
         #    pq_region = tp.lattice_coords(n_points_p(self.p, self.N_c))
         #else:
 
+        
+
 
         Nc = 50
         cellcut = 35
@@ -1638,13 +1646,17 @@ class coefficient_fitter_static():
         
 
         # Contracting occupieds
-        self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.NJ, self.Np = contract_occupieds(self.p, self.Jmn, self.coords, self.pq_region, self.c_occ, self.xi1)
+
+        
+
+        self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.NJ, self.Np = contract_occupieds(self.p, Jmn, self.coords, self.pq_region, self.c_occ, self.xi1)
 
 
 
         
         # Can delete self.Jmn now, no longer required and takes up a lot of memory
-        del(self.Jmn)
+        del(Jmn)
+        gc.collect()
         
 
         if self.printing:
@@ -1878,6 +1890,8 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
 
         print("Shape of N_coords:", N_coords.shape)
 
+    #gc.disable()
+
     for Li in range(pq_region.shape[0]):
         L = pq_region[Li]
         #print("Contracting occupieds for :", L)
@@ -1924,17 +1938,37 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
             #scale = 0.0001
 
             # Screen out zero blocks here 
-            #cs = np.max(np.abs(c_occ_blocks), axis = (1,2))>xi1
+            # cs = np.max(np.abs(c_occ_blocks), axis = (1,2))>xi1
+            """
             cs = np.any(np.greater(np.abs(c_occ_blocks),xi1), axis = (1,2))
 
 
-            #bs = np.max(np.abs(Jmn_blocks), axis = (1,2,3))>xi1
+            # bs = np.max(np.abs(Jmn_blocks), axis = (1,2,3))>xi1
             bs = np.any(np.greater(np.abs(Jmn_blocks), xi1), axis = (1,2,3))
 
 
 
             #print(np.argmax(np.abs(Jmn_blocks), axis = (1,2,3)))
             sc = np.logical_and(cs, bs)
+
+
+            sc = np.logical_and(np.max(np.abs(c_occ_blocks), axis = (1,2))>xi1,  \
+                                np.max(np.abs(Jmn_blocks), axis = (1,2,3))>xi1)
+
+
+
+            """
+            
+
+
+            sc = np.max(np.abs(c_occ_blocks), axis = (1,2))>xi1
+            sc[np.max(np.abs(Jmn_blocks), axis = (1,2,3))<=xi1] = False
+
+            #print(sc.shape)
+
+
+            #import sys
+            #sys.exit()
             
 
             #print("screening:", time.time()-t0)
@@ -1942,7 +1976,7 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
             #t0 = time.time()
             
             #print("number of sc:", np.sum(sc))
-            if np.sum(sc)>0:
+            if np.any(sc):
                 # If any block non-zero : contract occupieds
                 #dO_LN_np = np.einsum("NJmn,Nmp->NJnp", Jmn_blocks[sc], c_occ_blocks[sc], optimize = True) #change
 
@@ -1986,6 +2020,7 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
             #print("if np.sumsc:", time.time()-t0)
             #print("")
             #t0 = time.time()
+        #gc.collect()
 
         
 
@@ -2038,6 +2073,7 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
         
 
         # Screen out negligible 
+    #gc.enable()
     return OC_L_np, c_virt_coords_L, c_virt_screen, NJ, Np
 
 def contract_occupieds_(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
@@ -2308,6 +2344,9 @@ class integral_builder_static():
         #big_tmat = estimate_attenuation_distance(p, attenuation = self.attenuation, thresh = extent_thresh, auxname = auxname)
 
 
+        print("Self.N_c:", self.N_c)
+
+
         #big_tmat = estimate_center_domain(p, attenuation = attenuation, xi0 = xi0, auxname=auxname)
         if p.cperiodicity=="POLYMER":
             bc = tp.lattice_coords([N_c,0,0])
@@ -2338,6 +2377,9 @@ class integral_builder_static():
         # How large should actually this one be?
         #self.JKa = compute_JK(self.p,big_tmat, attenuation = attenuation, auxname = auxname)
         #self.JKa.set_precision(self.float_precision)
+
+
+        
 
 
         
