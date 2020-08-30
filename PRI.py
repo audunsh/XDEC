@@ -22,7 +22,10 @@ import time
 
 import gc
 
-from memory_profiler import profile
+import multiprocessing as mp
+        
+
+#from memory_profiler import profile
 
 #from pympler import muppy, summary
 
@@ -1834,9 +1837,13 @@ def contract_virtuals(OC_L_np, c_virt_coords_L, c_virt_screen, c_virt, NJ, Np, p
 
     return Jpq
 
+def pcontr(pooldata):
+    Jsc, NJ, Nm, Nn, Np, csc, k = pooldata
+    return [np.dot(Jsc[k].reshape(NJ,Nm,Nn).swapaxes(1,2).reshape(NJ*Nn,Nm), csc[k]).reshape(NJ, Nn, Np), k]
+
 
 #@profile
-def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
+def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10, mproc = False):
     """
     Intermediate contraction of the occupieds.
     See section 3.2, algorithm 1 and 2 in the notes for details
@@ -1896,6 +1903,11 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
         print("Shape of N_coords:", N_coords.shape)
 
     #gc.disable()
+    if mproc:
+        # Multiprocessing
+        
+        pool = mp.Pool()
+
 
     for Li in range(pq_region.shape[0]):
         L = pq_region[Li]
@@ -1974,6 +1986,10 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
 
             #import sys
             #sys.exit()
+
+            #print("mp:Number of processors: ", mp.cpu_count())
+
+            
             
 
             #print("screening:", time.time()-t0)
@@ -1986,9 +2002,31 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
                 #dO_LN_np = np.einsum("NJmn,Nmp->NJnp", Jmn_blocks[sc], c_occ_blocks[sc], optimize = True) #change
 
                 Jsc, csc = Jmn_blocks[sc], c_occ_blocks[sc]
-                dO_LN_np = np.zeros((np.sum(sc), NJ, Nn, Np), dtype = float)
-                for k in range(np.sum(sc)):
-                    dO_LN_np[k] =  np.dot(Jsc[k].reshape(NJ,Nm,Nn).swapaxes(1,2).reshape(NJ*Nn,Nm), csc[k]).reshape(NJ, Nn, Np)
+                scs = np.sum(sc)
+                dO_LN_np = np.zeros((scs, NJ, Nn, Np), dtype = float)
+
+                if mproc:
+                    # Multiprocessin
+
+
+                    pooldata = []
+                    for k in range(scs):
+                        pooldata.append([ Jsc, NJ, Nm, Nn, Np, csc, k])
+
+                    pres = pool.map(pcontr, pooldata)
+
+                    #print(pres)
+
+                    for k in range(scs):
+                        #print(pres[k][1], pres[k][0].shape)
+                        dO_LN_np[ pres[k][1] ] = pres[k][0]
+
+
+
+                else:
+                    for k in range(scs):
+                        dO_LN_np[k] =  np.dot(Jsc[k].reshape(NJ,Nm,Nn).swapaxes(1,2).reshape(NJ*Nn,Nm), csc[k]).reshape(NJ, Nn, Np)
+                    
                 
                 #print("for k in sc:", time.time()-t0)
                 #print("")

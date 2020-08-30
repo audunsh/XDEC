@@ -8180,8 +8180,13 @@ if __name__ == "__main__":
         cluster-in-molecule scheme
         """
 
-        import multiprocessing as mp
-        print("mp:Number of processors: ", mp.cpu_count())
+        from mpi4py import MPI
+
+        comm = MPI.COMM_WORLD 
+        size = comm.Get_size()
+        rank = comm.Get_rank()
+
+        print("MPI info:", rank, size)
 
 
 
@@ -8213,7 +8218,7 @@ if __name__ == "__main__":
 
 
             fragment = center_fragments[f]
-            a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = v_range[i], occupied_cutoff = args.occupied_cutoff, float_precision = args.float_precision)
+            a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = v_range[0], occupied_cutoff = args.occupied_cutoff, float_precision = args.float_precision)
             nv = a_frag.n_virtual_tot
             no = a_frag.n_occupied_tot
             #eng = a_frag.compute_cim_energy(exchange = False)
