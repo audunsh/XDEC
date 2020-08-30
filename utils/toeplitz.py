@@ -2138,8 +2138,8 @@ class tmat():
         M2 = np.fft.fftn(np.array(other.cget(coords).reshape(nx,ny,nz,m2x,m2y), dtype = precision), axes = (0,1,2))
         M3 = np.zeros((nx,ny,nz,m1x, m2y),dtype = precision)
 
-        print("Circulant usage:", (M1.nbytes + M2.nbytes + M3.nbytes)*1e-6, "Mb.")
-        print(M1.dtype, M2.dtype, M3.dtype)
+        #print("Circulant usage:", (M1.nbytes + M2.nbytes + M3.nbytes)*1e-6, "Mb.")
+        #print(M1.dtype, M2.dtype, M3.dtype)
         for c in coords:
             M3[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
         

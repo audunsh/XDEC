@@ -29,6 +29,9 @@ import time
 #from pympler import muppy, summary
 #import gc
 
+#from memory_profiler import profile
+
+
 """
 Cosmetics
 """
@@ -3317,6 +3320,7 @@ class fragment_amplitudes(amplitude_solver):
 
 
     """
+    #@profile
     def __init__(self, p, wannier_centers, coords, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = 3.0, occupied_cutoff = 1.0, float_precision = np.float64, d_ia = None, store_exchange = False):
         self.p = p #prism object
         #self.d = dd.build_distance_matrix(p, coords, wannier_centers, wannier_centers) # distance matrix
@@ -5968,6 +5972,7 @@ def plot_convergence_fig(e_mp2, de_mp2, n_virt, v_dist, n_occ, v_occ, p_ = None,
 
 
 if __name__ == "__main__":
+
     os.environ["LIBINT_DATA_PATH"] = os.getcwd()
     print("""#########################################################
 ##    ,--.   ,--.      ,------.  ,------. ,-----.      ##
@@ -6035,6 +6040,8 @@ if __name__ == "__main__":
     parser.add_argument("-store_ibuild",action = "store_true",  default = False,  help = "Store intermediate contraction object." )
     parser.add_argument("-rprecision", type = bool, default = False, help = "Reduce precision in final circulant product d.T V d in RI to complex64" )
     parser.add_argument("-set_omp_threads", type = int, default = 0)
+    parser.add_argument("-single_cluster", type = int, default = None, help = "Compute only one single cluster/fragment")
+    
     
  
 
@@ -6096,6 +6103,7 @@ if __name__ == "__main__":
     #print("Dot-product            :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
     #print("RI fitting             :", ["Non-robust", "Robust"][int(args.robust)])
     print("$OMP_NUM_THREADS seen by python:", os.environ.get("OMP_NUM_THREADS"))
+    #print("MPI rank / size        :", mpi_rank, mpi_size)
     print("_________________________________________________________",flush=True)
 
 
@@ -8172,6 +8180,11 @@ if __name__ == "__main__":
         cluster-in-molecule scheme
         """
 
+        import multiprocessing as mp
+        print("mp:Number of processors: ", mp.cpu_count())
+
+
+
         
         dV = 9
 
@@ -8189,7 +8202,16 @@ if __name__ == "__main__":
 
         domain_max = tp.lattice_coords(PRI.n_points_p(p, 20))
 
-        for f in range(len(center_fragments)):
+        if args.single_cluster is None:
+            fragment_list = range(len(center_fragments))
+        else:
+            fragment_list = [args.single_cluster]
+
+        for f in fragment_list:
+
+
+
+
             fragment = center_fragments[f]
             a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = v_range[i], occupied_cutoff = args.occupied_cutoff, float_precision = args.float_precision)
             nv = a_frag.n_virtual_tot
@@ -8244,8 +8266,11 @@ if __name__ == "__main__":
 
                 
             #print("Total fragment energy:", fragment_energy_total)
+        if args.single_cluster is None:
+            np.save("sweep_energies.npy", energies)
+        else:
+            np.save("sweep_energies_%i.npy" % args.single_cluster, energies)
 
-        np.save("sweep_energies.npy", energies)
         #np.save("cim_occ_cuts.npy", o_range)
         #np.save("cim_vrt_cuts.npy", v_range)
         for i in np.arange(len(final_energies)):
@@ -8441,3 +8466,5 @@ if __name__ == "__main__":
             refcell_fragments.append(a_frag)
             fragment_energy_total += E_prev_outer
         print("Total fragment energy:", fragment_energy_total)
+
+

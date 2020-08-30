@@ -22,9 +22,11 @@ import time
 
 import gc
 
+from memory_profiler import profile
+
 #from pympler import muppy, summary
 
-
+#from guppy import hpy
 
 #os.environ["LIBINT_DATA_PATH"] = os.getcwd() #"/usr/local/libint/2.5.0-beta.2/share/libint/2.5.0-beta.2/basis/"
 #os.environ["CRYSTAL_EXE_PATH"] = "/Users/audunhansen/PeriodicDEC/utils/crystal_bin/"
@@ -1413,7 +1415,7 @@ class coefficient_fitter_static():
 
     """
 
-
+    
     def __init__(self, c_occ,c_virt, p, attenuation, auxname, JK, JKInv, robust = False, circulant = True, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = False, N_c = 7):
         self.robust = robust
         self.coords = []
@@ -1656,7 +1658,9 @@ class coefficient_fitter_static():
         
         # Can delete self.Jmn now, no longer required and takes up a lot of memory
         del(Jmn)
-        gc.collect()
+        #import gc 
+        #print(gc.garbage)
+        #gc.collect()
         
 
         if self.printing:
@@ -1794,6 +1798,7 @@ def n_points_p(p, Nc):
     else:
         return np.array([Nc,Nc,Nc])
 
+
 def contract_virtuals(OC_L_np, c_virt_coords_L, c_virt_screen, c_virt, NJ, Np, pq_region, dM = np.array([0,0,0])):
     """
     On-demand contraction of virtual block dM
@@ -1830,7 +1835,7 @@ def contract_virtuals(OC_L_np, c_virt_coords_L, c_virt_screen, c_virt, NJ, Np, p
     return Jpq
 
 
-
+#@profile
 def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
     """
     Intermediate contraction of the occupieds.
@@ -2313,7 +2318,7 @@ class integral_builder_static():
     RI-integral builder with stored AO-integrals
     For high performance (but high memory demand)
     """
-
+    
     def __init__(self, c_occ, c_virt,p, attenuation = 0.0, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, robust  = False,  inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = True, N_c = 10, rcond = 1e-10, inv = "lpinv"):
         self.c_occ = c_occ
         self.c_virt = c_virt
@@ -2344,7 +2349,7 @@ class integral_builder_static():
         #big_tmat = estimate_attenuation_distance(p, attenuation = self.attenuation, thresh = extent_thresh, auxname = auxname)
 
 
-        print("Self.N_c:", self.N_c)
+        #print("Self.N_c:", self.N_c)
 
 
         #big_tmat = estimate_center_domain(p, attenuation = attenuation, xi0 = xi0, auxname=auxname)
@@ -2679,6 +2684,11 @@ class integral_builder_static():
         if self.robust:
             print("Warning: Robust orientation not tested")
             if self.circulant:
+                mmm = self.JpqXreg[dL[0], dL[1], dL[2]].tT().circulantdot(self.XregT[dM[0], dM[1], dM[2]].tT()) + self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])
+                #self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.JpqXreg[dM[0], dM[1], dM[2]])
+               
+               
+                print("maxdevv:", np.abs(mmm.blocks).max())
                 return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().circulantdot(self.XregT[dM[0], dM[1], dM[2]].tT()) + \
                     self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.JpqXreg[dM[0], dM[1], dM[2]]) - \
                     self.XregT[dL[0], dL[1], dL[2]].circulantdot(self.VXreg[dM[0], dM[1], dM[2]])), \
@@ -2686,6 +2696,10 @@ class integral_builder_static():
 
             else:
                 #return self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M]).cget(M).reshape(self.p.get_nocc(), self.p.get_nvirt(), self.p.get_nocc(), self.p.get_nvirt())
+                
+                
+                
+                
                 return (self.JpqXreg[dL[0], dL[1], dL[2]].tT().cdot(self.XregT[dM[0], dM[1], dM[2]].tT(), coords = [M]) + \
                     self.XregT[dL[0], dL[1], dL[2]].cdot(self.JpqXreg[dM[0], dM[1], dM[2]], coords = [M]) - \
                     self.XregT[dL[0], dL[1], dL[2]].cdot(self.VXreg[dM[0], dM[1], dM[2]], coords = [M])), \
