@@ -2,8 +2,6 @@
 
 import numpy as np
 
-import numba
-
 import os
 
 import subprocess as sp
