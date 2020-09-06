@@ -658,6 +658,7 @@ if __name__ == "__main__":
 
                 
                 sp.call(["cp", args.project_file, ".", cwd_root+"/mpi_att_%i/Crystal" %fs])
+                sp.call(["cp", args.project_file, ".", cwd_root+"/mpi_att_%i" %fs])
 
                 os.environ["LIBINT_DATA_PATH"] = cwd_root + "/mpi_att_%i" %fs
                 
