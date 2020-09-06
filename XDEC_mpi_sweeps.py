@@ -112,7 +112,7 @@ if __name__ == "__main__":
     parser.add_argument("-single_cluster", type = int, default = None, help = "Compute only one single cluster/fragment")
     
     
-
+    
 
     args = parser.parse_args()
 
@@ -123,411 +123,413 @@ if __name__ == "__main__":
 
     if args.set_omp_threads > 0:
         os.environ['OMP_NUM_THREADS'] = "%i" %args.set_omp_threads 
-        
 
-    if rank==0:
-        #git_hh = sp.Popen(['git' , 'rev-parse', 'HEAD'], shell=False, stdout=sp.PIPE, cwd = sys.path[0])
-
-        #git_hh = git_hh.communicate()[0].strip()
-
-        # Print run-info to screen
-        #print("Git rev : ", git_hh)
-        print("Contributors : Audun Skau Hansen (a.s.hansen@kjemi.uio.no) ")
-        print("               Einar Aurbakken")
-        print("               Thomas Bondo Pedersen")
-        print(" ")
-        print("   \u001b[38;5;117m0\u001b[38;5;27mø \033[0mHylleraas Centre for Quantum Molecular Sciences")
-        print("                        UiO 2020")
-
-
-        #print
-        #print("Git rev:", sp.check_output(['git', 'rev-parse', 'HEAD'], cwd=sys.path[0]))
-        print("_________________________________________________________")
-        print("Input configuration")
-        print("_________________________________________________________")
-        print("command line args:")
-        print(parser.parse_args())
-        print(" ")
-        print("Input files:")
-        print("Geometry + AO basis    :", args.project_file)
-        print("Wannier basis          :", args.coefficients)
-        print("Auxiliary basis        :", args.auxbasis)
-        print(" ")
-        print("Screening and approximations:")
-        print("FOT                    :", args.fot)
-        print("Number of core orbs.   :", args.n_core, "(frozen)")
-        print("Aux. basis cutoff      :", args.basis_truncation)
-        print("Attenuation            :", args.attenuation)
-        print("Float precision        :", args.float_precision)
-
-        #print("Att. truncation        :", args.attenuated_truncation)
-        #print("AO basis screening     :", args.ao_screening)
-        print("(LJ|0mNn)screening(xi0):", args.xi0)
-        print("(LJ|0pNq)screening(xi1):", args.xi1)
-        print(" ")
-        print("General settings:")
-        print("Virtual space          :", args.virtual_space)
-        print("Coulomb extent (layers):", args.N_c)
-        print("Atomic fragmentation   :", args.afrag)
-        #print("Dot-product            :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
-        #print("RI fitting             :", ["Non-robust", "Robust"][int(args.robust)])
-        print("$OMP_NUM_THREADS seen by python:", os.environ.get("OMP_NUM_THREADS"))
-        #print("MPI rank / size        :", mpi_rank, mpi_size)
-        print("_________________________________________________________",flush=True)
-
-
-
-
-
-
-        # Load system
-        p = pr.prism(args.project_file)
-        p.n_core = args.n_core
-        p.set_nocc()
-
-        # Compute overlap matrix
-        s = of.overlap_matrix(p)
-
-
-
-
-
-        # Fitting basis
-        if args.basis_truncation < 0:
-            auxbasis = PRI.remove_redundancies(p, args.N_c, args.auxbasis, analysis = True, tolerance = 10**args.basis_truncation)
-            f = open("ri-fitbasis.g94", "w")
-            f.write(auxbasis)
-            f.close()
-        else:
-            auxbasis = PRI.basis_trimmer(p, args.auxbasis, alphacut = args.basis_truncation)
-            #auxbasis = PRI.basis_scaler(p, args.auxbasis, alphascale = args.basis_truncation)
-            #print(auxbasis)
-            f = open("ri-fitbasis.g94", "w")
-            f.write(auxbasis)
-            f.close()
-
-        # Load wannier coefficients
-        c = tp.tmat()
-        c.load(args.coefficients)
-        c.set_precision(args.float_precision)
-
-        #cnew = tp.get_zero_tmat([20,0,0], [c.blocks.shape[1], c.blocks.shape[2]])
-        #cnew.blocks[ cnew.mapping[ cnew._c2i(c.coords)]] = c.cget(c.coords)
-        #c = cnew*1
-        #print(c.coords)
-
-
-        #c = of.orthogonalize_tmat(c, p, coords = tp.lattice_coords([30,0,0]))
-        if args.orthogonalize:
-            c = of.orthogonalize_tmat_cholesky(c, p)
-
-        if args.virtual_space == "gs":
-            # Succesive outprojection of virtual space
-            # (see https://colab.research.google.com/drive/1Cvpid-oBrvsSza8YEqh6qhm_VhtR6QgK?usp=sharing)
-            c_occ, c_virt = PRI.occ_virt_split(c, p)
-
-            #c = of.orthogonal_paos_gs(c,p, p.get_n_ao(), thresh = args.pao_thresh)
-            c = of.orthogonal_paos_rep(c,p, p.get_nvirt(), thresh = args.pao_thresh, orthogonalize = args.orthogonalize)
-
-            c_occ, c_pao = PRI.occ_virt_split(c, p)
-
-            args.virtual_space = None #"pao"
-            p.set_nvirt(c.blocks.shape[2] - p.get_nocc())
-
-            #if args.orthogonalize:
-            #    c = of.orthogonalize_tmat_cholesky(c, p)
-
-            smo = c.tT().circulantdot(s.circulantdot(c))
-
-
-
-            print("Gram-Schmidt like virtual space construted.")
-            print("Max dev. from orthogonality:", np.abs((smo - tp.get_identity_tmat(smo.blocks.shape[1])).blocks).max()   )
-
-            print("Conserved span of virtual space?")
-
-            smo = c_virt.tT().circulantdot(s.circulantdot(c_pao))
-            print(np.sum(smo.blocks**2, axis = (0,1)))
-            print(np.sum(smo.blocks**2, axis = (0,2)),flush=True)
-
-
-
-        #print("coeff shape:", c.blocks.shape)
-
-        #if args.orthogonalize:
-        #    c = of.orthogonalize_tmat_cholesky(c, p)
-
-        #c = of.orthogonalize_tmat_unfold(c,p, thresh = 0.0001)
-
-
-        # compute wannier centers
-
-        wcenters, spreads = of.centers_spreads(c, p, s.coords)
-        #wcenters = wcenters[p.n_core:] #remove core orbitals
-        #print(wcenters.T)
-        #print(spreads)
-
-        
-
-
-
-        c_occ, c_virt = PRI.occ_virt_split(c,p) #, n = p.get_nocc_all())
-
-
-
-        #print("orbspace:", p.n_core, p.get_nocc())
-
-        #print("orbspace:", c_occ.blocks.shape[2], c_virt.blocks.shape[2])
-        #print("ncore   :", p.n_core, p.get_nocc(), p.get_nvirt())
-
-        if args.virtual_space is not None:
-            if args.virtual_space == "pao":
-                s_, c_virt, wcenters_virt = of.conventional_paos(c,p, thresh = args.pao_thresh)
-                #s_, c_virt, wcenters_virt = of.orthogonal_paos(c,p)
-                #p.n_core = args.n_core
-                p.set_nvirt(c_virt.blocks.shape[2])
-
-                args.solver = "mp2_nonorth"
-
-                #c_virt = of.orthogonalize_tmat_unfold(c_virt,p, thresh = 0.0001)
-                #c_virt = of.orthogonalize_tmat(c_virt, p)
-
-                #p.n_core = args.n_core
-                # Append virtual centers to the list of centers
-                #args.virtual_space = None
-                wcenters = np.append(wcenters[p.n_core:p.get_nocc()+p.n_core], wcenters_virt, axis = 0)
-
-
-            elif args.virtual_space == "paodot":
-                s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
-
-                p.set_nvirt(c_virt.blocks.shape[2])
-
-                args.solver = "paodot"
-
-                # Append virtual centers to the list of centers
-
-                #p.n_core = args.n_core
-                # Append virtual centers to the list of centers
-                wcenters = np.append(wcenters[p.n_core:p.get_nocc()+p.n_core], wcenters_virt, axis = 0)
-
-            else:
-                c_virt = tp.tmat()
-                c_virt.load(args.virtual_space)
-                p.set_nvirt(c_virt.blocks.shape[2])
-            """
-            if args.virtual_space == "pao":
-                s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
-                #p.n_core = args.n_core
-
-                p.set_nvirt(c_virt.blocks.shape[2])
-                print("p.get_nvirt:", p.get_nvirt())
-
-                args.solver = "mp2_nonorth"
-
-
-                # Append virtual centers to the list of centers
-                wcenters = np.append(wcenters[:p.get_nocc()], wcenters_virt, axis = 0)
-                p.n_core = args.n_core
-            """
-
-        else:
-            #p.n_core = args.n_core
-            wcenters = wcenters[p.n_core:]
-
-        #args.virtual_space = "pao"
-
-
-        #c_occ, c_virt_lvo = PRI.occ_virt_split(c,p)
-        if args.spacedef is not None:
-            from ast import literal_eval
-            occI, occF, virtI, virtF = [literal_eval(i) for i in args.spacedef.split(",")]
-            print("Subspace definition (occupied0, occupiedF, virtual0, virtualF):", occI, occF, virtI, virtF)
-
-            c_occ = tp.tmat()
-            c_occ.load_nparray(c.cget(c.coords)[:, :, occI:occF], c.coords)
-            wcenters_occ = wcenters[occI:occF]
-
-            if virtF == -1:
-                c_virt = tp.tmat()
-                c_virt.load_nparray(c.cget(c.coords)[:, :, virtI:], c.coords)
-                wcenters_virt = wcenters[virtI:]
-            else:
-                c_virt = tp.tmat()
-                c_virt.load_nparray(c.cget(c.coords)[:, :, virtI:virtF], c.coords)
-                wcenters_virt = wcenters[virtI:virtF]
-
-            wcenters = np.append(wcenters_occ, wcenters_virt, axis = 0)
-
-        
-        wcenters_occ, spreads_occ = of.centers_spreads(c_occ, p, s.coords)
-
-        wcenters_virt, spreads_virt = of.centers_spreads(c_virt, p, s.coords)
-
-        #spreads = np.array([spreads_occ, spreads_virt]).ravel()
-        #print(spreads)
-
-        wcenters = np.append(wcenters_occ, wcenters_virt, axis = 0)
-
-        #print("Number of coefficients to truncate:", np.sum(np.abs(c_occ.blocks[np.abs(c_occ.blocks)>1e-14])<1e-6))
-        #print("Number of coefficients to keep    :", np.sum(np.abs(c_occ.blocks[np.abs(c_occ.blocks)>1e-14])>1e-6))
-        #print("Number of coefficients in total   :", np.prod(c_occ.blocks.shape))
-        print("Spaces:")
-        print(c_occ.blocks.shape, c_virt.blocks.shape, wcenters.shape)
-
-        if args.coeff_screen is not None:
-            
-            c_occ = tp.screen_tmat(c_occ, tolerance = args.coeff_screen)
-            c_virt = tp.screen_tmat(c_virt, tolerance = args.coeff_screen)
-
-            print("Spaces after screening:")
-            print(c_occ.blocks.shape, c_virt.blocks.shape, wcenters.shape)
-
-        
-
-
-
-
-
-
-        s_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
-        #print(np.diag(s_virt.cget([0,0,0])))
-        #s_virt = c_virt.tT().cdot(s*c_virt, coords = c_virt.coords)
-
-
-
-        # AO Fock matrix
-        f_ao = tp.tmat()
-        f_ao.load(args.fock_matrix)
-        f_ao.set_precision(args.float_precision)
-
-
-
-        # Compute MO Fock matrix
-
-        f_mo_aa = c_virt.tT().cdot(f_ao*c_virt, coords = c_virt.coords)
-        f_mo_ii = c_occ.tT().cdot(f_ao*c_occ, coords = c_occ.coords)
-        f_mo_ia = c_occ.tT().cdot(f_ao*c_virt, coords = c_occ.coords)
-
-        print("Maximum f_ia:", np.abs(f_mo_ia.blocks).max(),flush=True)
-
-        #f_mo_aa = c_virt.tT().circulantdot(f_ao.circulantdot(c_virt))
-        #f_mo_ii = c_occ.tT().circulantdot(f_ao.circulantdot(c_occ))
-        #f_mo_ia = c_occ.tT().circulantdot(f_ao.circulantdot(c_virt))
-
-        #f_mo_ia = c_occ.tT().circulantdot(f_ao.circulantdot(c_virt)) #, coords = c_occ.coords)
-
-        # Compute energy denominator
-
-        f_aa = np.diag(f_mo_aa.cget([0,0,0]))
-        f_ii = np.diag(f_mo_ii.cget([0,0,0]))
-
-        e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
-
-
-
-
-
-        # Initialize integrals
-        if args.ibuild is None:
-            ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, robust = args.robust, xi0=args.xi0, xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level, inverse_test = args.inverse_test, rcond = args.rcond, inv = args.inv)
-            #ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=None, circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level)
-            if args.store_ibuild:
-                print("args.store_ibuild", args.store_ibuild)
-                np.save("integral_build.npy", np.array([ib]), allow_pickle = True)
-        else:
-            ib = np.load(args.ibuild, allow_pickle = True)[0]
-            #print(ib.getorientation([0,0,0],[0,0,0]))
-            print("Integral build read from file:", args.ibuild)
-            args.attenuation = ib.attenuation
-            print("Attenuation parameter set to %.4e" % args.attenuation)
-            #ib.cfit.set_n_layers(PRI.n_points_p(p, args.N_c), args.rcond)
-
-        if args.rprecision or args.float_precision == np.float32:
-            # Use reduced precision in d.T V d product
-            ib.tprecision = np.complex64
-
-
-        """
-        for i in np.arange(60):
-            Is, Ishape = ib.getorientation(np.array([i,0,0]), np.array([0,0,0]))
-            #print("integral test:", i, np.max(np.abs(Is.cget([0,0,0]))))
-            for M in np.arange(60):
-                print("integral test:", i, M, np.max(np.abs(Is.cget([M,0,0]))))
-        """
-
-
-
-
-        # Initialize domain definitions
-
-
-        d = dd.build_distance_matrix(p, c.coords, wcenters, wcenters)
-
-
-
-
-
-
-        d_occ_ref = d.cget([0,0,0])[:ib.n_occ, :ib.n_occ]
-        #if args.spacedef is not None:
-        #    d_occ_ref = d.cget([0,0,0])[PRI.]
-
-        center_fragments = dd.atomic_fragmentation(ib.n_occ, d_occ_ref, args.afrag) #[::-1]
-        #center_fragments = [[0,1,2], [3,4,5]]
-
-        #print(wcenters)
-
-
-        print(" ")
-        print("_________________________________________________________")
-        print("Fragmentation of occupied space:")
-        for i in np.arange(len(center_fragments)):
-            print("  Fragment %i:" %i, center_fragments[i], wcenters[center_fragments[i][0]])
-        print("_________________________________________________________")
-        print(" ",flush=True)
-
-        if args.fragment_center:
-            # use a reduced charge expression to estimate the center of a fragment
-            for i in np.arange(len(center_fragments)):
-                pos_ = np.sum(wcenters[center_fragments[i]], axis = 0)/len(center_fragments[i])
-                print(pos_)
-                print(wcenters[center_fragments[i]])
-                for j in np.arange(len(center_fragments[i])):
-                    wcenters[center_fragments[i][j]] = pos_
-        if args.atomic_association:
-            # associate virtual orbitals to atomic centers
-            pos_0, charge_0 = p.get_atoms([[0,0,0]])
-            r_atom = np.sqrt(np.sum((wcenters[p.get_nocc():][:, None]  - pos_0[ None,:])**2, axis = 2))
-            for i in np.arange(p.get_nocc(), len(wcenters)):
-                wcenters[i] = pos_0[np.argmin(r_atom[i-p.get_nocc()])]
-        # broadcast all data from rank 0
-    else:
-        p = None
-        ib = None
-        s_virt = None
-        f_mo_ii, f_mo_aa, wcenters = None, None, None
-        center_fragments = None
-
-    
-    
-    p = comm.bcast(p, root = 0)
-    ib = comm.bcast(ib, root = 0)
-    s_virt = comm.bcast(s_virt, root = 0)
-    f_mo_ii = comm.bcast(f_mo_ii, root = 0)
-    f_mo_aa = comm.bcast(f_mo_aa, root = 0)
-    wcenters = comm.bcast(wcenters, root = 0)
-    center_fragments = comm.bcast(center_fragments, root = 0)
-
-
-    #comm.Barrier()
-    print(rank, p)
-    
-        
     if args.fragmentation == "cim-vsweep":
         """
         cluster-in-molecule scheme
         """
+            
+
+        if rank==0:
+            #git_hh = sp.Popen(['git' , 'rev-parse', 'HEAD'], shell=False, stdout=sp.PIPE, cwd = sys.path[0])
+
+            #git_hh = git_hh.communicate()[0].strip()
+
+            # Print run-info to screen
+            #print("Git rev : ", git_hh)
+            print("Contributors : Audun Skau Hansen (a.s.hansen@kjemi.uio.no) ")
+            print("               Einar Aurbakken")
+            print("               Thomas Bondo Pedersen")
+            print(" ")
+            print("   \u001b[38;5;117m0\u001b[38;5;27mø \033[0mHylleraas Centre for Quantum Molecular Sciences")
+            print("                        UiO 2020")
+
+
+            #print
+            #print("Git rev:", sp.check_output(['git', 'rev-parse', 'HEAD'], cwd=sys.path[0]))
+            print("_________________________________________________________")
+            print("Input configuration")
+            print("_________________________________________________________")
+            print("command line args:")
+            print(parser.parse_args())
+            print(" ")
+            print("Input files:")
+            print("Geometry + AO basis    :", args.project_file)
+            print("Wannier basis          :", args.coefficients)
+            print("Auxiliary basis        :", args.auxbasis)
+            print(" ")
+            print("Screening and approximations:")
+            print("FOT                    :", args.fot)
+            print("Number of core orbs.   :", args.n_core, "(frozen)")
+            print("Aux. basis cutoff      :", args.basis_truncation)
+            print("Attenuation            :", args.attenuation)
+            print("Float precision        :", args.float_precision)
+
+            #print("Att. truncation        :", args.attenuated_truncation)
+            #print("AO basis screening     :", args.ao_screening)
+            print("(LJ|0mNn)screening(xi0):", args.xi0)
+            print("(LJ|0pNq)screening(xi1):", args.xi1)
+            print(" ")
+            print("General settings:")
+            print("Virtual space          :", args.virtual_space)
+            print("Coulomb extent (layers):", args.N_c)
+            print("Atomic fragmentation   :", args.afrag)
+            #print("Dot-product            :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
+            #print("RI fitting             :", ["Non-robust", "Robust"][int(args.robust)])
+            print("$OMP_NUM_THREADS seen by python:", os.environ.get("OMP_NUM_THREADS"))
+            #print("MPI rank / size        :", mpi_rank, mpi_size)
+            print("_________________________________________________________",flush=True)
+
+
+
+
+            
+
+            # Load system
+            p = pr.prism(args.project_file)
+            p.n_core = args.n_core
+            p.set_nocc()
+
+            # Compute overlap matrix
+            s = of.overlap_matrix(p)
+
+
+
+
+
+            # Fitting basis
+            if args.basis_truncation < 0:
+                auxbasis = PRI.remove_redundancies(p, args.N_c, args.auxbasis, analysis = True, tolerance = 10**args.basis_truncation)
+                f = open("ri-fitbasis.g94", "w")
+                f.write(auxbasis)
+                f.close()
+            else:
+                auxbasis = PRI.basis_trimmer(p, args.auxbasis, alphacut = args.basis_truncation)
+                #auxbasis = PRI.basis_scaler(p, args.auxbasis, alphascale = args.basis_truncation)
+                #print(auxbasis)
+                f = open("ri-fitbasis.g94", "w")
+                f.write(auxbasis)
+                f.close()
+
+            # Load wannier coefficients
+            c = tp.tmat()
+            c.load(args.coefficients)
+            c.set_precision(args.float_precision)
+
+            #cnew = tp.get_zero_tmat([20,0,0], [c.blocks.shape[1], c.blocks.shape[2]])
+            #cnew.blocks[ cnew.mapping[ cnew._c2i(c.coords)]] = c.cget(c.coords)
+            #c = cnew*1
+            #print(c.coords)
+
+
+            #c = of.orthogonalize_tmat(c, p, coords = tp.lattice_coords([30,0,0]))
+            if args.orthogonalize:
+                c = of.orthogonalize_tmat_cholesky(c, p)
+
+            if args.virtual_space == "gs":
+                # Succesive outprojection of virtual space
+                # (see https://colab.research.google.com/drive/1Cvpid-oBrvsSza8YEqh6qhm_VhtR6QgK?usp=sharing)
+                c_occ, c_virt = PRI.occ_virt_split(c, p)
+
+                #c = of.orthogonal_paos_gs(c,p, p.get_n_ao(), thresh = args.pao_thresh)
+                c = of.orthogonal_paos_rep(c,p, p.get_nvirt(), thresh = args.pao_thresh, orthogonalize = args.orthogonalize)
+
+                c_occ, c_pao = PRI.occ_virt_split(c, p)
+
+                args.virtual_space = None #"pao"
+                p.set_nvirt(c.blocks.shape[2] - p.get_nocc())
+
+                #if args.orthogonalize:
+                #    c = of.orthogonalize_tmat_cholesky(c, p)
+
+                smo = c.tT().circulantdot(s.circulantdot(c))
+
+
+
+                print("Gram-Schmidt like virtual space construted.")
+                print("Max dev. from orthogonality:", np.abs((smo - tp.get_identity_tmat(smo.blocks.shape[1])).blocks).max()   )
+
+                print("Conserved span of virtual space?")
+
+                smo = c_virt.tT().circulantdot(s.circulantdot(c_pao))
+                print(np.sum(smo.blocks**2, axis = (0,1)))
+                print(np.sum(smo.blocks**2, axis = (0,2)),flush=True)
+
+
+
+            #print("coeff shape:", c.blocks.shape)
+
+            #if args.orthogonalize:
+            #    c = of.orthogonalize_tmat_cholesky(c, p)
+
+            #c = of.orthogonalize_tmat_unfold(c,p, thresh = 0.0001)
+
+
+            # compute wannier centers
+
+            wcenters, spreads = of.centers_spreads(c, p, s.coords)
+            #wcenters = wcenters[p.n_core:] #remove core orbitals
+            #print(wcenters.T)
+            #print(spreads)
+
+            
+
+
+
+            c_occ, c_virt = PRI.occ_virt_split(c,p) #, n = p.get_nocc_all())
+
+
+
+            #print("orbspace:", p.n_core, p.get_nocc())
+
+            #print("orbspace:", c_occ.blocks.shape[2], c_virt.blocks.shape[2])
+            #print("ncore   :", p.n_core, p.get_nocc(), p.get_nvirt())
+
+            if args.virtual_space is not None:
+                if args.virtual_space == "pao":
+                    s_, c_virt, wcenters_virt = of.conventional_paos(c,p, thresh = args.pao_thresh)
+                    #s_, c_virt, wcenters_virt = of.orthogonal_paos(c,p)
+                    #p.n_core = args.n_core
+                    p.set_nvirt(c_virt.blocks.shape[2])
+
+                    args.solver = "mp2_nonorth"
+
+                    #c_virt = of.orthogonalize_tmat_unfold(c_virt,p, thresh = 0.0001)
+                    #c_virt = of.orthogonalize_tmat(c_virt, p)
+
+                    #p.n_core = args.n_core
+                    # Append virtual centers to the list of centers
+                    #args.virtual_space = None
+                    wcenters = np.append(wcenters[p.n_core:p.get_nocc()+p.n_core], wcenters_virt, axis = 0)
+
+
+                elif args.virtual_space == "paodot":
+                    s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
+
+                    p.set_nvirt(c_virt.blocks.shape[2])
+
+                    args.solver = "paodot"
+
+                    # Append virtual centers to the list of centers
+
+                    #p.n_core = args.n_core
+                    # Append virtual centers to the list of centers
+                    wcenters = np.append(wcenters[p.n_core:p.get_nocc()+p.n_core], wcenters_virt, axis = 0)
+
+                else:
+                    c_virt = tp.tmat()
+                    c_virt.load(args.virtual_space)
+                    p.set_nvirt(c_virt.blocks.shape[2])
+                """
+                if args.virtual_space == "pao":
+                    s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
+                    #p.n_core = args.n_core
+
+                    p.set_nvirt(c_virt.blocks.shape[2])
+                    print("p.get_nvirt:", p.get_nvirt())
+
+                    args.solver = "mp2_nonorth"
+
+
+                    # Append virtual centers to the list of centers
+                    wcenters = np.append(wcenters[:p.get_nocc()], wcenters_virt, axis = 0)
+                    p.n_core = args.n_core
+                """
+
+            else:
+                #p.n_core = args.n_core
+                wcenters = wcenters[p.n_core:]
+
+            #args.virtual_space = "pao"
+
+
+            #c_occ, c_virt_lvo = PRI.occ_virt_split(c,p)
+            if args.spacedef is not None:
+                from ast import literal_eval
+                occI, occF, virtI, virtF = [literal_eval(i) for i in args.spacedef.split(",")]
+                print("Subspace definition (occupied0, occupiedF, virtual0, virtualF):", occI, occF, virtI, virtF)
+
+                c_occ = tp.tmat()
+                c_occ.load_nparray(c.cget(c.coords)[:, :, occI:occF], c.coords)
+                wcenters_occ = wcenters[occI:occF]
+
+                if virtF == -1:
+                    c_virt = tp.tmat()
+                    c_virt.load_nparray(c.cget(c.coords)[:, :, virtI:], c.coords)
+                    wcenters_virt = wcenters[virtI:]
+                else:
+                    c_virt = tp.tmat()
+                    c_virt.load_nparray(c.cget(c.coords)[:, :, virtI:virtF], c.coords)
+                    wcenters_virt = wcenters[virtI:virtF]
+
+                wcenters = np.append(wcenters_occ, wcenters_virt, axis = 0)
+
+            
+            wcenters_occ, spreads_occ = of.centers_spreads(c_occ, p, s.coords)
+
+            wcenters_virt, spreads_virt = of.centers_spreads(c_virt, p, s.coords)
+
+            #spreads = np.array([spreads_occ, spreads_virt]).ravel()
+            #print(spreads)
+
+            wcenters = np.append(wcenters_occ, wcenters_virt, axis = 0)
+
+            #print("Number of coefficients to truncate:", np.sum(np.abs(c_occ.blocks[np.abs(c_occ.blocks)>1e-14])<1e-6))
+            #print("Number of coefficients to keep    :", np.sum(np.abs(c_occ.blocks[np.abs(c_occ.blocks)>1e-14])>1e-6))
+            #print("Number of coefficients in total   :", np.prod(c_occ.blocks.shape))
+            print("Spaces:")
+            print(c_occ.blocks.shape, c_virt.blocks.shape, wcenters.shape)
+
+            if args.coeff_screen is not None:
+                
+                c_occ = tp.screen_tmat(c_occ, tolerance = args.coeff_screen)
+                c_virt = tp.screen_tmat(c_virt, tolerance = args.coeff_screen)
+
+                print("Spaces after screening:")
+                print(c_occ.blocks.shape, c_virt.blocks.shape, wcenters.shape)
+
+            
+
+
+
+
+
+
+            s_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
+            #print(np.diag(s_virt.cget([0,0,0])))
+            #s_virt = c_virt.tT().cdot(s*c_virt, coords = c_virt.coords)
+
+
+
+            # AO Fock matrix
+            f_ao = tp.tmat()
+            f_ao.load(args.fock_matrix)
+            f_ao.set_precision(args.float_precision)
+
+
+
+            # Compute MO Fock matrix
+
+            f_mo_aa = c_virt.tT().cdot(f_ao*c_virt, coords = c_virt.coords)
+            f_mo_ii = c_occ.tT().cdot(f_ao*c_occ, coords = c_occ.coords)
+            f_mo_ia = c_occ.tT().cdot(f_ao*c_virt, coords = c_occ.coords)
+
+            print("Maximum f_ia:", np.abs(f_mo_ia.blocks).max(),flush=True)
+
+            #f_mo_aa = c_virt.tT().circulantdot(f_ao.circulantdot(c_virt))
+            #f_mo_ii = c_occ.tT().circulantdot(f_ao.circulantdot(c_occ))
+            #f_mo_ia = c_occ.tT().circulantdot(f_ao.circulantdot(c_virt))
+
+            #f_mo_ia = c_occ.tT().circulantdot(f_ao.circulantdot(c_virt)) #, coords = c_occ.coords)
+
+            # Compute energy denominator
+
+            f_aa = np.diag(f_mo_aa.cget([0,0,0]))
+            f_ii = np.diag(f_mo_ii.cget([0,0,0]))
+
+            e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
+
+
+
+
+
+            # Initialize integrals
+            if args.ibuild is None:
+                ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, robust = args.robust, xi0=args.xi0, xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level, inverse_test = args.inverse_test, rcond = args.rcond, inv = args.inv)
+                #ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=None, circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level)
+                if args.store_ibuild:
+                    print("args.store_ibuild", args.store_ibuild)
+                    np.save("integral_build.npy", np.array([ib]), allow_pickle = True)
+            else:
+                ib = np.load(args.ibuild, allow_pickle = True)[0]
+                #print(ib.getorientation([0,0,0],[0,0,0]))
+                print("Integral build read from file:", args.ibuild)
+                args.attenuation = ib.attenuation
+                print("Attenuation parameter set to %.4e" % args.attenuation)
+                #ib.cfit.set_n_layers(PRI.n_points_p(p, args.N_c), args.rcond)
+
+            if args.rprecision or args.float_precision == np.float32:
+                # Use reduced precision in d.T V d product
+                ib.tprecision = np.complex64
+
+
+            """
+            for i in np.arange(60):
+                Is, Ishape = ib.getorientation(np.array([i,0,0]), np.array([0,0,0]))
+                #print("integral test:", i, np.max(np.abs(Is.cget([0,0,0]))))
+                for M in np.arange(60):
+                    print("integral test:", i, M, np.max(np.abs(Is.cget([M,0,0]))))
+            """
+
+
+
+
+            # Initialize domain definitions
+
+
+            d = dd.build_distance_matrix(p, c.coords, wcenters, wcenters)
+
+
+
+
+
+
+            d_occ_ref = d.cget([0,0,0])[:ib.n_occ, :ib.n_occ]
+            #if args.spacedef is not None:
+            #    d_occ_ref = d.cget([0,0,0])[PRI.]
+
+            center_fragments = dd.atomic_fragmentation(ib.n_occ, d_occ_ref, args.afrag) #[::-1]
+            #center_fragments = [[0,1,2], [3,4,5]]
+
+            #print(wcenters)
+
+
+            print(" ")
+            print("_________________________________________________________")
+            print("Fragmentation of occupied space:")
+            for i in np.arange(len(center_fragments)):
+                print("  Fragment %i:" %i, center_fragments[i], wcenters[center_fragments[i][0]])
+            print("_________________________________________________________")
+            print(" ",flush=True)
+
+            if args.fragment_center:
+                # use a reduced charge expression to estimate the center of a fragment
+                for i in np.arange(len(center_fragments)):
+                    pos_ = np.sum(wcenters[center_fragments[i]], axis = 0)/len(center_fragments[i])
+                    print(pos_)
+                    print(wcenters[center_fragments[i]])
+                    for j in np.arange(len(center_fragments[i])):
+                        wcenters[center_fragments[i][j]] = pos_
+            if args.atomic_association:
+                # associate virtual orbitals to atomic centers
+                pos_0, charge_0 = p.get_atoms([[0,0,0]])
+                r_atom = np.sqrt(np.sum((wcenters[p.get_nocc():][:, None]  - pos_0[ None,:])**2, axis = 2))
+                for i in np.arange(p.get_nocc(), len(wcenters)):
+                    wcenters[i] = pos_0[np.argmin(r_atom[i-p.get_nocc()])]
+            # broadcast all data from rank 0
+        else:
+            p = None
+            ib = None
+            s_virt = None
+            f_mo_ii, f_mo_aa, wcenters = None, None, None
+            center_fragments = None
+
+        
+        
+        p = comm.bcast(p, root = 0)
+        ib = comm.bcast(ib, root = 0)
+        s_virt = comm.bcast(s_virt, root = 0)
+        f_mo_ii = comm.bcast(f_mo_ii, root = 0)
+        f_mo_aa = comm.bcast(f_mo_aa, root = 0)
+        wcenters = comm.bcast(wcenters, root = 0)
+        center_fragments = comm.bcast(center_fragments, root = 0)
+
+
+        #comm.Barrier()
+        print(rank, p)
+        
+            
+        
 
         
 
@@ -557,6 +559,8 @@ if __name__ == "__main__":
             if rank==f%size:
                 print(rank, " working on fragment ", f)
                 #print(rank, f, size, f%size)
+                sp.call(["mkdir", os.getcwd()+"/lpath_%i" %rank])
+                os.environ["LIBINT_DATA_PATH"] = os.getcwd() + "/lpath_%i" %rank
 
                 
 
@@ -633,5 +637,476 @@ if __name__ == "__main__":
         """
         print("=========================================================")
         print("Pairwise energycontributions stored to disk.")
+
+    if args.fragmentation == "cim-asweep":
+        """
+        cluster-in-molecule scheme
+        """
+        Nw = 10
+        w = np.exp(np.linspace(np.log(0.1), np.log(10.0), Nw))
+
+        cwd_root = os.getcwd()
+
+        for fs in range(Nw):
+            os.chdir(cwd_root)
+            
+            if rank==fs%size:
+                sp.call(["mkdir", cwd_root+"/mpi_att_%i" %fs])
+                sp.call(["mkdir", cwd_root+"/mpi_att_%i/Crystal" %fs])
+                sp.call(["cp", cwd_root+"/psm1.npy", "mpi_att_%i/psm1.npy" %fs])
+                sp.call(["cp", cwd_root+"/F_crystal.npy", "mpi_att_%i/F_crystal.npy" %fs])
+
+                
+                sp.call(["cp", args.project_file, ".", cwd_root+"/mpi_att_%i/Crystal" %fs])
+
+                os.environ["LIBINT_DATA_PATH"] = cwd_root + "/mpi_att_%i" %fs
+                
+                
+
+                #os.exit()
+
+                #sp.call(["cd", "mpi_att_%i" %f])
+                os.chdir(cwd_root + "/mpi_att_%i" %fs)
+                print(rank, " working on run ", fs, w[fs])
+
+                #break
+                #git_hh = sp.Popen(['git' , 'rev-parse', 'HEAD'], shell=False, stdout=sp.PIPE, cwd = sys.path[0])
+
+                #git_hh = git_hh.communicate()[0].strip()
+
+                # Print run-info to screen
+                #print("Git rev : ", git_hh)
+                print("Contributors : Audun Skau Hansen (a.s.hansen@kjemi.uio.no) ")
+                print("               Einar Aurbakken")
+                print("               Thomas Bondo Pedersen")
+                print(" ")
+                print("   \u001b[38;5;117m0\u001b[38;5;27mø \033[0mHylleraas Centre for Quantum Molecular Sciences")
+                print("                        UiO 2020")
+
+
+                #print
+                #print("Git rev:", sp.check_output(['git', 'rev-parse', 'HEAD'], cwd=sys.path[0]))
+                print("_________________________________________________________")
+                print("Input configuration")
+                print("_________________________________________________________")
+                print("command line args:")
+                print(parser.parse_args())
+                print(" ")
+                print("Input files:")
+                print("Geometry + AO basis    :", args.project_file)
+                print("Wannier basis          :", args.coefficients)
+                print("Auxiliary basis        :", args.auxbasis)
+                print(" ")
+                print("Screening and approximations:")
+                print("FOT                    :", args.fot)
+                print("Number of core orbs.   :", args.n_core, "(frozen)")
+                print("Aux. basis cutoff      :", args.basis_truncation)
+                print("Attenuation            :", args.attenuation)
+                print("Float precision        :", args.float_precision)
+
+                #print("Att. truncation        :", args.attenuated_truncation)
+                #print("AO basis screening     :", args.ao_screening)
+                print("(LJ|0mNn)screening(xi0):", args.xi0)
+                print("(LJ|0pNq)screening(xi1):", args.xi1)
+                print(" ")
+                print("General settings:")
+                print("Virtual space          :", args.virtual_space)
+                print("Coulomb extent (layers):", args.N_c)
+                print("Atomic fragmentation   :", args.afrag)
+                #print("Dot-product            :", ["Block-Toeplitz", "Circulant"][int(args.circulant)])
+                #print("RI fitting             :", ["Non-robust", "Robust"][int(args.robust)])
+                print("$OMP_NUM_THREADS seen by python:", os.environ.get("OMP_NUM_THREADS"))
+                #print("MPI rank / size        :", mpi_rank, mpi_size)
+                print("_________________________________________________________",flush=True)
+
+
+
+
+                
+
+                # Load system
+                p = pr.prism(args.project_file)
+                p.n_core = args.n_core
+                p.set_nocc()
+
+                # Compute overlap matrix
+                s = of.overlap_matrix(p)
+
+
+
+
+
+                # Fitting basis
+                if args.basis_truncation < 0:
+                    auxbasis = PRI.remove_redundancies(p, args.N_c, args.auxbasis, analysis = True, tolerance = 10**args.basis_truncation)
+                    f = open("ri-fitbasis.g94", "w")
+                    f.write(auxbasis)
+                    f.close()
+                else:
+                    auxbasis = PRI.basis_trimmer(p, args.auxbasis, alphacut = args.basis_truncation)
+                    #auxbasis = PRI.basis_scaler(p, args.auxbasis, alphascale = args.basis_truncation)
+                    #print(auxbasis)
+                    f = open("ri-fitbasis.g94", "w")
+                    f.write(auxbasis)
+                    f.close()
+
+                # Load wannier coefficients
+                c = tp.tmat()
+                c.load(args.coefficients)
+                c.set_precision(args.float_precision)
+
+                #cnew = tp.get_zero_tmat([20,0,0], [c.blocks.shape[1], c.blocks.shape[2]])
+                #cnew.blocks[ cnew.mapping[ cnew._c2i(c.coords)]] = c.cget(c.coords)
+                #c = cnew*1
+                #print(c.coords)
+
+
+                #c = of.orthogonalize_tmat(c, p, coords = tp.lattice_coords([30,0,0]))
+                if args.orthogonalize:
+                    c = of.orthogonalize_tmat_cholesky(c, p)
+
+                if args.virtual_space == "gs":
+                    # Succesive outprojection of virtual space
+                    # (see https://colab.research.google.com/drive/1Cvpid-oBrvsSza8YEqh6qhm_VhtR6QgK?usp=sharing)
+                    c_occ, c_virt = PRI.occ_virt_split(c, p)
+
+                    #c = of.orthogonal_paos_gs(c,p, p.get_n_ao(), thresh = args.pao_thresh)
+                    c = of.orthogonal_paos_rep(c,p, p.get_nvirt(), thresh = args.pao_thresh, orthogonalize = args.orthogonalize)
+
+                    c_occ, c_pao = PRI.occ_virt_split(c, p)
+
+                    args.virtual_space = None #"pao"
+                    p.set_nvirt(c.blocks.shape[2] - p.get_nocc())
+
+                    #if args.orthogonalize:
+                    #    c = of.orthogonalize_tmat_cholesky(c, p)
+
+                    smo = c.tT().circulantdot(s.circulantdot(c))
+
+
+
+                    print("Gram-Schmidt like virtual space construted.")
+                    print("Max dev. from orthogonality:", np.abs((smo - tp.get_identity_tmat(smo.blocks.shape[1])).blocks).max()   )
+
+                    print("Conserved span of virtual space?")
+
+                    smo = c_virt.tT().circulantdot(s.circulantdot(c_pao))
+                    print(np.sum(smo.blocks**2, axis = (0,1)))
+                    print(np.sum(smo.blocks**2, axis = (0,2)),flush=True)
+
+
+
+                #print("coeff shape:", c.blocks.shape)
+
+                #if args.orthogonalize:
+                #    c = of.orthogonalize_tmat_cholesky(c, p)
+
+                #c = of.orthogonalize_tmat_unfold(c,p, thresh = 0.0001)
+
+
+                # compute wannier centers
+
+                wcenters, spreads = of.centers_spreads(c, p, s.coords)
+                #wcenters = wcenters[p.n_core:] #remove core orbitals
+                #print(wcenters.T)
+                #print(spreads)
+
+                
+
+
+
+                c_occ, c_virt = PRI.occ_virt_split(c,p) #, n = p.get_nocc_all())
+
+
+
+                #print("orbspace:", p.n_core, p.get_nocc())
+
+                #print("orbspace:", c_occ.blocks.shape[2], c_virt.blocks.shape[2])
+                #print("ncore   :", p.n_core, p.get_nocc(), p.get_nvirt())
+
+                if args.virtual_space is not None:
+                    if args.virtual_space == "pao":
+                        s_, c_virt, wcenters_virt = of.conventional_paos(c,p, thresh = args.pao_thresh)
+                        #s_, c_virt, wcenters_virt = of.orthogonal_paos(c,p)
+                        #p.n_core = args.n_core
+                        p.set_nvirt(c_virt.blocks.shape[2])
+
+                        args.solver = "mp2_nonorth"
+
+                        #c_virt = of.orthogonalize_tmat_unfold(c_virt,p, thresh = 0.0001)
+                        #c_virt = of.orthogonalize_tmat(c_virt, p)
+
+                        #p.n_core = args.n_core
+                        # Append virtual centers to the list of centers
+                        #args.virtual_space = None
+                        wcenters = np.append(wcenters[p.n_core:p.get_nocc()+p.n_core], wcenters_virt, axis = 0)
+
+
+                    elif args.virtual_space == "paodot":
+                        s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
+
+                        p.set_nvirt(c_virt.blocks.shape[2])
+
+                        args.solver = "paodot"
+
+                        # Append virtual centers to the list of centers
+
+                        #p.n_core = args.n_core
+                        # Append virtual centers to the list of centers
+                        wcenters = np.append(wcenters[p.n_core:p.get_nocc()+p.n_core], wcenters_virt, axis = 0)
+
+                    else:
+                        c_virt = tp.tmat()
+                        c_virt.load(args.virtual_space)
+                        p.set_nvirt(c_virt.blocks.shape[2])
+                    """
+                    if args.virtual_space == "pao":
+                        s_, c_virt, wcenters_virt = of.conventional_paos(c,p)
+                        #p.n_core = args.n_core
+
+                        p.set_nvirt(c_virt.blocks.shape[2])
+                        print("p.get_nvirt:", p.get_nvirt())
+
+                        args.solver = "mp2_nonorth"
+
+
+                        # Append virtual centers to the list of centers
+                        wcenters = np.append(wcenters[:p.get_nocc()], wcenters_virt, axis = 0)
+                        p.n_core = args.n_core
+                    """
+
+                else:
+                    #p.n_core = args.n_core
+                    wcenters = wcenters[p.n_core:]
+
+                #args.virtual_space = "pao"
+
+
+                #c_occ, c_virt_lvo = PRI.occ_virt_split(c,p)
+                if args.spacedef is not None:
+                    from ast import literal_eval
+                    occI, occF, virtI, virtF = [literal_eval(i) for i in args.spacedef.split(",")]
+                    print("Subspace definition (occupied0, occupiedF, virtual0, virtualF):", occI, occF, virtI, virtF)
+
+                    c_occ = tp.tmat()
+                    c_occ.load_nparray(c.cget(c.coords)[:, :, occI:occF], c.coords)
+                    wcenters_occ = wcenters[occI:occF]
+
+                    if virtF == -1:
+                        c_virt = tp.tmat()
+                        c_virt.load_nparray(c.cget(c.coords)[:, :, virtI:], c.coords)
+                        wcenters_virt = wcenters[virtI:]
+                    else:
+                        c_virt = tp.tmat()
+                        c_virt.load_nparray(c.cget(c.coords)[:, :, virtI:virtF], c.coords)
+                        wcenters_virt = wcenters[virtI:virtF]
+
+                    wcenters = np.append(wcenters_occ, wcenters_virt, axis = 0)
+
+                
+                wcenters_occ, spreads_occ = of.centers_spreads(c_occ, p, s.coords)
+
+                wcenters_virt, spreads_virt = of.centers_spreads(c_virt, p, s.coords)
+
+                #spreads = np.array([spreads_occ, spreads_virt]).ravel()
+                #print(spreads)
+
+                wcenters = np.append(wcenters_occ, wcenters_virt, axis = 0)
+
+                #print("Number of coefficients to truncate:", np.sum(np.abs(c_occ.blocks[np.abs(c_occ.blocks)>1e-14])<1e-6))
+                #print("Number of coefficients to keep    :", np.sum(np.abs(c_occ.blocks[np.abs(c_occ.blocks)>1e-14])>1e-6))
+                #print("Number of coefficients in total   :", np.prod(c_occ.blocks.shape))
+                print("Spaces:")
+                print(c_occ.blocks.shape, c_virt.blocks.shape, wcenters.shape)
+
+                if args.coeff_screen is not None:
+                    
+                    c_occ = tp.screen_tmat(c_occ, tolerance = args.coeff_screen)
+                    c_virt = tp.screen_tmat(c_virt, tolerance = args.coeff_screen)
+
+                    print("Spaces after screening:")
+                    print(c_occ.blocks.shape, c_virt.blocks.shape, wcenters.shape)
+
+                
+
+
+
+
+
+
+                s_virt = c_virt.tT().circulantdot(s.circulantdot(c_virt))
+                #print(np.diag(s_virt.cget([0,0,0])))
+                #s_virt = c_virt.tT().cdot(s*c_virt, coords = c_virt.coords)
+
+
+
+                # AO Fock matrix
+                f_ao = tp.tmat()
+                f_ao.load(args.fock_matrix)
+                f_ao.set_precision(args.float_precision)
+
+
+
+                # Compute MO Fock matrix
+
+                f_mo_aa = c_virt.tT().cdot(f_ao*c_virt, coords = c_virt.coords)
+                f_mo_ii = c_occ.tT().cdot(f_ao*c_occ, coords = c_occ.coords)
+                f_mo_ia = c_occ.tT().cdot(f_ao*c_virt, coords = c_occ.coords)
+
+                print("Maximum f_ia:", np.abs(f_mo_ia.blocks).max(),flush=True)
+
+                #f_mo_aa = c_virt.tT().circulantdot(f_ao.circulantdot(c_virt))
+                #f_mo_ii = c_occ.tT().circulantdot(f_ao.circulantdot(c_occ))
+                #f_mo_ia = c_occ.tT().circulantdot(f_ao.circulantdot(c_virt))
+
+                #f_mo_ia = c_occ.tT().circulantdot(f_ao.circulantdot(c_virt)) #, coords = c_occ.coords)
+
+                # Compute energy denominator
+
+                f_aa = np.diag(f_mo_aa.cget([0,0,0]))
+                f_ii = np.diag(f_mo_ii.cget([0,0,0]))
+
+                e_iajb = f_ii[:,None,None,None] - f_aa[None,:,None,None] + f_ii[None,None,:,None] - f_aa[None,None,None,:]
+
+
+
+
+
+                # Initialize integrals
+                if args.ibuild is None:
+                    ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = w[fs], auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, robust = args.robust, xi0=args.xi0, xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level, inverse_test = args.inverse_test, rcond = args.rcond, inv = args.inv)
+                    #ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=None, circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level)
+                    if args.store_ibuild:
+                        print("args.store_ibuild", args.store_ibuild)
+                        np.save("integral_build.npy", np.array([ib]), allow_pickle = True)
+                else:
+                    ib = np.load(args.ibuild, allow_pickle = True)[0]
+                    #print(ib.getorientation([0,0,0],[0,0,0]))
+                    print("Integral build read from file:", args.ibuild)
+                    args.attenuation = ib.attenuation
+                    print("Attenuation parameter set to %.4e" % args.attenuation)
+                    #ib.cfit.set_n_layers(PRI.n_points_p(p, args.N_c), args.rcond)
+
+                if args.rprecision or args.float_precision == np.float32:
+                    # Use reduced precision in d.T V d product
+                    ib.tprecision = np.complex64
+
+
+                """
+                for i in np.arange(60):
+                    Is, Ishape = ib.getorientation(np.array([i,0,0]), np.array([0,0,0]))
+                    #print("integral test:", i, np.max(np.abs(Is.cget([0,0,0]))))
+                    for M in np.arange(60):
+                        print("integral test:", i, M, np.max(np.abs(Is.cget([M,0,0]))))
+                """
+
+
+
+
+                # Initialize domain definitions
+
+
+                d = dd.build_distance_matrix(p, c.coords, wcenters, wcenters)
+
+
+
+
+
+
+                d_occ_ref = d.cget([0,0,0])[:ib.n_occ, :ib.n_occ]
+                #if args.spacedef is not None:
+                #    d_occ_ref = d.cget([0,0,0])[PRI.]
+
+                center_fragments = dd.atomic_fragmentation(ib.n_occ, d_occ_ref, args.afrag) #[::-1]
+                #center_fragments = [[0,1,2], [3,4,5]]
+
+                #print(wcenters)
+
+
+                print(" ")
+                print("_________________________________________________________")
+                print("Fragmentation of occupied space:")
+                for i in np.arange(len(center_fragments)):
+                    print("  Fragment %i:" %i, center_fragments[i], wcenters[center_fragments[i][0]])
+                print("_________________________________________________________")
+                print(" ",flush=True)
+
+                if args.fragment_center:
+                    # use a reduced charge expression to estimate the center of a fragment
+                    for i in np.arange(len(center_fragments)):
+                        pos_ = np.sum(wcenters[center_fragments[i]], axis = 0)/len(center_fragments[i])
+                        print(pos_)
+                        print(wcenters[center_fragments[i]])
+                        for j in np.arange(len(center_fragments[i])):
+                            wcenters[center_fragments[i][j]] = pos_
+                if args.atomic_association:
+                    # associate virtual orbitals to atomic centers
+                    pos_0, charge_0 = p.get_atoms([[0,0,0]])
+                    r_atom = np.sqrt(np.sum((wcenters[p.get_nocc():][:, None]  - pos_0[ None,:])**2, axis = 2))
+                    for i in np.arange(p.get_nocc(), len(wcenters)):
+                        wcenters[i] = pos_0[np.argmin(r_atom[i-p.get_nocc()])]
+            
+
+                
+
+                print("MPI info:", rank, size)
+
+
+
+                
+                #dV = 9
+
+                #N = 100
+
+                #v_range = np.linspace(args.virtual_cutoff, args.virtual_cutoff + dV, N)
+                
+
+                #energies = np.zeros((len(center_fragments),N,N), dtype = np.float)
+
+
+                #energies = []
+
+                #final_energies = []
+
+                domain_max = tp.lattice_coords(PRI.n_points_p(p, 20))
+
+
+                for n in range(len(center_fragments)):
+                
+                    #print(rank, f, size, f%size)
+
+                    
+
+
+
+
+                    fragment = center_fragments[n]
+                    a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = args.virtual_cutoff, occupied_cutoff = args.occupied_cutoff, float_precision = args.float_precision)
+                    nv = a_frag.n_virtual_tot
+                    no = a_frag.n_occupied_tot
+                    dt, it, E_new, E_pairwise = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = args.fot*0.001, damping = args.damping, energy = "cim")
+                    
+
+
+                        
+
+                    print("_________________________________________________________")
+                    print("Fragment:", fragment)
+                    
+                    print("Attenuation   :", w[fs])
+                    print("Virtual cutoff  : %.2f bohr (includes %i orbitals)" %  (a_frag.virtual_cutoff, a_frag.n_virtual_tot))
+                    print("Occupied cutoff : %.2f bohr (includes %i orbitals)" %  (a_frag.occupied_cutoff, a_frag.n_occupied_tot))
+                    print("E(CIM): %.8f      DE(fragment): %.8e" % (E_new, 0.0))
+                    print("dt , it:", dt, it)
+                    print("Integrator memory usage (estimate):", ib.nbytes()*1e-6, " Mb.")
+                    print("Fragment memory usage   (estimate):", a_frag.nbytes()*1e-6, " Mb.")
+                    print("_________________________________________________________")
+                        
+                    
+                    np.save("asweep_energies_%i_%f.npy" % (n, w[fs]), np.array(E_pairwise))
+                
+                print("=========================================================")
+                print("Done")
+        #print("Pairwise energycontributions stored to disk.")
 
         

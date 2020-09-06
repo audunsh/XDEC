@@ -1841,7 +1841,7 @@ def pcontr(pooldata):
 
 
 #@profile
-def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10, mproc = False):
+def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10, mpi = False):
     """
     Intermediate contraction of the occupieds.
     See section 3.2, algorithm 1 and 2 in the notes for details
@@ -1901,10 +1901,14 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10, mpro
         print("Shape of N_coords:", N_coords.shape)
 
     #gc.disable()
-    if mproc:
+    if mpi:
         # Multiprocessing
         
-        pool = mp.Pool()
+        comm = MPI.COMM_WORLD 
+        size = comm.Get_size()
+        rank = comm.Get_rank()
+    else:
+        rank = 0
 
 
     for Li in range(pq_region.shape[0]):
@@ -2003,25 +2007,41 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10, mpro
                 scs = np.sum(sc)
                 dO_LN_np = np.zeros((scs, NJ, Nn, Np), dtype = float)
 
-                if mproc:
-                    # Multiprocessin
+                if mpi:
+                    if rank==0:
+                        k, dk = comm.recv(source=0, tag=11)
+                        dO_LN_np[k] = dk
+
+                    else:
+
+                        
+                        for k in range(scs):
+                            #print(pres[k][1], pres[k][0].shape)
+                            if (rank-1)==f%(size-1):
+                                data = [k, np.dot(Jsc[k].reshape(NJ,Nm,Nn).swapaxes(1,2).reshape(NJ*Nn,Nm), csc[k]).reshape(NJ, Nn, Np)]
 
 
-                    pooldata = []
-                    for k in range(scs):
-                        pooldata.append([ Jsc, NJ, Nm, Nn, Np, csc, k])
+                                comm.send(data, dest=0, tag=11)
 
-                    pres = pool.map(pcontr, pooldata)
 
-                    #print(pres)
+                            #dO_LN_np[ pres[k][1] ] = pres[k][0]
 
-                    for k in range(scs):
-                        #print(pres[k][1], pres[k][0].shape)
-                        dO_LN_np[ pres[k][1] ] = pres[k][0]
+
+
+                        pooldata = []
+                        for k in range(scs):
+                            pooldata.append([ Jsc, NJ, Nm, Nn, Np, csc, k])
+
+                        pres = pool.map(pcontr, pooldata)
+
+                        #print(pres)
+
+                        
 
 
 
                 else:
+                    #print("summing over ", scs, "elements.")
                     for k in range(scs):
                         dO_LN_np[k] =  np.dot(Jsc[k].reshape(NJ,Nm,Nn).swapaxes(1,2).reshape(NJ*Nn,Nm), csc[k]).reshape(NJ, Nn, Np)
                     
