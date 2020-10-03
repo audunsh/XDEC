@@ -16,6 +16,8 @@ import lwrap.lwrap as li
 
 import utils.prism as pr
 
+
+
 import time
 
 import gc
@@ -33,6 +35,20 @@ import multiprocessing as mp
 #os.environ["CRYSTAL_EXE_PATH"] = "/Users/audunhansen/PeriodicDEC/utils/crystal_bin/"
 
 # Auxiliary basis set manipulations
+
+def get_max_rcond(JK):
+
+    # Returns max recommended condition truncation for pseudo inverse
+
+    svals = JK.get_kspace_eigenvalues().real
+    rvals = np.array((np.array(svals.shape[:3])-1)/2, dtype = int)
+    svals = np.roll(svals, rvals, axis = (0,1,2)).reshape(np.prod(svals.shape[:3]), svals.shape[-1])
+
+    condition = (np.max(np.abs(svals), axis = 1)/np.min(np.abs(svals), axis = 1)).max()
+    
+    #print(condition)
+    return 10**-(15 - np.log10(condition))
+
 
 def basis_trimmer(p, auxbasis, alphacut = 0.1, trimlist = None):
     """
@@ -68,7 +84,7 @@ def basis_trimmer(p, auxbasis, alphacut = 0.1, trimlist = None):
 
     return trimmed_basis
 
-def basis_scaler(p, auxbasis, alphascale = 1.0, trimlist = None):
+def basis_scaler(p, auxbasis, alphascale = 1.0, trimlist = None, normalize = False):
     """
     # SCALE basis 
     """
@@ -79,7 +95,11 @@ def basis_scaler(p, auxbasis, alphascale = 1.0, trimlist = None):
         try:
             # We only retain basis functions with exponent > alphacut
             exponent = literal_eval(line.split()[0])
-            weight   = literal_eval(line.split()[1])
+            if normalize:
+                weight   = literal_eval(line.split()[1])
+
+            else:
+                weight   = literal_eval(line.split()[1])
             
             trimmed_basis_list.append("    %.8f   %.8f \n" % (np.log(alphascale*np.exp(exponent)), weight))
             #trimmed_basis_list.append("    %.8f   %.8f" (np.log(alphascale*np.exp(exponent)), weight))
@@ -175,6 +195,30 @@ def get_basis_list(atoms, bname ="ri-fitbasis.g94", prescreen = None):
         #mp[nc:l+1] = i
     
     return np.array(mc), bstring, basis.shape[0], basis
+
+def get_condition_vector(JK_, width = 2):
+    mcond = np.ones(JK_.blocks.shape[1])
+
+    for m in np.arange(JK_.blocks.shape[1]):
+        JK_minor = tp.tmat() 
+        JK_minor.load_nparray(np.roll(JK_.cget(JK_.coords), m, axis = (1,2))[:, :width,:width],JK_.coords)
+
+        mk = np.abs(JK_minor.get_kspace_eigenvalues())
+        cond = np.max(mk) / np.min(mk)
+        mcond[m] = cond
+    return mcond
+
+def screen_exterior_cell(JK_, mcond, dist = 0):
+    # screen elements in mcond on distances beyond 'distance'
+    for m in mcond:
+        JK_.blocks[JK_.mapping[JK_._c2i(JK_.coords[np.sum(JK_.coords**2, axis = 1)>dist]) ],m, : ] = 0
+        JK_.blocks[JK_.mapping[JK_._c2i(JK_.coords[np.sum(JK_.coords**2, axis = 1)>dist]) ],:, m ] = 0
+    return JK_
+
+def screen_exterior_row(J_pq_c_, mcond, dist = 0):
+    for m in mcond:
+        J_pq_c_.blocks[J_pq_c_.mapping[J_pq_c_._c2i(J_pq_c_.coords[np.sum(J_pq_c_.coords**2, axis = 1)>dist]) ],m, : ]= 0
+    return J_pq_c_
 
 
 
@@ -1278,7 +1322,7 @@ class estimate_coordinate_domain():
         Jmn = compute_Jmn(self.p, s, attenuation = self.attenuation, auxname =self.basis, nshift = np.array([c2]))
         return np.abs(Jmn.blocks).max()
     
-    def estimate_attenuation_domain(self, c2 = np.array([0,0,0]), thresh = 1e-8):
+    def estimate_attenuation_domain(self, thresh, c2 = np.array([0,0,0])):
         
         for i in np.arange(self.Ru.shape[0]):
             cmR, cmM = self.Ru[i+1]+0.1,self.get_shell_maxelement(i)
@@ -1286,7 +1330,7 @@ class estimate_coordinate_domain():
                 break
         return np.max(np.abs(self.coords[self.R<cmR]), axis = 0), cmR
     
-    def compute_Jmn(self, c2, thresh = 1e-10):
+    def compute_Jmn(self, c2, thresh):
         
         Jmn_full = []
         N_blocks = 0
@@ -1314,7 +1358,12 @@ class estimate_coordinate_domain():
             #print("estimate_coordinate_domain",c2,": computing shell ", r0, "to", r1," max value:", cmM) #+0.1)
             #print(scoords)
 
-            if cmM<thresh:
+
+            if i == 0 and np.all(c2 == 0):
+                self.Jmn_max = np.abs(Jmn_shell.blocks).max()
+                print("Jmn_max:", self.Jmn_max)
+
+            if cmM<thresh*self.Jmn_max:
                 break
             else:
                 Jmn_full.append(Jmn_shell)
@@ -1348,7 +1397,7 @@ class estimate_coordinate_domain():
         
         return ret
 
-    def compute_JK(self, thresh = 1e-8):
+    def compute_JK(self, thresh):
         
         Jmn_full = []
         N_blocks = 0
@@ -1430,6 +1479,10 @@ class coefficient_fitter_static():
         self.JK = JK
         self.primed = False
 
+        self.lensing = 0
+
+        self.preconditioning = False
+
         
 
         self.JKInv = JKInv
@@ -1503,7 +1556,7 @@ class coefficient_fitter_static():
             Jmnc2_temp.set_precision(self.float_precision)
             #print("Number of blocks in ")
 
-            screen = np.max(np.abs(Jmnc2_temp.cget(Jmnc2_temp.coords)), axis = (1,2))>=xi0
+            screen = np.max(np.abs(Jmnc2_temp.cget(Jmnc2_temp.coords)), axis = (1,2))>=xi0*cm.Jmn_max
             screen[np.sum(Jmnc2_temp.coords**2, axis = 1)==0] = True
             
             
@@ -1579,7 +1632,7 @@ class coefficient_fitter_static():
             if self.printing:
                 print("Intermediate overlaps (LJ|0mNn) with N =", c2, " included with %i blocks and maximum absolute %.2e" % (Jmnc2.blocks.shape[0],np.max(np.abs(Jmnc2.blocks)) ))
                 print("Max interm.:", np.abs(Jmnc2.blocks).max())
-            if np.max(np.abs(Jmnc2.blocks))<xi0 and np.abs(R[ci]-R[ci+1])>1e-10:
+            if np.max(np.abs(Jmnc2.blocks))<xi0*cm.Jmn_max and np.abs(R[ci]-R[ci+1])>1e-10:
                 #print("Min overall:", np.max(np.abs(Jmnc2.blocks)))
                 break
 
@@ -1652,8 +1705,10 @@ class coefficient_fitter_static():
 
         
 
-        self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.NJ, self.Np = contract_occupieds(self.p, Jmn, self.coords, self.pq_region, self.c_occ, self.xi1)
+        #self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.NJ, self.Np = contract_occupieds(self.p, Jmn, self.coords, self.pq_region, self.c_occ, self.xi1)
+        self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.NJ, self.Np = contract_occupieds(self.p, Jmn, self.coords, self.pq_region, self.c_occ,  xi0*cm.Jmn_max)
 
+       
 
 
         
@@ -1677,8 +1732,33 @@ class coefficient_fitter_static():
             #print("Screening-induced sparsity is at %.2e percent." % (100.0*compr/total))
         
 
-    def set_n_layers(self, n_layers, rcond, inv = "lpinv"):
-        self.JKa = self.JK.get_prepared_circulant_prod(n_layers = n_layers, inv = True, rcond = rcond, inv_mod = inv)
+    def set_n_layers(self, n_layers, rcond, inv = "lpinv", preconditioning = False):
+
+        """
+        if self.lensing >0:
+            print("Performing lensing of basis")
+            
+            self.mcond = get_condition_vector(self.JK)
+            print(self.mcond)
+            self.mcond = np.arange(self.JK.blocks.shape[1])[self.mcond>self.lensing]
+            print(self.mcond)
+            self.JK = screen_exterior_cell(self.JK, self.mcond)
+
+        if self.preconditioning:
+            # Jacobi preconditioning
+            self.precond = tp.get_identity_tmat(self.JK.blocks.shape[1])
+            print("Jaboci")
+            print(np.diag(self.JK.cget([0,0,0]))**-1)
+            #self.precond.blocks[ self.precond.mapping[self.precond._c2i([0,0,0])] ] = np.diag(np.diag(self.JK.cget([0,0,0]))**-1)
+
+            self.JK = self.precond.circulantdot(self.JK)
+        """
+        #print(self.JK.coords)
+
+
+
+
+        self.JKa = self.JK.get_prepared_circulant_prod(n_layers = n_layers, inv = True, rcond = rcond, inv_mod = inv, preconditioning = preconditioning)
         #self.JKa = self.JK.get_prepared_circulant_prod(n_layers = n_layers, inv = False, rcond = rcond)
         self.primed = True
 
@@ -1694,10 +1774,18 @@ class coefficient_fitter_static():
         for dM in np.arange(coords_q.shape[0]):
             if robust:
                 J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
-
                 
+                #if self.lensing >0:
+                #    J_pq_c = screen_exterior_row(J_pq_c, self.mcond)
+
+                """
+
+                if self.preconditioning:
+                    J_pq_c = self.precond.circulantdot(J_pq_c)
+                """
                 
                 #n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
+                #print(J_pq_c.coords)
                 
                 #
                 #
@@ -1705,6 +1793,7 @@ class coefficient_fitter_static():
                     pq_c.append([
                             self.JKa.circulantdot(
                                 J_pq_c, complx = False), J_pq_c])
+
                         # test solution
                     #print(" Solution satisfied:", np.abs((self.JK.circulantdot(pq_c[-1][0]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
                     #print(" ", pq_c[-1].blocks.max(), np.abs(self.JKa.M1).max())
@@ -1718,6 +1807,8 @@ class coefficient_fitter_static():
                 J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
 
                 #print("J_pq_c.coords:", np.max(np.abs(J_pq_c.coords), axis = 0))
+
+                #print(J_pq_c.coords)
 
 
                 
@@ -1736,6 +1827,8 @@ class coefficient_fitter_static():
                     pq_c.append(
                         self.JKa.circulantdot(
                             J_pq_c, complx = False))
+
+                    print("imaginary part discarded:", np.abs(pq_c[-1].blocks.imag).max())
 
                     #pq_c.append(
                     #    self.JKa.linear_solve(
@@ -1980,23 +2073,14 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10, mpi 
             
 
 
+            #sc = np.max(np.abs(c_occ_blocks), axis = (1,2))>xi1*np.abs(c_occ_blocks).max()
+            #sc[np.max(np.abs(Jmn_blocks), axis = (1,2,3))<=xi1*np.max(np.abs(Jmn_blocks))] = False
+
             sc = np.max(np.abs(c_occ_blocks), axis = (1,2))>xi1
             sc[np.max(np.abs(Jmn_blocks), axis = (1,2,3))<=xi1] = False
 
-            #print(sc.shape)
-
-
-            #import sys
-            #sys.exit()
-
-            #print("mp:Number of processors: ", mp.cpu_count())
 
             
-            
-
-            #print("screening:", time.time()-t0)
-            #print("")
-            #t0 = time.time()
             
             #print("number of sc:", np.sum(sc))
             if np.any(sc):
@@ -2069,7 +2153,7 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10, mpi 
                 ndiff = np.abs(norm_prev-norm_new)
 
                 if ndiff/norm_new<xi1:
-                    #print("Break at ", dM)
+                    # Truncate on relative change in norm
                     break
                 
 
@@ -2375,7 +2459,7 @@ class integral_builder_static():
     For high performance (but high memory demand)
     """
     
-    def __init__(self, c_occ, c_virt,p, attenuation = 0.0, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, robust  = False,  inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = True, N_c = 10, rcond = 1e-10, inv = "lpinv"):
+    def __init__(self, c_occ, c_virt,p, attenuation = 0.0, auxname = "cc-pvdz-ri", initial_virtual_dom = [1,1,1], circulant = True, robust  = False,  inverse_test = True, coulomb_extent = None, JKa_extent = None, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = True, N_c = 10, rcond = 1e-10, inv = "lpinv", preconditioning = False):
         self.c_occ = c_occ
         self.c_virt = c_virt
         self.p = p
@@ -2385,6 +2469,8 @@ class integral_builder_static():
         self.robust = robust
         self.float_precision = float_precision
         self.N_c = N_c # (2*N_c + 1)  = k-space resolution
+
+        self.preconditioning = preconditioning
 
         self.tprecision = np.complex128 #precision in final d.T V d matrix product, set to complex64 for reduced memory usage
 
@@ -2456,8 +2542,17 @@ class integral_builder_static():
         else:
             N_c_max_layers = 20
             cm = estimate_coordinate_domain(p, auxname, N_c_max_layers, attenuation = attenuation)
-            self.JKa = cm.compute_JK(thresh = xi1)
+            self.JKa = cm.compute_JK(thresh = xi0)
             self.JKa.set_precision(self.float_precision)
+
+        rcond_rec = get_max_rcond(self.JKa)
+        if rcond<rcond_rec:
+            print("Warning: minimum recommended rcond:", rcond_rec)
+            print("Input is                          :", rcond)
+        
+
+
+
 
         
 
@@ -2554,13 +2649,13 @@ class integral_builder_static():
         self.cfit = coefficient_fitter_static(self.c_occ, self.c_virt, p, attenuation, auxname, self.JKa, self.JKinv, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision, printing = printing, N_c = self.N_c)
         if self.N_c >0:
             self.cfit.set_n_layers(n_points_p(p, self.N_c), rcond = rcond, inv = self.inv)
-            self.n_layers = n_points_p(p, self.N_c)
+            self.n_layers = n_points_p(p, self.N_c, preconditioning = self.preconditioning)
         else:
             #J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
             #print(np.max(np.abs(self.JKa.coords), axis = 0))
             self.n_layers = np.max(np.abs(-1*self.cfit.pq_region[:len(self.cfit.c_virt_coords_L)]), axis = 0)
             #self.cfit.set_n_layers(np.max(np.abs(self.JKa.coords), axis = 0), rcond = rcond)
-            self.cfit.set_n_layers(self.n_layers, rcond = rcond, inv = self.inv)
+            self.cfit.set_n_layers(self.n_layers, rcond = rcond, inv = self.inv, preconditioning = self.preconditioning)
         
         t1 = time.time()
         if printing:
@@ -2622,6 +2717,10 @@ class integral_builder_static():
 
         print("JK  domain:", np.max(np.abs(self.JK.coords), axis = 0), self.JK.coords.shape[0])
         print("Number of AUX-functions:", self.JK.blocks.shape[1])
+
+
+        
+
 
        # dm, de = self.JKa.absmax_decay(self.p)
        # print("absmax decay", dm, de)

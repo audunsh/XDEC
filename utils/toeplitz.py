@@ -9,6 +9,8 @@ import copy
 
 from copy import deepcopy
 
+import utils.annealing_tools as at
+
 
 from scipy.linalg import expm
 from scipy.linalg import pinv2, pinv, svd
@@ -972,7 +974,8 @@ class tmat():
         ret_fft.load_nparray(M1.reshape(coords.shape[0], m1x,m1y), coords, safemode = False)
         return ret_fft
 
-    def inv(self, n_layers = None):
+    def inv(self, n_layers = None, rcond = 1e-15):
+        # Rcond set to numpy default
         if n_layers is None:
             n_layers = np.max(np.abs(self.coords), axis = 0)
             
@@ -996,7 +999,7 @@ class tmat():
         
 
         for c in coords:
-            M_inv[c[0], c[1], c[2]] = np.linalg.pinv(M1[c[0], c[1], c[2]])
+            M_inv[c[0], c[1], c[2]] = np.linalg.pinv(M1[c[0], c[1], c[2]], rcond = rcond)
             #mb, me, ms = np.linalg.svd(M1[c[0], c[1], c[2]])
 
             #cn[ic, np.array([0, 1])] = w.max(),w.min()
@@ -1061,10 +1064,10 @@ class tmat():
             w,v = np.linalg.eig(M1[c[0], c[1], c[2]])
             mb, me, ms = np.linalg.svd(M1[c[0], c[1], c[2]])
 
-            cn[ic, np.array([0, 1])] = w.max(),w.min()
+            cn[ic, np.array([0, 1])] = np.abs(w).max(),np.abs(w).min()
             cn[ic, np.array([2, 3])] = me.max(), me.min()
             cn[ic, 4] = np.linalg.det(M1[c[0], c[1], c[2]])
-            cn[ic, 5] = np.abs(np.dot(np.linalg.inv(M1[c[0], c[1], c[2]]),M1[c[0], c[1], c[2]])-np.eye(m1x)).max()
+            cn[ic, 5] = np.abs(np.dot(np.linalg.pinv(M1[c[0], c[1], c[2]]),M1[c[0], c[1], c[2]])-np.eye(m1x)).max()
             ic += 1
 
             #sk = np.linalg.abs(np.dot(np.linalg.inv(M1[c[0], c[1], c[2]]),M1[c[0], c[1], c[2]])-np.eye(m1x)).max()
@@ -1939,6 +1942,8 @@ class tmat():
         
         return M3
 
+    
+
 
     def kspace_eig(self, n_points = None, tolerance = 1e-10, real = False, sort = True):
         # construct self^-.5
@@ -2088,13 +2093,13 @@ class tmat():
         return tmat(coords, np.fft.fftn(m1r, axes = (0,1,2)))
 
     
-    def get_prepared_circulant_prod(self, n_layers = None, inv = False, rcond = 1e-10, inv_mod = "lpinv"):
+    def get_prepared_circulant_prod(self, n_layers = None, inv = False, rcond = 1e-10, inv_mod = "lpinv", preconditioning = False):
         """
         Create an object primed for ciruclant matrix-matrix multiplication
         for efficient repeated multiplication with same object
         """
         
-        return primed_for_dot(self,n_layers, inv, rcond = rcond, inv_mod = inv_mod)
+        return primed_for_dot(self,n_layers, inv, rcond = rcond, inv_mod = inv_mod, preconditioning = preconditioning)
 
 
 
@@ -2304,9 +2309,12 @@ class tmat():
             
         return m
     
-    def absmax_decay(self, p):
+    def absmax_decay(self, p, ind = None):
         R = np.sqrt(np.sum(p.coor2vec(self.coords)**2, axis = 1))
-        mx = np.max(np.abs(self.cget(self.coords)), axis = (1,2))
+        if ind == None:
+            mx = np.max(np.abs(self.cget(self.coords)), axis = (1,2))
+        else:
+            mx = np.max(np.abs(self.cget(self.coords))[:,ind], axis = 1)
         return R, mx
     
     def print_meminfo(self, name, one_shape=True):
@@ -2336,9 +2344,9 @@ class tmat():
 
 
 class primed_for_dot():
-    def __init__(self, m, n_layers, inv = False, rcond = 1e-12, inv_mod = "lpinv"):
+    def __init__(self, m, n_layers, inv = False, rcond = 1e-12, inv_mod = "lpinv", preconditioning = False):
         
-        
+        self.preconditioning = preconditioning
         self.n_layers = n_layers
         if n_layers is None:
             self.n_layers = np.max(np.abs(m.coords), axis = 0)
@@ -2357,6 +2365,28 @@ class primed_for_dot():
 
         
         self.M1 = np.fft.fftn(m.cget(self.coords).reshape(self.nx,self.ny,self.nz,self.m1x,self.m1y), axes = (0,1,2))
+
+        if self.preconditioning:
+            self.precond = np.zeros_like(self.M1)
+
+            pre = at.randU(self.precond.shape[3])
+            #mpre = np.random.uniform(-1,1,self.M1[0,0,0].shape)*10
+            for c in self.coords:
+                self.precond[c[0], c[1], c[2]] = pre #np.diag(np.diag(self.M1[c[0], c[1], c[2]])**-1)
+
+                #self.precond[c[0], c[1], c[2]] = mpre
+                e,ev = np.linalg.eig(self.M1[c[0], c[1], c[2]] )
+                print("  Condition at:",c, np.abs(e).max()/np.abs(e.min()))
+                print("  inversion at:",c, np.abs(np.eye(self.M1[c[0], c[1], c[2]].shape[0]) - np.linalg.pinv(self.M1[c[0], c[1], c[2]], rcond = rcond).dot(self.M1[c[0], c[1], c[2]])).max())
+                
+                self.M1[c[0], c[1], c[2]] = self.precond[c[0], c[1], c[2]].dot(self.M1[c[0], c[1], c[2]])
+                e,ev = np.linalg.eig(self.M1[c[0], c[1], c[2]] )
+                print("* Condition at:",c, np.abs(e).max()/np.abs(e.min()))
+                #print(np.linalg.pinv(self.M1[c[0], c[1], c[2]], rcond = rcond).dot(self.M1[c[0], c[1], c[2]]))
+                print("* inversion at:",c, np.abs(np.eye(self.M1[c[0], c[1], c[2]].shape[0]) - np.linalg.pinv(self.M1[c[0], c[1], c[2]], rcond = rcond).dot(self.M1[c[0], c[1], c[2]])).max())
+                print("----")
+
+        
 
         #for nx in range(self.nx):
         #    for ny in range(self.ny):
@@ -2459,7 +2489,11 @@ class primed_for_dot():
 
                         #self.M1[c[0], c[1], c[2]] = np.linalg.pinv(self.M1[c[0], c[1], c[2]], rcond = rcond)
 
+    #def lstsq(b, rcond='warn'):
 
+
+
+    #    numpy.linalg.lstsq(a, b, rcond='warn')
     
     def circulantdot(self, other, complx = False):
         m1x,m1y =  self.m1x, self.m1y
@@ -2489,8 +2523,16 @@ class primed_for_dot():
 
         for c in coords:
             if c[0]>=0:
-                M3[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
-                M3[-c[0], -c[1], -c[2]] = M3[c[0], c[1], c[2]].conj()
+                if self.preconditioning:
+                    M3[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], self.precond[c[0], c[1], c[2]].dot(M2[c[0], c[1], c[2]]))
+                    M3[-c[0], -c[1], -c[2]] = M3[c[0], c[1], c[2]].conj()
+
+                    
+                else:
+                    #M3[c[0], c[1], c[2]],residuals, rank, s = np.linalg.lstsq(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]], rcond=1e-12)
+
+                    M3[c[0], c[1], c[2]] = np.dot(M1[c[0], c[1], c[2]], M2[c[0], c[1], c[2]])
+                    M3[-c[0], -c[1], -c[2]] = M3[c[0], c[1], c[2]].conj()
         #import sys
         #sys.exit()
 

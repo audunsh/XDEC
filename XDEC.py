@@ -36,6 +36,55 @@ import time
 Cosmetics
 """
 
+def make_eig_bandstructure_figure(JK, name = "name"):
+
+    import matplotlib.pyplot as plt
+
+    svals = JK.get_kspace_eigenvalues()
+    rvals = np.array((np.array(svals.shape[:3])-1)/2, dtype = int)
+    
+    
+    
+    
+    svals = np.roll(svals, rvals, axis = (0,1,2)).reshape(np.prod(svals.shape[:3]), svals.shape[-1])
+    
+    
+    Nx = svals.shape[0]/2
+    xs = np.arange(-Nx, Nx)
+    
+    
+    plt.figure(1)
+    plt.plot(xs+.5, svals, "-")
+    #plt.ylim(-.1,.1)
+    plt.axhline(0, color = (0,0,0))
+    plt.yscale("symlog")
+    plt.xlabel("m")
+    plt.savefig(name + "_bands.pdf")
+    
+    plt.figure(2)
+    plt.plot(xs+.5, svals, "-")
+    plt.ylim(-.1,.1)
+    plt.yscale("symlog")
+    plt.axhline(0, color = (0,0,0))
+    plt.xlabel("m")
+    plt.savefig(name + "_bands_zoom.pdf")
+    
+    
+    condition = np.max(np.abs(svals), axis = 1)/np.min(np.abs(svals), axis = 1)
+    
+    plt.figure(3)
+    plt.plot(xs+.5, condition, "-")
+    #plt.ylim(-.1,.1)
+    plt.yscale("log")
+    plt.axhline(0, color = (0,0,0))
+    plt.axhline(np.max(condition), color = (0,0,0))
+    plt.text(3,.85*np.max(condition), "%.2e" % np.max(condition))
+    
+    plt.xlabel("m")
+    plt.savefig(name + "_condition.pdf")
+
+
+
 def get_progress_bar(progress, total, length = 60):
     """
     returns a string indicating the progress
@@ -6041,6 +6090,9 @@ if __name__ == "__main__":
     parser.add_argument("-rprecision", type = bool, default = False, help = "Reduce precision in final circulant product d.T V d in RI to complex64" )
     parser.add_argument("-set_omp_threads", type = int, default = 0)
     parser.add_argument("-single_cluster", type = int, default = None, help = "Compute only one single cluster/fragment")
+    parser.add_argument("-preconditioning", default = False, action = "store_true", help = "Use preconditioning in fitting")
+
+    parser.add_argument("-bs_plots", default = False, action = "store_true", help = "Make bandstructure plots of JK and JKa")
     
     
  
@@ -6361,11 +6413,15 @@ if __name__ == "__main__":
 
     # Initialize integrals
     if args.ibuild is None:
-        ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, robust = args.robust, xi0=args.xi0, xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level, inverse_test = args.inverse_test, rcond = args.rcond, inv = args.inv)
+        ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, robust = args.robust, xi0=args.xi0, xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level, inverse_test = args.inverse_test, rcond = args.rcond, inv = args.inv, preconditioning = args.preconditioning)
         #ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=None, circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level)
         if args.store_ibuild:
             print("args.store_ibuild", args.store_ibuild)
             np.save("integral_build.npy", np.array([ib]), allow_pickle = True)
+        if args.bs_plots:
+            make_eig_bandstructure_figure(ib.JKa, name = "attenuated_matrix")
+            
+
     else:
         ib = np.load(args.ibuild, allow_pickle = True)[0]
         #print(ib.getorientation([0,0,0],[0,0,0]))
@@ -6426,11 +6482,20 @@ if __name__ == "__main__":
             print(wcenters[center_fragments[i]])
             for j in np.arange(len(center_fragments[i])):
                 wcenters[center_fragments[i][j]] = pos_
+    """
     if args.atomic_association:
         # associate virtual orbitals to atomic centers
         pos_0, charge_0 = p.get_atoms([[0,0,0]])
         r_atom = np.sqrt(np.sum((wcenters[p.get_nocc():][:, None]  - pos_0[ None,:])**2, axis = 2))
         for i in np.arange(p.get_nocc(), len(wcenters)):
+            wcenters[i] = pos_0[np.argmin(r_atom[i-p.get_nocc()])]
+    """
+    
+    if args.atomic_association:
+        # associate virtual orbitals to atomic centers
+        pos_0, charge_0 = p.get_atoms([[0,0,0]])
+        r_atom = np.sqrt(np.sum((wcenters[:, None]  - pos_0[ None,:])**2, axis = 2))
+        for i in np.arange(len(wcenters)):
             wcenters[i] = pos_0[np.argmin(r_atom[i-p.get_nocc()])]
 
     #print()

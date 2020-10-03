@@ -110,6 +110,7 @@ if __name__ == "__main__":
     parser.add_argument("-rprecision", type = bool, default = False, help = "Reduce precision in final circulant product d.T V d in RI to complex64" )
     parser.add_argument("-set_omp_threads", type = int, default = 0)
     parser.add_argument("-single_cluster", type = int, default = None, help = "Compute only one single cluster/fragment")
+    parser.add_argument("-preconditioning", type = bool, default = False, action = "store_true", help = "Use preconditioning in fitting")
     
     
     
@@ -975,7 +976,7 @@ if __name__ == "__main__":
 
                 # Initialize integrals
                 if args.ibuild is None:
-                    ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = w[fs], auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, robust = args.robust, xi0=args.xi0, xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level, inverse_test = args.inverse_test, rcond = args.rcond, inv = args.inv)
+                    ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = w[fs], auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=args.circulant, robust = args.robust, xi0=args.xi0, xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level, inverse_test = args.inverse_test, rcond = args.rcond, inv = args.inv, preconditioning = args.preconditioning)
                     #ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = args.attenuation, auxname="ri-fitbasis", initial_virtual_dom=None, circulant=args.circulant, extent_thresh=args.attenuated_truncation, robust = args.robust, ao_screening = args.ao_screening, xi0=args.xi0, JKa_extent= [6,6,6], xi1 = args.xi1, float_precision = args.float_precision, N_c = args.N_c,printing = args.print_level)
                     if args.store_ibuild:
                         print("args.store_ibuild", args.store_ibuild)
