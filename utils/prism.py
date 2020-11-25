@@ -142,7 +142,7 @@ class prism():
             #convert to bohr, store to self
             #0.5291772083
             self.lattice = np.array([a1,a2,a3])/0.52917720830000000000000000000
-            self.atoms = np.array(self.atoms)/0.52917720830000000000000000000
+            self.atoms =  np.array(self.atoms)/0.52917720830000000000000000000
             self.charges = np.array(self.charges)
             
             

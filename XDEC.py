@@ -211,6 +211,7 @@ def get_index_where_old(coords, coord):
     return np.argwhere(np.sum((coords-coord)**2, axis = 1)==0)[0,0]
 
 
+
 """
 Solver class with various residuals and optimization schemes
 """
@@ -258,7 +259,7 @@ class amplitude_solver():
                     return dt, it, self.compute_pair_fragment_energy()
 
 
-    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = False, pairwise = False, print_progress = False):
+    def solve_unfolded(self, norm_thresh = 1e-7, maxiter = 100, damping = 1.0, energy = None, compute_missing_exchange = False, pairwise = False, print_progress = False, relative_index = False):
         # Standard solver for orthogonal virtual space
         #self.d_ii.blocks[ self.d_ii.mapping[ self.d_ii._c2i([0,0,0]) ] ] *= 0
 
@@ -280,8 +281,23 @@ class amplitude_solver():
 
 
         # set up boolean masking arrays
+        
         ia_mask = self.d_ia.cget(vcoords)[:, self.fragment[0], :]
         ia_mask = ia_mask.ravel()<self.virtual_cutoff    # active virtual indices
+
+        if relative_index:
+            # Enable relative indexing
+            d_ia = self.d_ia*1.0
+            for co in ocoords:
+                for cv in vcoords:
+                    vb = d_ia.cget(cv)*1
+                    vb[d_ia.cget(co - cv)<=self.virtual_cutoff] = self.virtual_cutoff*0.9
+
+                    d_ia.blocks[ d_ia.mapping[ d_ia._c2i(cv)]] = vb
+            ia_mask = d_ia.cget(vcoords)[:, self.fragment[0], :]
+            ia_mask = ia_mask.ravel()<self.virtual_cutoff    # active virtual indices
+
+
 
 
         ii_mask = self.d_ii.cget(ocoords)[:, self.fragment[0], :]        
@@ -425,7 +441,7 @@ class amplitude_solver():
         print("MP2 iterations")
         print("idx_f.shape:", idx_f.shape)
 
-
+        #maxiter = 2
         for i in range(maxiter):
             t0_ = time.time()
 
@@ -810,8 +826,8 @@ class amplitude_solver():
 
 
         for dL in np.arange(Nv):
-            for M in np.arange(No):
-                for dM in np.arange(Nv):
+            for M in range(No):
+                for dM in range(Nv):
                     dM_i = get_index_where(self.d_ia.coords[:self.n_virtual_cells], self.d_ia.coords[dM] - self.d_ii.coords[M]) # \tilde{t} -> t, B = M + dM
 
 
@@ -829,7 +845,7 @@ class amplitude_solver():
                             g_unfolded[:, dL, :, M, :, dM, :] = I.cget(self.d_ii.coords[M]).reshape(Is)
 
                         
-                    for N in np.arange(No):
+                    for N in range(No):
 
                         
                         M_i = get_index_where(self.d_ii.coords[:self.n_occupied_cells], self.d_ii.coords[M]    - self.d_ii.coords[N])
@@ -871,6 +887,7 @@ class amplitude_solver():
 
         #Construct fock denominator
         print(np.diag(self.s_pao.cget([0,0,0])))
+        print(self.s_pao.cget([0,0,0]))
 
         fii0 = np.diag(self.f_mo_ii.cget([0,0,0])).ravel()
 
@@ -929,8 +946,8 @@ class amplitude_solver():
 
 
 
-
-        for i in np.arange(maxiter):
+        #maxiter = 2
+        for i in range(maxiter):
             # construct tbar
 
             t2bar = np.einsum("ac,icjd,db->iajb", Saa, t2s, Saa)
@@ -942,7 +959,7 @@ class amplitude_solver():
 
             t0_ = time.time()
 
-            t2new = -1*v2s
+            t2new = -v2s*1
 
             # D1
             t2new -= np.einsum("ac, icjd, db->iajb", Saa, t2s, Faa)
@@ -966,8 +983,10 @@ class amplitude_solver():
             t2s_ = t2s_.ravel()
             t2s_[idx_f_mask] = 0
             t2s_ = t2s_.reshape(idx_f.shape)
-            t2new += np.einsum("kajb, ik->iajb", t2s_, Fii[:t2s.shape[0], :])
-            #t2new += np.einsum("ik, kajb->iajb", Fii[:t2s.shape[0], :], t2s_)
+            #t2new += np.einsum("kajb, ik->iajb", t2s_, Fii[:t2s.shape[0], :])
+            t2new += np.einsum("ik, kajb->iajb", Fii[:t2s.shape[0], :], t2s_)
+            #t2new += np.dot(Fii[:t2s.shape[0], :], t2s_.reshape(nj, nvt*nj*nvt)).reshape(ni, nvt, nj, nvt)
+
 
             t0c += t0_-time.time()
             t0_ = time.time()
@@ -977,12 +996,18 @@ class amplitude_solver():
 
             # D4
             t2new +=  np.einsum("iakb,kj->iajb", t2bar, Fii)
+            #t2new += np.dot(t2bar.swapaxes(2,3).reshape(ni*nvt*nvt, nj), Fii).reshape(ni,nvt,nvt,nj).swapaxes(2,3)
             
-            #t2s -= damping*t2new*(fiajb**-1)
 
-            t2s = DIIS.advance(t2s, damping*t2new)
+            
+            
+            t2s -= damping*t2new*(fiajb**-1)
+
+            #t2s = DIIS.advance(t2s, damping*t2new)
 
             abs_dev = np.max(np.abs(t2new))
+            print(i, np.linalg.norm(t2new), np.linalg.norm(t2s), abs_dev)
+
             t0d += t0_-time.time()
             t0_ = time.time()
 
@@ -1062,6 +1087,61 @@ class amplitude_solver():
             return np.max(np.abs(t2new)), i, energy
 
         if energy == "cim": 
+            # Cluster-in-molecule energy
+            d_ii_1 = self.d_ii*1
+            d_ii_1.blocks *= 0
+
+            d_ii_1.blocks[d_ii_1.mapping[ d_ii_1._c2i(np.array([0,0,0]))], self.fragment[0], self.fragment] = 1
+
+            f0_mask = np.array((d_ii_1.cget([0,0,0])[self.fragment[0], :].ravel())[i0_mask], dtype = np.bool) #fragment 1 in refcell, only indexes in refcell
+
+            #print("f0_mask", f0_mask)
+            e_j =  2*np.einsum("iajb,iajb->j", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->j", t2s[f0_mask], v2s[f0_mask])
+            d_j = self.d_ii.cget(ocoords)[:, self.fragment[0], :].ravel()[ii_mask]
+
+            s_j = np.argsort(d_j)
+
+            #print(e_ij.shape)
+            #print(d_ij.shape)
+            #print("energy_ij:", e_ij[s_ij])
+            #print("d_ij:", d_ij[s_ij])
+            
+            #print("distance_ij", d_ij)
+            if True:
+                energy = 2*np.einsum("iajb,iajb", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja", t2s[f0_mask], v2s[f0_mask])
+                print("Energy (1):", time.time()-t0)
+                t0 = time.time()
+
+                return np.max(np.abs(t2new)), i, energy, np.array([e_j[s_j], d_j[s_j]])
+
+
+
+            if False:
+                e_ij =  2*np.einsum("iajb,iajb-j", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja->j", t2s[f0_mask], v2s[f0_mask])
+                d_a = self.d_ia.cget(vcoords)[:, self.fragment[0], :].ravel()[ia_mask]
+                a_s = np.argsort(d_a)
+
+                #print("Energy (1):", time.time()-t0)
+
+                #print(np.max(np.abs(t2new)), i, energy, np.array([e_a[a_s],d_a[a_s]]))
+
+                energy = np.sum(e_a)
+                print("Energy (1):", time.time()-t0)
+                t0 = time.time()
+
+                return np.max(np.abs(t2new)), i, energy, np.array([e_a[a_s],d_a[a_s]])
+                #print()
+
+
+            if False:
+
+                energy = 2*np.einsum("iajb,iajb", t2s[f0_mask], v2s[f0_mask]) - np.einsum("iajb,ibja", t2s[f0_mask], v2s[f0_mask])
+                print("Energy (1):", time.time()-t0)
+                t0 = time.time()
+
+                return np.max(np.abs(t2new)), i, energy
+
+        if energy == "cim_old": 
             # Cluster-in-molecule energy
             d_ii_1 = self.d_ii*1
             d_ii_1.blocks *= 0
@@ -6235,6 +6315,7 @@ if __name__ == "__main__":
 
 
 
+
     #print("coeff shape:", c.blocks.shape)
 
     #if args.orthogonalize:
@@ -6263,6 +6344,12 @@ if __name__ == "__main__":
     #print("orbspace:", c_occ.blocks.shape[2], c_virt.blocks.shape[2])
     #print("ncore   :", p.n_core, p.get_nocc(), p.get_nvirt())
 
+    # AO Fock matrix
+    f_ao = tp.tmat()
+    f_ao.load(args.fock_matrix)
+    f_ao.set_precision(args.float_precision)
+
+
     if args.virtual_space is not None:
         if args.virtual_space == "pao":
             s_, c_virt, wcenters_virt = of.conventional_paos(c,p, thresh = args.pao_thresh)
@@ -6271,14 +6358,17 @@ if __name__ == "__main__":
             p.set_nvirt(c_virt.blocks.shape[2])
 
             args.solver = "mp2_nonorth"
-
+            
             #c_virt = of.orthogonalize_tmat_unfold(c_virt,p, thresh = 0.0001)
             #c_virt = of.orthogonalize_tmat(c_virt, p)
 
             #p.n_core = args.n_core
             # Append virtual centers to the list of centers
             #args.virtual_space = None
+            #print(wcenters)
+            #print(" ")
             wcenters = np.append(wcenters[p.n_core:p.get_nocc()+p.n_core], wcenters_virt, axis = 0)
+            print(wcenters)
 
 
         elif args.virtual_space == "paodot":
@@ -6379,10 +6469,7 @@ if __name__ == "__main__":
 
 
 
-    # AO Fock matrix
-    f_ao = tp.tmat()
-    f_ao.load(args.fock_matrix)
-    f_ao.set_precision(args.float_precision)
+    
 
 
 
@@ -6420,6 +6507,8 @@ if __name__ == "__main__":
             np.save("integral_build.npy", np.array([ib]), allow_pickle = True)
         if args.bs_plots:
             make_eig_bandstructure_figure(ib.JKa, name = "attenuated_matrix")
+
+        
             
 
     else:

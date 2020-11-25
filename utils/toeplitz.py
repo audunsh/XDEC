@@ -2372,6 +2372,7 @@ class primed_for_dot():
             pre = at.randU(self.precond.shape[3])
             #mpre = np.random.uniform(-1,1,self.M1[0,0,0].shape)*10
             for c in self.coords:
+                pre = self.M1[c[0], c[1], c[2]].T
                 self.precond[c[0], c[1], c[2]] = pre #np.diag(np.diag(self.M1[c[0], c[1], c[2]])**-1)
 
                 #self.precond[c[0], c[1], c[2]] = mpre
@@ -2415,9 +2416,9 @@ class primed_for_dot():
             #print("singular values:", s.max(), s.min())
             #print(s)
             #smin, smax = s.max(), s.min()
-            print(s.shape)
+            #print(s.shape)
             smax, smin = s.max(), s.min()
-            print("Overall condition of Coulomb matrix:", smax/smin, smax, smin)
+            print("Overall condition of Coulomb matrix: %.2e %.2e %.2e" %( smax/smin, smax, smin) )
             print("Conditions at separate K-points     :", np.max(s, axis = 1)/np.min(s, axis = 1))
 
             

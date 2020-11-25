@@ -1500,7 +1500,7 @@ class coefficient_fitter_static():
         
 
 
-        xi_domain = estimate_attenuation_domain(p, attenuation = attenuation, xi0 = xi0,  auxname = auxname)
+        #xi_domain = estimate_attenuation_domain(p, attenuation = attenuation, xi0 = xi0,  auxname = auxname)
 
         #ddM = tp.lattice_coords([20,0,0])
         #ddM = ddM[np.argsort(np.sum(p.coor2vec(ddM)**2, axis = 1))]
@@ -2544,6 +2544,20 @@ class integral_builder_static():
             cm = estimate_coordinate_domain(p, auxname, N_c_max_layers, attenuation = attenuation)
             self.JKa = cm.compute_JK(thresh = xi0)
             self.JKa.set_precision(self.float_precision)
+            print("JKa minmax")
+            print(np.abs(self.JKa.blocks).max())
+            print(np.abs(self.JKa.blocks)[np.abs(self.JKa.blocks)>0].min())
+            print(np.diag(self.JKa.cget([0,0,0])))
+            print(np.diag(self.JKa.cget([1,0,0])))
+
+            #print(np.max(np.abs(self.JKa.cget([0,0,0])- np.diag(np.diag(self.JKa.cget([0,0,0])))), axis = 1))
+
+            mx = np.abs(self.JKa.blocks).max()
+
+            #self.JKa.blocks[self.JKa.blocks<1e-60*mx] = 0 #1e-14*mx
+
+
+
 
         rcond_rec = get_max_rcond(self.JKa)
         if rcond<rcond_rec:

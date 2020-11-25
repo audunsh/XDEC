@@ -419,7 +419,7 @@ def overlap_matrix(p, coords = None, thresh = 1e-10):
 
 
     
-def conventional_paos(c,p, s = None, orthonormalize = False, thresh = 1e-2):
+def conventional_paos(c,p, s = None, orthonormalize = False, thresh = 1e-2, fock_metric = None):
     """
     Concstruct the PAOs according to 
     """
@@ -440,6 +440,7 @@ def conventional_paos(c,p, s = None, orthonormalize = False, thresh = 1e-2):
     
 
     coords = c.coords
+
     if s is not None:
         coords = s.coords
 
@@ -508,12 +509,16 @@ def conventional_paos(c,p, s = None, orthonormalize = False, thresh = 1e-2):
     
 
 
-
+    
 
 
 
     d = c_occ.circulantdot(c_occ.tT())
     c_pao = d.circulantdot(s)
+    if fock_metric is not None:
+        #s = fock_metric*1
+        c_pao = d.circulantdot(fock_metric)
+        
     c_pao.blocks*=-1 #.5
 
 
@@ -930,10 +935,12 @@ def orthogonal_paos_rep(c,p, N_paos, thresh = 1e-1, orthogonalize = True):
         new_blocks[:-1, :, :-1] = C.cget(C.coords)
         new_blocks[:-1, :, -1]  = C_.cget(C.coords)[:, :, i]
 
+        
+
         coords = C.coords
 
         ret = tp.tmat()
-        ret.load_nparray(new_blocks, coords)
+        ret.load_nparray(new_blocks[:-1], coords)
         
         return ret
 

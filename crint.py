@@ -87,12 +87,13 @@ MAXCYCLE
 BOYSCTRL
 8 8 100
 WANDM
--2 4 1
+-3 12 1
 END
 CRYAPI_OUT
 END""" % (newk, cyctol, cyctol, cyctol)
 
     # Alternative input
+
 
     properties_input_ = """NEWK
 %i %i %i
@@ -167,7 +168,7 @@ MAXCYCLE
 BOYSCTRL
 8 8 100
 WANDM
--2 4 1
+-3 12 1
 END
 CRYAPI_OUT
 END""" % (newk, core[0]+1, core[1]+1, cyctol, cyctol, cyctol)
@@ -203,7 +204,7 @@ MAXCYCLE
 BOYSCTRL
 8 8 100
 WANDM
--2 4 1
+-3 12 1
 END
 CRYAPI_OUT
 END""" % (newk, virt[0]+1, virt[-1] , cyctol, cyctol, cyctol)
