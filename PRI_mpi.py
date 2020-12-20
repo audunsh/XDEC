@@ -3401,23 +3401,45 @@ if __name__ == "__main__":
 
 
         #def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10, mpi = False):
+        Jmn_N = len(Jmn)
     else:
         p = None
-        Jmn = None
+        
+
         xi0 = None
 
         coords = None
         pq_region = None
         c_occ = None
         cm = None
+        Jmn_N = None
+        Jmn = []
 
 
-        
+    Jmn_N =  comm.bcast(Jmn_N, root = 0)
+    
+    if rank!=0:
+        for i in range(Jmn_N):
+            Jmn.append(None)
+
+    print(rank, len(Jmn))
+    Jmn_i = None
+
+
+
+
+    for i in range(Jmn_N):
+        Jmn_i = comm.bcast(Jmn[i], root = 0)
+
+        if rank!=0:
+            Jmn[i] =Jmn_i
+
+    # Jmn = comm.bcast(Jmn, root = 0)
 
 
     # Broadcast
     p = comm.bcast(p, root = 0)
-    Jmn = comm.bcast(Jmn, root = 0)
+    
     xi0 = comm.bcast(xi0, root = 0)
 
     coords = comm.bcast(coords, root = 0)
