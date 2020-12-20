@@ -333,6 +333,8 @@ class amplitude_solver():
         
         indx = np.zeros(self.g_d.shape, dtype = int)-1 #use -1 as default index
 
+        print(No, no, Nv, nv, No, no, Nv, nv, No**2*no**2*Nv**2*nv**2)
+
         indx_full = np.zeros((No, no, Nv, nv, No, no, Nv, nv), dtype = int) -1
 
         print("Preparations (1):", time.time()-t0)
@@ -6173,11 +6175,17 @@ if __name__ == "__main__":
     parser.add_argument("-preconditioning", default = False, action = "store_true", help = "Use preconditioning in fitting")
 
     parser.add_argument("-bs_plots", default = False, action = "store_true", help = "Make bandstructure plots of JK and JKa")
+    parser.add_argument("-mpi", default = False, action = "store_true", help = "Enable MPI")
     
     
  
 
     args = parser.parse_args()
+
+    options = vars(args)
+
+    for i in options:
+        print(args)
 
     #print("Invtest:", args.inverse_test)
 
@@ -6238,6 +6246,14 @@ if __name__ == "__main__":
     #print("MPI rank / size        :", mpi_rank, mpi_size)
     print("_________________________________________________________",flush=True)
 
+
+
+
+    if args.mpi:
+        from mpi4py import MPI
+        comm = MPI.COMM_WORLD 
+        size = comm.Get_size()
+        rank = comm.Get_rank()
 
 
 
@@ -6590,8 +6606,7 @@ if __name__ == "__main__":
     #print()
 
 
-
-
+    
 
     # Converge atomic fragment energies
 
@@ -8085,6 +8100,7 @@ if __name__ == "__main__":
         #    print(pair.compute_pair_fragment_energy())
         #    pair.solve()
         #    print("Pair fragment energy for (0,0,%i):" %n, pair.compute_pair_fragment_energy())
+    
 
     if args.fragmentation == "cim-adaptive":
         """
@@ -8255,6 +8271,7 @@ if __name__ == "__main__":
         """
         cluster-in-molecule scheme
         """
+        
 
         virt_cut = args.virtual_cutoff
         occ_cut = args.occupied_cutoff
@@ -8262,6 +8279,8 @@ if __name__ == "__main__":
         refcell_fragments = []
         energies = []
         fragment_energy_total = 0
+
+        
 
         #complete fragmentation of the occupied space
         #center_fragments = [[i] for i in np.arange(p.get_nocc()+args.n_core)[args.n_core:]]
@@ -8274,6 +8293,7 @@ if __name__ == "__main__":
             #ib.fragment = fragment
             t0 = time.time()
             domain_max = tp.lattice_coords(PRI.n_points_p(p, 20))
+            print("Frag init 0:", time.time()-t0)
 
             if args.pao_sorting:
                 d_ia = build_weight_matrix(p, c, domain_max)
@@ -8283,7 +8303,8 @@ if __name__ == "__main__":
             else:
                 a_frag = fragment_amplitudes(p, wcenters, domain_max, fragment, ib, f_mo_ii, f_mo_aa, virtual_cutoff = virt_cut, occupied_cutoff = occ_cut, float_precision = args.float_precision)
 
-            #print("Frag init:", time.time()-t0)
+            print("Frag init 1:", time.time()-t0)
+            #print("Cluster-in-molecule")
 
             dt, it, E_prev_outer, E_pairwise = a_frag.solve(eqtype = args.solver, s_virt = s_virt, norm_thresh = 1e-10, damping = args.damping, energy = "cim", pairwise = True)
 

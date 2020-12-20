@@ -1457,6 +1457,7 @@ class estimate_coordinate_domain():
         return ret
             
 
+
 class coefficient_fitter_static():
     """
     Coefficient fitting for the integrator, with integrals stored in memory
@@ -1893,430 +1894,6 @@ class coefficient_fitter_static():
     
         
 
-class coefficient_fitter_static_():
-    """
-    Coefficient fitting for the integrator, with integrals stored in memory
-
-
-    """
-
-    
-    def __init__(self, c_occ,c_virt, p, attenuation, auxname, JK, JKInv, robust = False, circulant = True, xi0 = 1e-10, xi1 = 1e-10, float_precision = np.float64, printing = False, N_c = 7, preload = None):
-        self.robust = robust
-        self.coords = []
-        Jmn = []
-        self.attenuation = attenuation
-        #self.screening_thresh = screening_thresh
-        print("att:", attenuation)
-        self.p = p
-        #self.c = c
-        self.N_c = N_c
-        self.JK = JK
-        self.primed = False
-
-        self.lensing = 0
-
-        self.preconditioning = False
-
-        
-
-        self.JKInv = JKInv
-        self.circulant = circulant
-        #self.c_occ, self.c_virt = occ_virt_split(self.c,p)
-        self.c_occ = c_occ
-        self.c_virt = c_virt
-        self.float_precision = float_precision
-        self.printing = printing
-        self.xi0 = xi0
-        self.xi1 = xi1
-        if self.robust:
-            self.Jmnc = []
-
-        
-
-
-        #xi_domain = estimate_attenuation_domain(p, attenuation = attenuation, xi0 = xi0,  auxname = auxname)
-
-        #ddM = tp.lattice_coords([20,0,0])
-        #ddM = ddM[np.argsort(np.sum(p.coor2vec(ddM)**2, axis = 1))]
-        
-        #xi_domain = []
-        #for i in np.arange(20):
-        #    xi_domain.append([dM[i], 1])
-
-        N_c_max_layers = 30
-        cm = estimate_coordinate_domain(p, auxname, N_c_max_layers, attenuation = attenuation)
-
-        C2 = tp.lattice_coords(n_points_p(p, N_c_max_layers))
-
-        R = np.sqrt(np.sum(p.coor2vec(C2)**2, axis = 1))
-
-        C2 = C2[np.argsort(R)]
-        R = R[np.argsort(R)]
-
-        #self.printing = True
-
-        #print("C2:", C2, len(C2))
-
-        
-
-        
-        #for i in np.arange(len(xi_domain)):
-        if preload is not None:
-            self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.NJ, self.Np, self.pq_region = preload
-
-
-        else:
-            for ci in range(len(C2)):
-                c2, R2 = C2[ci], R[ci] 
-                # Compute JMN with nsep =  c2
-                #print("ci, c2, R2:", ci, c2, R2)
-
-                #c2, big_tmat = xi_domain[i]
-
-                
-
-
-            
-                #for i in np.arange(ddM.shape[0]):
-                #c2 = ddM[i]
-                #print(cm.attenuation)
-
-
-            
-
-                #Jmnc2 = compute_Jmn(p,big_tmat, attenuation = attenuation, auxname = auxname, coulomb = False, nshift = np.array([c2])) #.T()
-                Jmnc2_temp = cm.compute_Jmn(c2, thresh = xi0)
-                #print(Jmnc2_temp.coords) 
-
-
-                Jmnc2_temp.set_precision(self.float_precision)
-                #print("Number of blocks in ")
-
-                screen = np.max(np.abs(Jmnc2_temp.cget(Jmnc2_temp.coords)), axis = (1,2))>=xi0*cm.Jmn_max
-                screen[np.sum(Jmnc2_temp.coords**2, axis = 1)==0] = True
-                
-                
-
-                # Screened distances
-                distances = np.sqrt(np.sum(self.p.coor2vec(Jmnc2_temp.coords)**2, axis = 1))
-
-                Jmnc2_max =  np.max(distances[screen])
-
-                
-                if np.sum(screen)>1:
-                    fc = 0.95
-                    outer_coords = []
-                    #print(Jmnc2_temp.coords)
-                    """
-                    while len(outer_coords) == 0:
-                        fc *= 0.95
-                        outer_coords = Jmnc2_temp.coords[distances>Jmnc2_max*fc]
-                        
-                        #if len(outer_coords)>0:
-                        #    break
-                        #else:
-                        #    fc *= 0.8
-                    """
-                    outer_coords = Jmnc2_temp.coords[distances>Jmnc2_max*fc]
-
-
-                    
-                    max_outer_5pcnt = np.max(Jmnc2_temp.cget(outer_coords))
-
-                    max_coord = np.max(np.abs(Jmnc2_temp.coords), axis = 0)
-                    
-                    if self.printing:
-                        
-                        print("Attenuation screening induced sparsity is %i of a total of %i blocks." %( np.sum(screen), len(screen)))
-                        print("         Maximum value in outer %.2f percentage of block (rim) :" % (100*fc,  max_outer_5pcnt))
-                        print("         Maximum value overall                              :", np.max(np.abs(Jmnc2_temp.blocks)))
-                        print("         c2 = ", c2)
-                        print("         R  = ", R2, "(", max_coord, ")")
-
-
-
-
-                    
-                    
-                    #r_curr, r_prev = np.sum(p.coor2vec(c2)**2), np.sum(p.coor2vec(xi_domain[i-1][0])**2)
-                    """
-                    if cellmax<=Jmnc2_max:
-                        #if r_curr-r-prev
-                        print("Warning: Jmnc2 fitting integrals for c = ", c2, " exceeds predefined matrix extents.")
-                        print("         Jmnc2_max = %.2e,    truncation_threshold = %.2e" % (Jmnc2_max, cellcut))
-                        #print("         Max value at boundary: ", Jmnc2_temp)
-                        #print("         Truncation threshold (cellcut) should be increased.") 
-                        print("         Maximum value in outer 5 percentage of block (rim) :", max_outer_5pcnt)
-                        #print("->", c2, xi_domain[i-1][0])
-                        #print("->", np.sum(p.coor2vec(c2)**2), np.sum(p.coor2vec(xi_domain[i-1][0])**2))
-                    cellcut =  Jmnc2_max*1.2#update truncation threshold
-                    """
-
-                Jmnc2 = tp.tmat()
-
-                Jmnc2.load_nparray(Jmnc2_temp.cget(Jmnc2_temp.coords[screen]), Jmnc2_temp.coords[screen])
-
-                #if np.linalg.norm(Jmnc2.cget([0,0,0]))>1e-15:
-                self.coords.append(c2)
-                Jmn.append( Jmnc2 ) #New formulation without uppercase-transpose
-
-                print("max | (LJ | 0 m [%i %i %i] n) |  = " % tuple(c2), "%.4e" % np.abs(np.max(Jmnc2.blocks)), " max (L) <=",  np.max(np.abs(Jmnc2.coords), axis = 0))
-
-                #print("Min overall:", np.max(np.abs(Jmnc2.blocks)))
-
-
-                if self.printing:
-                    print("Intermediate overlaps (LJ|0mNn) with N =", c2, " included with %i blocks and maximum absolute %.2e" % (Jmnc2.blocks.shape[0],np.max(np.abs(Jmnc2.blocks)) ))
-                    print("Max interm.:", np.abs(Jmnc2.blocks).max())
-                if np.max(np.abs(Jmnc2.blocks))<xi0*cm.Jmn_max and np.abs(R[ci]-R[ci+1])>1e-10:
-                    #print("Min overall:", np.max(np.abs(Jmnc2.blocks)))
-                    break
-
-            self.coords = np.array(self.coords)
-            self.c0 = np.argwhere(np.all(self.coords==np.array([0,0,0]), axis = 1))[0][0]
-
-            
-            self.Jmnc_tensors = []
-            self.Jmnc_screening = []
-
-            self.Jmnc_sparse_tensors = []
-            self.Jmnc_sparse_screening = []
-            total = 0
-            compr = 0
-
-
-
-            t0 = time.time()
-
-
-            self.virtual_coords = []
-            #print("Will screen away:", xi1, xi0)
-
-
-            t0 = time.time()
-
-            
-
-            
-            
-            #pq_region = self.JK.coords
-
-            #self.pq_region = pq_region[np.argsort(np.sum(p.coor2vec(pq_region)**2, axis = 1))]
-
-            #if self.N_c>0:
-            #    pq_region = tp.lattice_coords(n_points_p(self.p, self.N_c))
-            #else:
-
-            
-
-
-            Nc = 50
-            cellcut = 35
-            if p.cperiodicity == "POLYMER":
-                cellcut = 180
-                Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,0,0]))**2, axis = 1))
-                pq_region = tp.lattice_coords([Nc,0,0])[Rc<=cellcut]
-                
-            elif p.cperiodicity == "SLAB":
-                Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,Nc,0]))**2, axis = 1))
-                pq_region = tp.lattice_coords([Nc,Nc,0])[Rc<=cellcut]
-            else:
-                Rc = np.sqrt(np.sum(self.p.coor2vec(tp.lattice_coords([Nc,Nc,Nc]))**2, axis = 1))
-                pq_region = tp.lattice_coords([Nc,Nc,Nc])[Rc<=cellcut]
-
-                
-
-            
-            self.pq_region = pq_region[np.argsort(np.sum(p.coor2vec(pq_region)**2, axis = 1))]
-
-            #self.pq_region = self.JK.coords[np.argsort(np.sum(p.coor2vec(self.JK.coords)**2, axis = 1))]*1
-
-            #print(self.JK.coords)
-            #print(self.pq_region)
-            #print(self.c_occ.coords)
-
-            
-
-            # Contracting occupieds
-
-            
-
-            #self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.NJ, self.Np = contract_occupieds(self.p, Jmn, self.coords, self.pq_region, self.c_occ, self.xi1)
-            self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.NJ, self.Np = contract_occupieds(self.p, Jmn, self.coords, self.pq_region, self.c_occ,  xi0*cm.Jmn_max)
-
-        
-
-
-            
-            # Can delete self.Jmn now, no longer required and takes up a lot of memory
-            del(Jmn)
-            #import gc 
-            #print(gc.garbage)
-            #gc.collect()
-            
-
-            if self.printing:
-
-                #print("\r>> Contracted occupieds (LJ|0p Mn) for L = ", self.c_occ.coords[coord], "(%.2f percent complete, compression rate: %.2e)" % (100.0*coord/self.c_occ.coords.shape[0], 100.0*compr/total), end='')
-                print("\r>> Contracted occupieds (LJ|0p Mn) ")
-            
-            
-            
-            
-            if self.printing:
-                print(time.time()-t0)
-                #print("Screening-induced sparsity is at %.2e percent." % (100.0*compr/total))
-        
-
-    def set_n_layers(self, n_layers, rcond, inv = "lpinv", preconditioning = False):
-
-        """
-        if self.lensing >0:
-            print("Performing lensing of basis")
-            
-            self.mcond = get_condition_vector(self.JK)
-            print(self.mcond)
-            self.mcond = np.arange(self.JK.blocks.shape[1])[self.mcond>self.lensing]
-            print(self.mcond)
-            self.JK = screen_exterior_cell(self.JK, self.mcond)
-
-        if self.preconditioning:
-            # Jacobi preconditioning
-            self.precond = tp.get_identity_tmat(self.JK.blocks.shape[1])
-            print("Jaboci")
-            print(np.diag(self.JK.cget([0,0,0]))**-1)
-            #self.precond.blocks[ self.precond.mapping[self.precond._c2i([0,0,0])] ] = np.diag(np.diag(self.JK.cget([0,0,0]))**-1)
-
-            self.JK = self.precond.circulantdot(self.JK)
-        """
-        #print(self.JK.coords)
-
-
-
-
-        self.JKa = self.JK.get_prepared_circulant_prod(n_layers = n_layers, inv = True, rcond = rcond, inv_mod = inv, preconditioning = preconditioning)
-        #self.JKa = self.JK.get_prepared_circulant_prod(n_layers = n_layers, inv = False, rcond = rcond)
-        self.primed = True
-
-    def get(self, coords_q, robust = False):
-        pq_c = []
-
-
-        
-
-        #print(self.JK.cutoffs(), Jpq_c[i].cutoffs())
-        
-
-        for dM in np.arange(coords_q.shape[0]):
-            if robust:
-                J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
-                
-                #if self.lensing >0:
-                #    J_pq_c = screen_exterior_row(J_pq_c, self.mcond)
-
-                """
-
-                if self.preconditioning:
-                    J_pq_c = self.precond.circulantdot(J_pq_c)
-                """
-                
-                #n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
-                #print(J_pq_c.coords)
-                
-                #
-                #
-                if self.primed:
-                    pq_c.append([
-                            self.JKa.circulantdot(
-                                J_pq_c, complx = False), J_pq_c])
-
-                        # test solution
-                    #print(" Solution satisfied:", np.abs((self.JK.circulantdot(pq_c[-1][0]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
-                    #print(" ", pq_c[-1].blocks.max(), np.abs(self.JKa.M1).max())
-                else:
-                    if self.N_c>0:
-                        #print("Userdefined coulomb extent:", self.N_c)
-                        #print(self.JK.coords)
-                        n_points = n_points_p(self.p, self.N_c)
-                    pq_c.append([self.JK.kspace_svd_solve(J_pq_c, n_points = n_points), J_pq_c ])
-            else:
-                J_pq_c = contract_virtuals(self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.c_virt, self.NJ, self.Np, self.pq_region, dM = coords_q[dM])
-
-                #print("J_pq_c.coords:", np.max(np.abs(J_pq_c.coords), axis = 0))
-
-                #print(J_pq_c.coords)
-
-
-                
-                
-                #n_points = n_points_p(self.p, np.max(np.abs(J_pq_c.coords)))
-                n_points = n_points_p(self.p, np.max(np.abs(self.JK.coords)))
-                #n_points = np.max()
-                if self.N_c>0:
-                    #print("Userdefined coulomb extent:", self.N_c)
-                    #print(self.JK.coords)
-                    n_points = n_points_p(self.p, self.N_c)
-                #print("coefficient fitter statig, n_points:", n_points)
-                #print("C                      J_pq_c.shape:", J_pq_c.blocks.shape)
-
-                if self.primed:
-                    pq_c.append(
-                        self.JKa.circulantdot(
-                            J_pq_c, complx = False))
-
-                    #print("imaginary part discarded:", np.abs(pq_c[-1].blocks.imag).max())
-
-                    #pq_c.append(
-                    #    self.JKa.linear_solve(
-                    #        J_pq_c, complx = False))
-                    if True:
-                        # test solution - remove if stability problems are solved
-                        d = pq_c[-1]
-                        ssat = np.abs((self.JK.circulantdot(d) - J_pq_c).blocks).max()
-                        #ssat= np.abs(self.JK.cget(self.JK.coords) - d.tT().circulantdot(self.JK.circulantdot(d)).cget(self.JK.coords)).max()
-                        print("   Solution satisfied:", ssat ) #np.abs((self.JK.circulantdot(pq_c[-1]) - J_pq_c).cget(tp.lattice_coords(n_points))).max())
-                        print("   Inversion ok      :", np.max(np.abs((self.JKa.circulantdot(self.JK).cget(self.JK.coords) - tp.get_identity_tmat(self.JK.blocks.shape[1]).cget(self.JK.coords))), axis = (0,1,2)))
-                    
-                    print("   Max DF-coefficient:", np.abs(pq_c[-1].blocks).max()) #, np.abs(self.JKa.M1).max())
-                    #print("J_pq_c.blocks active:", np.max(np.abs(J_pq_c.cget(self.JK.coords)), axis = (1,2)))
-
-
-
-
-                else:
-                    pq_c.append(
-                        self.JK.kspace_svd_solve(
-                            J_pq_c,
-                            n_points = n_points))
-                
-                
-                '''
-                pq_c.append(
-                    self.JK.gamma_inv().circulantdot(
-                        J_pq_c, n_layers = n_points*0))
-                '''
-                    
-
-
-
-
-                #print("                   pq_c.blocks.shape:", pq_c[-1].blocks.shape)
-
-        
-        #all_objects = muppy.get_objects()
-        #sum1 = summary.summarize(all_objects)
-        # Prints out a summary of the large objects
-        #print(" --- cfit")
-        #summary.print_(sum1)
-        #print(" ---")
-
-        
-        return pq_c
-
-    
-        
-
 
 
 def n_points_p(p, Nc):
@@ -2530,7 +2107,7 @@ def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10, mpi 
                 scs = np.sum(sc)
                 dO_LN_np = np.zeros((scs, NJ, Nn, Np), dtype = float)
 
-                #bcast(p, root = 0)
+                #p = comm.bcast(p, root = 0)
 
                 if mpi:
                     if rank == 0:
@@ -2734,7 +2311,7 @@ def contract_occupieds_(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
         
         NN = N_coords.shape[0]
 
-        print("Shape of N_coords:", N_coords.shape)
+        #print("Shape of N_coords:", N_coords.shape)
 
     for Li in np.arange(pq_region.shape[0]):
         L = pq_region[Li]
@@ -2831,12 +2408,13 @@ def contract_occupieds_(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
                 ndiff = np.abs(norm_prev-norm_new)
 
                 if ndiff/norm_new<xi1:
-                    print("Break at ", dM)
+                    if rank==0:
+                        print("Break at ", dM)
                     break
                 
 
-                
-                print("O_LN_np_norm:", ndiff, ndiff/norm_new)
+                if rank==0:
+                    print("O_LN_np_norm:", ndiff, ndiff/norm_new)
                 norm_prev = norm_new*1
 
 
@@ -2871,7 +2449,8 @@ def contract_occupieds_(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
         #print
         elms_retained += np.sum(sc)*O_LN_np.shape[0]
         elms_total    += NJ*Np*NN*Nn
-        print("Interm.contr. at L =", L, " (|R_L| = %.2e bohr). Abs.max value: %.2e. Compression rate: %.2e (%i retained columns)." % (np.sqrt(np.sum(p.coor2vec(pq_region[Li])**2)), np.abs(O_LN_np).max(), elms_retained/elms_total, np.sum(sc)))
+        if rank==0:
+            print("Interm.contr. at L =", L, " (|R_L| = %.2e bohr). Abs.max value: %.2e. Compression rate: %.2e (%i retained columns)." % (np.sqrt(np.sum(p.coor2vec(pq_region[Li])**2)), np.abs(O_LN_np).max(), elms_retained/elms_total, np.sum(sc)))
         
         
         OC_L_np.append(O_LN_np[:,sc])
@@ -2887,10 +2466,11 @@ def contract_occupieds_(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10):
             dR = np.abs(np.sum(p.coor2vec(pq_region[Li-1])**2) - np.sum(p.coor2vec(pq_region[Li])**2))
 
             if dR > 1e-12:
-                print("    ->   Truncation of intermediate tensor O at L = ", L, " with dR = %.2e  <-" % dR)
-                print("         Final compression ratio of intermediate tensor is %.2e" % (elms_retained/elms_total))
-                print("                              (%i out of %i elements retained)" % (elms_retained, elms_total))
-                print("         Max value : %.2e" % np.abs(O_LN_np).max())
+                if rank==0:
+                    print("    ->   Truncation of intermediate tensor O at L = ", L, " with dR = %.2e  <-" % dR)
+                    print("         Final compression ratio of intermediate tensor is %.2e" % (elms_retained/elms_total))
+                    print("                              (%i out of %i elements retained)" % (elms_retained, elms_total))
+                    print("         Max value : %.2e" % np.abs(O_LN_np).max())
                 break
         
 
@@ -2941,16 +2521,7 @@ class integral_builder_static():
 
         self.d_forget = [] #a list of orientations to forget (memory handling)
 
-        # Oneshot calculations:
-        # build attenuated JK matrix and inverse
-        #big_tmat = estimate_attenuation_distance(p, attenuation = .5*self.attenuation, thresh = 1e-14, auxname = auxname)
-        #big_tmat = estimate_attenuation_distance(p, attenuation = self.attenuation, thresh = extent_thresh, auxname = auxname)
-
-
-        #print("Self.N_c:", self.N_c)
-
-
-        #big_tmat = estimate_center_domain(p, attenuation = attenuation, xi0 = xi0, auxname=auxname)
+        
         if p.cperiodicity=="POLYMER":
             bc = tp.lattice_coords([N_c,0,0])
             #coulomb_extent = np.array([N_c, 0,0])
@@ -3105,14 +2676,11 @@ class integral_builder_static():
             print(coord_q)
         
         t0 = time.time()
-
-
-        if preload is None:    
+        if preload is None:
             self.cfit = coefficient_fitter_static(self.c_occ, self.c_virt, p, attenuation, auxname, self.JKa, self.JKinv, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision, printing = printing, N_c = self.N_c)
         else:
             self.cfit = coefficient_fitter_static(self.c_occ, self.c_virt, p, attenuation, auxname, self.JKa, self.JKinv, robust = robust, circulant = circulant, xi0=xi0, xi1=xi1, float_precision = self.float_precision, printing = printing, N_c = self.N_c, preload = preload)
 
-        
         
         if self.N_c >0:
             self.cfit.set_n_layers(n_points_p(p, self.N_c), rcond = rcond, inv = self.inv)
@@ -3673,114 +3241,489 @@ if __name__ == "__main__":
     parser.add_argument("project_file", type = str, help ="input file for project (.d12 file)")
     parser.add_argument("coefficient_matrix", type= str,help="Block Toeplitz matrix with coefficients")
     parser.add_argument("auxbasis", type = str, help="Auxiliary fitting basis.")
-    parser.add_argument("-attenuation", type = float, default = 0.2)
+    parser.add_argument("-attenuation", type = float, default = 0.1)
     parser.add_argument("-test_ao", default = False, action = "store_true", help="Run test for AO-basis")
     parser.add_argument("-test_ibuild", default = False, action = "store_true", help="Test integral builder")
-    parser.add_argument("-basis_truncation", type = float, default = 0.5, help = "Truncate AO-basis function below this threshold." )
-    parser.add_argument("-attenuated_truncation", type = float, default = 1e-14, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
+    parser.add_argument("-basis_truncation", type = float, default = 0.1, help = "Truncate AO-basis function below this threshold." )
+    parser.add_argument("-xi0", type = float, default = 1e-12, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
+    parser.add_argument("-xi1", type = float, default = 1e-12, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
+    parser.add_argument("-rcond", type = float, default = 1e-12, help = "Truncate blocks in the attenuated matrix where (max) elements are below this threshold." )
+
+
 
 
     args = parser.parse_args()
 
-    p = pr.prism(args.project_file)
+    from mpi4py import MPI
+    comm = MPI.COMM_WORLD 
+    size = comm.Get_size()
+    rank = comm.Get_rank()
+
+    if rank == 0:
+
+        p = pr.prism(args.project_file)
+        
+
+        auxbasis = basis_trimmer(p, args.auxbasis, alphacut = args.basis_truncation)
+
+        float_precision = np.float64
+
+        auxname = "ri-fitbasis"
+
+
+        f = open(auxname + ".g94", "w")
+        f.write(auxbasis)
+        f.close()
+
+
+        c = tp.tmat()
+        c.load(args.coefficient_matrix)
+
+
+        coords = []
+        Jmn = []
+        attenuation = args.attenuation
+        print("att:", attenuation)
+
+
+
+        c_occ, c_virt = occ_virt_split(c,p)
+        xi0 = args.xi0
+        xi1 = args.xi1
+
+
+        
+
+
+        N_c_max_layers = 30
+        cm = estimate_coordinate_domain(p, auxname, N_c_max_layers, attenuation = attenuation)
+
+        C2 = tp.lattice_coords(n_points_p(p, N_c_max_layers))
+
+        R = np.sqrt(np.sum(p.coor2vec(C2)**2, axis = 1))
+
+        C2 = C2[np.argsort(R)]
+        R = R[np.argsort(R)]
+
+
+
+        for ci in range(len(C2)):
+            c2, R2 = C2[ci], R[ci] 
+            
+            Jmnc2_temp = cm.compute_Jmn(c2, thresh = xi0)
+
+            Jmnc2_temp.set_precision(float_precision)
+
+            screen = np.max(np.abs(Jmnc2_temp.cget(Jmnc2_temp.coords)), axis = (1,2))>=xi0*cm.Jmn_max
+            screen[np.sum(Jmnc2_temp.coords**2, axis = 1)==0] = True
+            
+            # Screened distances
+            distances = np.sqrt(np.sum(p.coor2vec(Jmnc2_temp.coords)**2, axis = 1))
+
+            Jmnc2_max =  np.max(distances[screen])
+
+            
+            if np.sum(screen)>1:
+                fc = 0.95
+                outer_coords = []
+                
+                outer_coords = Jmnc2_temp.coords[distances>Jmnc2_max*fc]
+
+                max_outer_5pcnt = np.max(Jmnc2_temp.cget(outer_coords))
+
+                max_coord = np.max(np.abs(Jmnc2_temp.coords), axis = 0)
+                
+
+            Jmnc2 = tp.tmat()
+
+            Jmnc2.load_nparray(Jmnc2_temp.cget(Jmnc2_temp.coords[screen]), Jmnc2_temp.coords[screen])
+
+            coords.append(c2)
+            Jmn.append( Jmnc2 ) #New formulation without uppercase-transpose
+
+            print("max | (LJ | 0 m [%i %i %i] n) |  = " % tuple(c2), "%.4e" % np.abs(np.max(Jmnc2.blocks)), " max (L) <=",  np.max(np.abs(Jmnc2.coords), axis = 0))
+
+            #print("Min overall:", np.max(np.abs(Jmnc2.blocks)))
+
+
+            
+            if np.max(np.abs(Jmnc2.blocks))<xi0*cm.Jmn_max and np.abs(R[ci]-R[ci+1])>1e-10:
+                #print("Min overall:", np.max(np.abs(Jmnc2.blocks)))
+                break
+
+        coords = np.array(coords)
+        c0 = np.argwhere(np.all(coords==np.array([0,0,0]), axis = 1))[0][0]
+
+        
+        Jmnc_tensors = []
+        Jmnc_screening = []
+
+        Jmnc_sparse_tensors = []
+        Jmnc_sparse_screening = []
+
+        total = 0
+        compr = 0
+
+
+
+        t0 = time.time()
+
+
+        virtual_coords = []
+        
+        t0 = time.time()
+
+        Nc = 50
+        cellcut = 35
+        if p.cperiodicity == "POLYMER":
+            cellcut = 180
+            Rc = np.sqrt(np.sum(p.coor2vec(tp.lattice_coords([Nc,0,0]))**2, axis = 1))
+            pq_region = tp.lattice_coords([Nc,0,0])[Rc<=cellcut]
+            
+        elif p.cperiodicity == "SLAB":
+            Rc = np.sqrt(np.sum(p.coor2vec(tp.lattice_coords([Nc,Nc,0]))**2, axis = 1))
+            pq_region = tp.lattice_coords([Nc,Nc,0])[Rc<=cellcut]
+        else:
+            Rc = np.sqrt(np.sum(p.coor2vec(tp.lattice_coords([Nc,Nc,Nc]))**2, axis = 1))
+            pq_region = tp.lattice_coords([Nc,Nc,Nc])[Rc<=cellcut]
+
+            
+
+        
+        pq_region = pq_region[np.argsort(np.sum(p.coor2vec(pq_region)**2, axis = 1))]
+
+        
+
+        
+
+        #self.OC_L_np, self.c_virt_coords_L, self.c_virt_screen, self.NJ, self.Np = contract_occupieds(self.p, Jmn, self.coords, self.pq_region, self.c_occ, self.xi1)
+        #OC_L_np, c_virt_coords_L, c_virt_screen, NJ, Np = contract_occupieds(p, Jmn, coords, pq_region, c_occ,  xi0*cm.Jmn_max)
+
+
+        #def contract_occupieds(p, Jmn_dm, dM_region, pq_region, c_occ, xi1 = 1e-10, mpi = False):
+    else:
+        p = None
+        Jmn = None
+        xi0 = None
+
+        coords = None
+        pq_region = None
+        c_occ = None
+        cm = None
+
+
+        
+
+
+    # Broadcast
+    p = comm.bcast(p, root = 0)
+    Jmn = comm.bcast(Jmn, root = 0)
+    xi0 = comm.bcast(xi0, root = 0)
+
+    coords = comm.bcast(coords, root = 0)
+    pq_region = comm.bcast(pq_region, root = 0)
+    c_occ = comm.bcast(c_occ, root = 0)
+    cm = comm.bcast(cm, root = 0)
+
+    Jmn_dm = Jmn
+    dM_region = coords
+    xi1 = xi0*cm.Jmn_max
+
+    comm.barrier()
+
     
 
-    auxbasis = basis_trimmer(p, args.auxbasis, alphacut = args.basis_truncation)
 
 
 
-    f = open("ri-fitbasis.g94", "w")
-    f.write(auxbasis)
-    f.close()
+    
+    
+    """
+    Intermediate contraction of the occupieds.
+    See section 3.2, algorithm 1 and 2 in the notes for details
+    Author: Audun
+    """
+
+    #print("pq_region:", pq_region)
 
 
-    c = tp.tmat()
-    c.load(args.coefficient_matrix)
 
-    #print(p.get_libint_basis())
-    #print(c.cget([0,0,0]))
-    virtual_region = tp.lattice_coords([1,1,1])
-    if args.test_ao:
-        #c.blocks *= 0
-        #c.cset([0,0,0], np.eye(11))
-        #c.cset([1,0,0], .5*np.eye(11))
+    
+    mpi = False
 
-        virtual_region = tp.lattice_coords([0,0,0])
+    O = []
 
-
-    if args.test_ibuild:
-        print("Testing integral builder")
-        ib = integral_builder(c,p,attenuation = args.attenuation, auxname="ri-fitbasis")
-        # generating integrals
-        print(ib.getcell([0,0,0],[0,0,0],[0,0,0]).shape)
-        print(ib.getcell([0,0,0],[0,0,1],[0,0,0]).shape)
-        print(ib.getcell([0,0,0],[0,0,2],[0,0,0]).shape)
-        print(ib.getcell([0,0,0],[0,0,3],[0,0,0]).shape)
+    # dimensions to match the equations
+    
+    NN = Jmn_dm[0].coords.shape[0] # Number of blocks in coefficients
+    
+    Np = c_occ.blocks.shape[2]  # number of occupieds
+    Nn = c_occ.blocks.shape[1]  # number of ao functions
+    Nm = c_occ.blocks.shape[1]  # number of ao functions
 
 
-    X = compute_fitting_coeffs(c,p, attenuation = args.attenuation, auxname = "ri-fitbasis", coord_q=virtual_region)
-    print(X)
-    #print(compute_onebody(p,c))
+    # Set max possible extent
 
-    Xreg = np.zeros((3,3,3), dtype = object)
-    for cc in np.arange(virtual_region.shape[0]):
-        i,j,k = virtual_region[cc]
-        Xreg[i,j,k] = X[cc]
+    #n_points = np.max(np.abs(dM_region), axis = 0) + np.max(np.abs(Jmn_dm[0].coords), axis = 0)
+    #s = tp.get_zero_tmat(n_points_p(p, 10), [2,2])
+    #s = tp.get_zero_tmat(n_points, [2,2])
+    #NN = s.coords.shape[0]      # number of 
+    #print("domain setup in contract_occupieds may not be optimal")
 
-    if args.test_ao:
-        # calculate some regions and compare to ao-integrals
-        coulomb_extent = np.max(np.abs(Xreg[0,0,0].coords), axis = 0)
-        #print(coulomb_extent)
+    
 
-        s = tp.tmat()
-        scoords = tp.lattice_coords(coulomb_extent)
-        s.load_nparray(np.ones((scoords.shape[0],2,2), dtype = float), scoords)
 
-        JK = compute_JK(p,s, coulomb=True, auxname = "ri-fitbasis")
-        JK.tolerance = 10e-12
+    c_virt_coords_L = []
+    c_virt_screen = []
+    OC_L_np = []
 
-        JKX = np.zeros_like(Xreg)
 
-        #print(JK.circulantdot(Xreg[0,0,0]))
-        for i in np.arange(len(Xreg)):
-            for j in np.arange(len(Xreg[i])):
-                for k in np.arange(len(Xreg[i,j])):
-                    try:
-                        JKX[i,j,k] = JK.cdot(Xreg[i,j,k])
-                        #JKX[i,j,k] = JK.circulantdot(Xreg[i,j,k])
-                        print(i,j,k,"partially computed.")
-                    except:
-                        print(i,j,k,"skipped.")
+
+    NJ = Jmn_dm[0].blocks.shape[1]
+
+    elms_retained = 0
+    elms_total    = 0
+
+    # optimize
+    
+    optimized = True
+    if optimized:
+        n_points = np.max(np.abs(dM_region), axis = 0) + np.max(np.abs(c_occ.coords), axis = 0)
+        
+        N_coords = tp.lattice_coords(n_points)
+        
+        NN = N_coords.shape[0]
+
+        #print("Shape of N_coords:", N_coords.shape)
+
+    #gc.disable()
+    #if mpi:
+    
+
+    
+
+
+    for Li in range(pq_region.shape[0]):
+        L = pq_region[Li]
+        #print("Contracting occupieds for :", L)
+        O_LN_np = np.zeros((NN, NJ,Nn, Np), dtype = float)
+
+        #N_coords = -Jmn_dm[0].coords 
+        
+        
+
+        # J = -N - dM - L, L in all
+        # O = N + dM = -(J) - L 
+        # 
+        # N_coords = tp.lattice_coords([np.max(np.abs(Jmnc.coords), axis = 0) + np.abs()])
+        norm_prev = 0.0
+        
+
+        for dMi in range(dM_region.shape[0]):
+            dM = dM_region[dMi]
+            
+
+            Jmn = Jmn_dm[dMi]
+            NJ = Jmn.blocks.shape[1]
+
+            
+            t0 = time.time()
+            Jmn_blocks = Jmn.cget(-N_coords+L).reshape(NN,NJ,Nm,Nn) #screen on these coordinates, use as "zero", all other offsets
+            
+            #print("Jmn.cget:", time.time()-t0)
+            #print("")
+            #t0 = time.time()
+            
+            c_occ_blocks = c_occ.cget(-N_coords - dM)  #+ here (used to be)
+
+        
+
+            sc = np.max(np.abs(c_occ_blocks), axis = (1,2))>xi1
+            sc[np.max(np.abs(Jmn_blocks), axis = (1,2,3))<=xi1] = False
+
+
+            if np.any(sc):
+                # If any block non-zero : contract occupieds
+                #dO_LN_np = np.einsum("NJmn,Nmp->NJnp", Jmn_blocks[sc], c_occ_blocks[sc], optimize = True) #change
+
+                Jsc, csc = Jmn_blocks[sc], c_occ_blocks[sc]
+                scs = np.sum(sc)
+                dO_LN_np = np.zeros((scs, NJ, Nn, Np), dtype = float)
+
+                #p = comm.bcast(p, root = 0)
+
+                mpi = True
+
+                if mpi:
+                    #recvbuf = None
+                    #if rank == 0:
+                    #recvbuf = np.zeros(scs, dtype=list)
+
+
+
+                    #if rank==0:
+                    #    k, dk = comm.recv(source=0, tag=11)
+                    #    dO_LN_np[k] = dk
+
+                    #else:
+                    data = []
+
+                        
+                    for k in range(scs):
+                        #print(pres[k][1], pres[k][0].shape)
+                        #print(dMi, "MPI:", rank, " computing ",k)
+                        if (rank-1)==k%(size-1):
+                            #if rank==k%(size-0):
+                            #print(dMi, "MPI:", rank, " computing ",k)
+                            data.append([k, np.dot(Jsc[k].reshape(NJ,Nm,Nn).swapaxes(1,2).reshape(NJ*Nn,Nm), csc[k]).reshape(NJ, Nn, Np)])
+
+                    
+                    #print("len dataL:", len(data))
+
+                    data = comm.gather(data, root=0) #collect all rank-specific arrays
+
+                    #print("len dataL:", len(data))
+
+                    if rank==0:
+                        for ki in range(len(data)):
+                            for kj in range(len(data[ki])):
+                                #print("h:", data[ki][kj][0])
+                                k = data[ki][kj][0]
+                                dk = data[ki][kj][1]
+                                dO_LN_np[k] = dk
+                    else:
                         pass
-        for i in np.arange(10):
-            print(p.get_nocc(), p.get_nvirt())
 
-            #try:
-            xjkx = Xreg[0,0,0].tT().cdot(JKX[0,0,0], coords = [[i,0,0]]).cget([i,0,0]).reshape((p.get_nocc(),p.get_nvirt(),p.get_nocc(),p.get_nvirt()))
-            #xjkx = Xreg[0,0,0].tT().circulantdot(JKX[0,0,0]).cget([i,0,0]).reshape((p.get_nocc(),p.get_nvirt(),p.get_nocc(),p.get_nvirt()))
+                    comm.barrier()
 
-            #pqrs = compute_pqrs(p, t = [[i,0,0]]).reshape([p.get_nocc(),p.get_nvirt(),p.get_nocc(),p.get_nvirt()])
-            pqrs = compute_pqrs(p, t = [[i,0,0]]).reshape((p.get_n_ao(), p.get_n_ao(),p.get_n_ao(),p.get_n_ao()))[:p.get_nocc(),p.get_nocc():,:p.get_nocc(),p.get_nocc():]
-
-            for pp in np.arange(p.get_nocc()):
-                for qq in np.arange(p.get_nvirt()):
-                    print("  " , pp,qq,pp,qq, "   %.6e   %.6e   %.6e" % (xjkx[pp,qq,pp,qq], pqrs[pp,qq,pp,qq], np.abs(xjkx[pp,qq,pp,qq] - pqrs[pp,qq,pp,qq])))
-                    #for rr in np.arange(p.get_nocc()):
-                    #    for ss in np.arange(p.get_nvirt()):
-                    #        print("  " , pp,qq,rr,ss, "   %.4e   %.4e   %.4e" % (xjkx[pp,qq,rr,ss], pqrs[pp,qq,rr,ss], np.abs(xjkx[pp,qq,rr,ss] - pqrs[pp,qq,rr,ss])))
-            print("Max deviation:" , np.abs(xjkx - pqrs).max())
+                    #dO_LN_np = comm.bcast(dO_LN_np, root = 0)
 
 
 
-                #print(xjkx[:2,np.arange(2, 11),:2, np.arange(2,11)])  # = (000i000a|100j100b)
-                #print(pqrs[:2,np.arange(2, 11),:2, np.arange(2,11)])
-                #print(np.linalg.norm(xjkx - pqrs))
-
-            print("   ", )
-            #except:
-            #    print(i,0,0,"outside region (try except).")
+                        
 
 
-    else:
-        np.save("fitted_coeffs", Xreg)
-        print("Fitting complete, stored to file.")
+
+                else:
+                    #print("summing over ", scs, "elements.")
+                    for k in range(scs):
+                        dO_LN_np[k] =  np.dot(Jsc[k].reshape(NJ,Nm,Nn).swapaxes(1,2).reshape(NJ*Nn,Nm), csc[k]).reshape(NJ, Nn, Np)
+                    
+             
+
+                O_LN_np[sc] += dO_LN_np
+
+                norm_new = None
+                ndiff = None
+
+                if rank==0:
+
+                    norm_new = np.linalg.norm(O_LN_np)
+
+                    ndiff = np.abs(norm_prev-norm_new)
+
+                    
+
+                norm_new = comm.bcast(norm_new, root = 0)
+                ndiff = comm.bcast(ndiff, root = 0)
+
+                
+                comm.Barrier()
+
+                
+                    
+
+                
+
+
+
+
+
+                
+
+                #print("rank;", rank, "ndiff", ndiff)
+
+                if ndiff/norm_new<xi1:
+                    # Truncate on relative change in norm
+                    break
+                
+
+                norm_prev = norm_new*1
+
+                
+
+
+
+      
+        if rank == 0:
+            c_virt_coords_L.append(-N_coords)
+
+            
+            O_LN_np = np.einsum("NJnp->JpNn", O_LN_np).reshape(NJ*Np, NN*Nn)
+
+            
+            sc = np.max(np.abs(O_LN_np), axis = 0)>xi1
+
+            c_virt_screen.append(sc)
+            
+
+            elms_retained += np.sum(sc)*O_LN_np.shape[0]
+            elms_total    += NJ*Np*NN*Nn
+            if rank==0:
+                print("Interm.contr. at L =", L, " (|R_L| = %.2e bohr). Abs.max value: %.2e. Compression rate: %.2e (%i retained columns)." % (np.sqrt(np.sum(p.coor2vec(pq_region[Li])**2)), np.abs(O_LN_np).max(), elms_retained/elms_total, np.sum(sc)))
+            
+            
+            OC_L_np.append(O_LN_np[:,sc])
+
+            OLNmax = np.abs(O_LN_np).max()
+        else:
+            OLNmax = 0
+
+        OLNmax = comm.bcast(OLNmax, root = 0)
+
+                
+        comm.Barrier()
+
+
+
+
+
+        
+        
+        if OLNmax<xi1:
+            dR = np.abs(np.sum(p.coor2vec(pq_region[Li-1])**2) - np.sum(p.coor2vec(pq_region[Li])**2))
+
+            if dR > 1e-12:
+                if rank==0:
+                    print("    ->   Truncation of intermediate tensor O at L = ", L, " with dR = %.2e  <-" % dR)
+                    print("         Final compression ratio of intermediate tensor is %.2e" % (elms_retained/elms_total))
+                    print("                              (%i out of %i elements retained)" % (elms_retained, elms_total))
+                    print("         Max value : %.2e" % np.abs(O_LN_np).max())
+                break
+                
+   
+        
+
+
+
+    
+
+
+    
+    # Can delete self.Jmn now, no longer required and takes up a lot of memory
+    del(Jmn)
+
+    if rank == 0:
+        preload = [OC_L_np, c_virt_coords_L, c_virt_screen, NJ, Np, pq_region] 
+        #ibuild = integral_builder_static(c_occ,c_virt, p, attenuation, auxname, JK, JKInv, circulant = True, xi0 = xi0, xi1 = xi1, float_precision = float_precision, printing = False, preload = preload)
+        rcond = 1e-12
+
+        import PRI
+
+
+        ib = PRI.integral_builder_static(c_occ,c_virt,p,attenuation = attenuation, auxname="ri-fitbasis", initial_virtual_dom=[0,0,0], circulant=True, robust = False, xi0=xi0, xi1 = xi1, float_precision = float_precision, rcond = rcond, preload = preload, N_c = 0)
+        
+        
+        #dL = np.array([0,0,0])
+        #print(ib.getorientation(dL, dL)[0].cget([0,0,0]) )
+        np.save("integral_build.npy", np.array([ib], dtype = object), allow_pickle = True)
